@@ -53,11 +53,11 @@ jobs:
       - name: Compress
         run: |
           cd build
-          tar czf linux-amd64.tar.gz myairouter-linux-amd64
-          tar czf linux-arm64.tar.gz myairouter-linux-arm64
-          tar czf darwin-amd64.tar.gz myairouter-darwin-amd64
-          tar czf darwin-arm64.tar.gz myairouter-darwin-arm64
-          zip windows-amd64.zip myairouter-windows-amd64.exe
+          tar czf myairouter-linux-amd64.tar.gz myairouter-linux-amd64
+          tar czf myairouter-linux-arm64.tar.gz myairouter-linux-arm64
+          tar czf myairouter-darwin-amd64.tar.gz myairouter-darwin-amd64
+          tar czf myairouter-darwin-arm64.tar.gz myairouter-darwin-arm64
+          zip myairouter-windows-amd64.zip myairouter-windows-amd64.exe
 
       - name: Generate checksums
         run: cd build && sha256sum *.tar.gz *.zip > checksums.txt

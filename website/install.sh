@@ -53,7 +53,7 @@ fi
 
 echo "Installing to /usr/local/bin/myairouter..."
 tar -xzf "/tmp/$ARCHIVE" -C /tmp
-sudo mv "/tmp/myairouter-${OS}-${ARCH}" /usr/local/bin/myairouter
+sudo mv "/tmp/myairouter-${OS}-${ARCH}" /usr/local/bin/myairouter 2>/dev/null || sudo mv "/tmp/myairouter-${OS}-${ARCH}.exe" /usr/local/bin/myairouter
 chmod +x /usr/local/bin/myairouter
 
 rm -f "/tmp/$ARCHIVE" "/tmp/checksums.txt"
