@@ -2,6 +2,7 @@
 set -euo pipefail
 
 REPO="haslab-dev/MyAiRouter"
+REPO_URL="https://haslab-dev.github.io/MyAiRouter"
 R2_PUBLIC_URL="${R2_PUBLIC_URL:-https://pub-xxxxxxxxxxxxxxxx.r2.dev}"
 BASE_URL="${R2_PUBLIC_URL}/releases"
 
