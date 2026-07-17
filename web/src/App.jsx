@@ -36,8 +36,8 @@ function AppShell() {
       try {
         const res = await fetch('/api/providers');
         if (res.ok) {
-          const conns = await res.json();
-          const activeConns = conns.filter(c => c.isActive);
+const conns = (await res.json()) || [];
+const activeConns = conns.filter(c => c.isActive);
           setProviderCount(activeConns.length);
         }
         const mRes = await fetch('/v1/models');

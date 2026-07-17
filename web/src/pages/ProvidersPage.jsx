@@ -59,7 +59,7 @@ export default function ProvidersPage() {
         fetch('/api/usage/logs?limit=500')
       ]);
       if (connRes.ok) {
-        setConnections(await connRes.json());
+        setConnections((await connRes.json()) || []);
       }
       if (nodeRes.ok) {
         const data = await nodeRes.json();
@@ -70,7 +70,7 @@ export default function ProvidersPage() {
         setCustomModels(data.models || []);
       }
       if (logsRes.ok) {
-        setDetailedLogs(await logsRes.json());
+        setDetailedLogs((await logsRes.json()) || []);
       }
       if (v1modelsRes.ok) {
         const v1data = await v1modelsRes.json();

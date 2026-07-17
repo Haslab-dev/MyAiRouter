@@ -75,7 +75,7 @@ export default function UsagePage() {
       // 2. Recent Logs & Detailed Logs
       const logsRes = await fetch('/api/usage/logs?limit=100');
       if (logsRes.ok) {
-        const data = await logsRes.json();
+        const data = (await logsRes.json()) || [];
         setLogs(data.slice(0, 8));
         setDetailedLogs(data);
       }
