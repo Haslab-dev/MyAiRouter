@@ -100,7 +100,7 @@ export default function UsagePage() {
         fetch('/api/provider-nodes')
       ]);
       if (connRes.ok) {
-        setConnections(await connRes.ok ? await connRes.json() : []);
+        setConnections((await connRes.json()) || []);
       }
       if (nodeRes.ok) {
         const data = await nodeRes.json();
