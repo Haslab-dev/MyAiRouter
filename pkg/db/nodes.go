@@ -17,6 +17,16 @@ type ProviderNode struct {
 
 func CreateProviderNode(node *ProviderNode) (*ProviderNode, error) {
 	now := time.Now().UTC().Format(time.RFC3339)
+
+	// Check duplicate by id before insert (clearer error than PK violation)
+	exists, err := nodeIDExists(node.ID)
+	if err != nil {
+		return nil, fmt.Errorf("checking duplicate node: %w", err)
+	}
+	if exists {
+		return nil, fmt.Errorf("provider node %q already exists", node.ID)
+	}
+
 	node.CreatedAt = now
 	node.UpdatedAt = now
 

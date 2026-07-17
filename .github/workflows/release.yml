@@ -1,0 +1,79 @@
+name: Build & Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+env:
+  AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+  AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+  AWS_ENDPOINT_URL: ${{ secrets.R2_ENDPOINT }}
+  AWS_DEFAULT_REGION: auto
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26'
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'npm'
+          cache-dependency-path: web/package-lock.json
+
+      - name: Build web client
+        run: |
+          cd web
+          npm ci
+          npm run build
+
+      - name: Build Linux amd64
+        run: GOOS=linux GOARCH=amd64 go build -o build/myairouter-linux-amd64 .
+
+      - name: Build Linux arm64
+        run: GOOS=linux GOARCH=arm64 go build -o build/myairouter-linux-arm64 .
+
+      - name: Build Darwin amd64
+        run: GOOS=darwin GOARCH=amd64 go build -o build/myairouter-darwin-amd64 .
+
+      - name: Build Darwin arm64
+        run: GOOS=darwin GOARCH=arm64 go build -o build/myairouter-darwin-arm64 .
+
+      - name: Build Windows amd64
+        run: GOOS=windows GOARCH=amd64 go build -o build/myairouter-windows-amd64.exe .
+
+      - name: Compress
+        run: |
+          cd build
+          tar czf linux-amd64.tar.gz myairouter-linux-amd64
+          tar czf linux-arm64.tar.gz myairouter-linux-arm64
+          tar czf darwin-amd64.tar.gz myairouter-darwin-amd64
+          tar czf darwin-arm64.tar.gz myairouter-darwin-arm64
+          zip windows-amd64.zip myairouter-windows-amd64.exe
+
+      - name: Generate checksums
+        run: cd build && sha256sum *.tar.gz *.zip > checksums.txt
+
+      - name: Generate latest.json
+        run: |
+          echo "{\"version\":\"${GITHUB_REF_NAME#v}\",\"url\":\"${{ vars.R2_PUBLIC_URL }}/releases\"}" > build/latest.json
+
+      - name: Upload to Cloudflare R2
+        run: |
+          aws s3 sync build/ "s3://${{ secrets.R2_BUCKET }}/releases/" --no-progress
+
+      - name: Purge Cloudflare cache
+        if: vars.CF_ZONE_ID != ''
+        env:
+          CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+        run: |
+          curl -fsSL -X POST "https://api.cloudflare.com/client/v4/zones/${{ vars.CF_ZONE_ID }}/purge_cache" \
+            -H "Authorization: Bearer $CF_API_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d '{"prefixes":["releases/"]}'

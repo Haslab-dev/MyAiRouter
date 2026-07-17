@@ -167,6 +167,10 @@ func createTables() error {
 		_, _ = DB.Exec(m) // Ignore errors — column may already exist
 	}
 
+	if err := RunMigrations(); err != nil {
+		return fmt.Errorf("running dedup migrations: %w", err)
+	}
+
 	// Insert default settings if not exists
 	var count int
 	err := DB.QueryRow("SELECT COUNT(*) FROM settings WHERE id = 1").Scan(&count)

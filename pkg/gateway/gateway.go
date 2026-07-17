@@ -23,6 +23,16 @@ func authenticateGatewayRequest(r *http.Request) (string, bool) {
 		return "guest", true
 	}
 
+	// Allow admin session cookie (admin UI calls gateway endpoints without Bearer token)
+	if cookie, err := r.Cookie("session"); err == nil {
+		sessionsMu.RLock()
+		expiry, ok := sessions[cookie.Value]
+		sessionsMu.RUnlock()
+		if ok && time.Now().Before(expiry) {
+			return "admin", true
+		}
+	}
+
 	authHeader := r.Header.Get("Authorization")
 	if !strings.HasPrefix(authHeader, "Bearer ") {
 		return "", false
@@ -272,11 +282,13 @@ func HandleListModels(w http.ResponseWriter, r *http.Request) {
 
 	// Default model catalogs per provider
 	defaultModels := map[string][]string{
-		"openai":    {"gpt-4o", "gpt-4o-mini", "o1", "o1-mini"},
-		"anthropic": {"claude-3-5-sonnet-20241022", "claude-haiku-4.5"},
-		"gemini":    {"gemini-2.5-flash", "gemini-2.5-pro"},
-		"deepseek":  {"deepseek-chat", "deepseek-reasoner"},
-		"kilocode":  {"gpt-4o", "claude-sonnet-4-20250514", "gemini-2.5-pro", "deepseek-chat"},
+		"openai":     {"gpt-4o", "gpt-4o-mini", "o1", "o1-mini"},
+		"anthropic":  {"claude-3-5-sonnet-20241022", "claude-haiku-4.5"},
+		"gemini":     {"gemini-2.5-flash", "gemini-2.5-pro"},
+		"deepseek":   {"deepseek-chat", "deepseek-reasoner"},
+		"kilocode":   {"gpt-4o", "claude-sonnet-4-20250514", "gemini-2.5-pro", "deepseek-chat"},
+		"glm":        {"glm-5.2", "glm-5.1", "glm-5", "glm-4.7", "glm-4.6v", "glm-4.6", "glm-4.5-flash"},
+		"glm-coding": {"glm-5.2", "glm-5.1", "glm-5", "glm-4.7", "glm-4.6v", "glm-4.6", "glm-4.5-flash"},
 	}
 
 	seenProviders := make(map[string]bool)

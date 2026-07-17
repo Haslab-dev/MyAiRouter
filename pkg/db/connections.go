@@ -25,6 +25,17 @@ func CreateConnection(conn *ProviderConnection) (*ProviderConnection, error) {
 	if conn.ID == "" {
 		conn.ID = uuid.New().String()
 	}
+	// Prevent duplicate: same provider + same apiKey
+	if apiKey, ok := conn.Data["apiKey"].(string); ok && apiKey != "" {
+		exists, err := connectionExists(conn.Provider, apiKey)
+		if err != nil {
+			return nil, fmt.Errorf("checking duplicate connection: %w", err)
+		}
+		if exists {
+			return nil, fmt.Errorf("connection already exists for provider %q with this API key", conn.Provider)
+		}
+	}
+
 	conn.CreatedAt = time.Now().UTC().Format(time.RFC3339)
 	conn.UpdatedAt = conn.CreatedAt
 

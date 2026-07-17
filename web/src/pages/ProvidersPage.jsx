@@ -269,7 +269,7 @@ export default function ProvidersPage() {
       'opencode-go': 'https://api.opencode.cn/v1',
       'opencode-zen': 'https://api.opencode.cn/v1',
       'glm': 'https://open.bigmodel.cn/api/paas/v4',
-      'glm-coding': 'https://open.bigmodel.cn/api/paas/v4',
+      'glm-coding': 'https://open.bigmodel.cn/api/coding/paas/v4',
     };
 
     const payload = {
@@ -794,7 +794,7 @@ export default function ProvidersPage() {
                       <div>
                         <div style={{ color: 'var(--text-subtle)', textTransform: 'uppercase', fontSize: '9px', fontWeight: '600' }}>Active Models</div>
                         <div style={{ fontWeight: '600', color: 'var(--text-main)', marginTop: '2px', fontFamily: 'var(--font-mono)' }}>
-                          {isConnected ? (providerModels[provider.id]?.length || 8) : 0}
+                          {isConnected ? (providerModels[provider.id]?.length || 0) : 0}
                         </div>
                       </div>
                       <div>
@@ -895,7 +895,7 @@ export default function ProvidersPage() {
                         <div>
                           <div style={{ color: 'var(--text-subtle)', textTransform: 'uppercase', fontSize: '9px', fontWeight: '600' }}>Active Models</div>
                           <div style={{ fontWeight: '600', color: 'var(--text-main)', marginTop: '2px', fontFamily: 'var(--font-mono)' }}>
-                            {isConnected ? (providerModels[node.id]?.length || 4) : 0}
+                            {isConnected ? (providerModels[node.id]?.length || customModels.filter(m => m.providerAlias === node.id).length || 0) : 0}
                           </div>
                         </div>
                         <div>
