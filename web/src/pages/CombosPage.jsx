@@ -97,24 +97,24 @@ export default function CombosPage() {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
         <div>
           <h1 className="page-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <span className="material-symbols-outlined text-primary" style={{ fontSize: '28px' }}>layers</span>
-            Model Combos
+            <span className="material-symbols-outlined text-primary" style={{ fontSize: '28px' }}>alt_route</span>
+            Active Routes
           </h1>
-          <p className="page-description">Chain models into fallback sequences. If one model fails, the next in line is tried.</p>
+          <p className="page-description">Configure request fallback routes and target node priority groups for upstream redundancy.</p>
         </div>
         <button onClick={() => { setShowForm(!showForm); setEditCombo(null); }} className="btn btn-primary" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
           <span className="material-symbols-outlined" style={{ fontSize: '18px' }}>add</span>
-          New Combo
+          New Route
         </button>
       </div>
 
       {showForm && (
         <div className="card" style={{ marginBottom: '24px' }}>
-          <h3 className="card-title">{editCombo ? 'Edit Combo' : 'Create Model Combo'}</h3>
+          <h3 className="card-title">{editCombo ? 'Edit Route' : 'Register Custom Route'}</h3>
           <form onSubmit={handleSubmit}>
             <div style={{ display: 'flex', gap: '12px', marginBottom: '16px' }}>
               <div style={{ flex: 1 }}>
-                <label className="form-label">Combo Name</label>
+                <label className="form-label">Route Key</label>
                 <input type="text" value={name} onChange={(e) => setName(e.target.value)} className="input-field" placeholder="e.g. my-fallback-chain" required />
               </div>
               <div style={{ width: '160px' }}>
@@ -164,7 +164,7 @@ export default function CombosPage() {
             </div>
 
             <div style={{ display: 'flex', gap: '12px' }}>
-              <button type="submit" className="btn btn-primary" disabled={!name.trim() || !selectedModels || selectedModels.length === 0}>Save Combo</button>
+              <button type="submit" className="btn btn-primary" disabled={!name.trim() || !selectedModels || selectedModels.length === 0}>Save Route</button>
               <button type="button" onClick={() => { setShowForm(false); setSelectedModels([]); setName(''); }} className="btn btn-secondary">Cancel</button>
             </div>
           </form>
@@ -173,9 +173,9 @@ export default function CombosPage() {
 
       {!combos || combos.length === 0 ? (
         <div className="card" style={{ textAlign: 'center', padding: '48px' }}>
-          <span className="material-symbols-outlined" style={{ fontSize: '48px', color: 'var(--text-subtle)', marginBottom: '12px' }}>layers</span>
-          <h3 style={{ fontWeight: 600, marginBottom: '8px' }}>No Model Combos</h3>
-          <p style={{ color: 'var(--text-muted)', fontSize: '13px' }}>Create a combo to chain multiple models for automatic fallback when one fails.</p>
+          <span className="material-symbols-outlined" style={{ fontSize: '48px', color: 'var(--text-subtle)', marginBottom: '12px' }}>alt_route</span>
+          <h3 style={{ fontWeight: 600, marginBottom: '8px' }}>No Active Routes</h3>
+          <p style={{ color: 'var(--text-muted)', fontSize: '13px' }}>Create a fallback route to chain backup provider models when your primary choices are slow or failing.</p>
         </div>
       ) : (
         (combos || []).map(combo => (

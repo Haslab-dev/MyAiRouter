@@ -14,6 +14,7 @@ export default function ProvidersPage() {
   const [customModels, setCustomModels] = useState([]);
   const [providerModels, setProviderModels] = useState({});
   const [modelPrefix, setModelPrefix] = useState('');
+  const [detailedLogs, setDetailedLogs] = useState([]);
 
   // Detail view state
   const [viewingDetailProvider, setViewingDetailProvider] = useState(null);
@@ -50,11 +51,12 @@ export default function ProvidersPage() {
 
   const fetchData = async () => {
     try {
-      const [connRes, nodeRes, modelRes, v1modelsRes] = await Promise.all([
+      const [connRes, nodeRes, modelRes, v1modelsRes, logsRes] = await Promise.all([
         fetch('/api/providers'),
         fetch('/api/provider-nodes'),
         fetch('/api/models/custom'),
-        fetch('/v1/models')
+        fetch('/v1/models'),
+        fetch('/api/usage/logs?limit=500')
       ]);
       if (connRes.ok) {
         setConnections(await connRes.json());
@@ -66,6 +68,9 @@ export default function ProvidersPage() {
       if (modelRes.ok) {
         const data = await modelRes.json();
         setCustomModels(data.models || []);
+      }
+      if (logsRes.ok) {
+        setDetailedLogs(await logsRes.json());
       }
       if (v1modelsRes.ok) {
         const v1data = await v1modelsRes.json();
@@ -90,6 +95,49 @@ export default function ProvidersPage() {
   useEffect(() => {
     fetchData();
   }, []);
+
+  const getProviderMetrics = (providerId) => {
+    const providerLogs = detailedLogs.filter(l => 
+      l.provider?.toLowerCase() === providerId.toLowerCase() ||
+      (connections.find(c => c.id === l.connectionId)?.provider?.toLowerCase() === providerId.toLowerCase())
+    );
+
+    if (providerLogs.length === 0) {
+      return {
+        requests: 0,
+        successRate: '100%',
+        avgLatency: '—',
+        status: 'Healthy'
+      };
+    }
+
+    const successLogs = providerLogs.filter(l => l.status === 'ok');
+    const successRate = ((successLogs.length / providerLogs.length) * 100).toFixed(2) + '%';
+
+    let totalLatency = 0;
+    let latencyCount = 0;
+    providerLogs.forEach(l => {
+      try {
+        const meta = JSON.parse(l.meta || '{}');
+        if (meta.duration_ms) {
+          totalLatency += meta.duration_ms;
+          latencyCount++;
+        }
+      } catch (e) {}
+    });
+
+    const avgLatency = latencyCount > 0 ? (totalLatency / latencyCount).toFixed(0) + 'ms' : '—';
+    const recentLogs = providerLogs.slice(0, 10);
+    const recentFailures = recentLogs.filter(l => l.status !== 'ok').length;
+    const status = recentLogs.length > 0 && (recentFailures / recentLogs.length) > 0.5 ? 'Degraded' : 'Healthy';
+
+    return {
+      requests: providerLogs.length,
+      successRate,
+      avgLatency,
+      status
+    };
+  };
 
   const fetchEnabledModels = async (providerId) => {
     try {
@@ -413,254 +461,472 @@ export default function ProvidersPage() {
   };
 
   // Detail Page layout recreation
+  // Resolve all models (from /v1/models + manual Custom Models saved in DB)
+  let providerId = '';
+  let isCustom = false;
+  let fromGateway = [];
+  let customs = [];
+  const combinedModels = [];
+  let activeConn = null;
+  let metrics = {};
+
   if (viewingDetailProvider) {
-    const providerId = viewingDetailProvider.id;
-    const isCustom = providerId.startsWith('openai-compatible') || providerId.startsWith('anthropic-compatible');
-    
-    // Resolve all models (from /v1/models + manual Custom Models saved in DB)
-    const fromGateway = providerModels[providerId] || [];
-    const customs = customModels.filter(m => m.providerAlias === providerId);
-    
-    // Deduplicate by model ID
+    providerId = viewingDetailProvider.id;
+    isCustom = providerId.startsWith('openai-compatible') || providerId.startsWith('anthropic-compatible');
+    fromGateway = providerModels[providerId] || [];
+    customs = customModels.filter(m => m.providerAlias === providerId);
     const seenIds = new Set();
-    const combinedModels = [];
     [...fromGateway, ...customs].forEach(m => {
       if (!seenIds.has(m.id)) {
         seenIds.add(m.id);
         combinedModels.push(m);
       }
     });
-
-    // Find active connection
-    const activeConn = connections.find(c => c.provider === providerId);
-
-    return (
-      <div>
-        {/* Navigation Breadcrumb */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '24px' }}>
-          <span 
-            onClick={() => setViewingDetailProvider(null)}
-            style={{ color: 'var(--text-subtle)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px', fontSize: '13px' }}
-          >
-            <span className="material-symbols-outlined" style={{ fontSize: '16px' }}>arrow_back</span>
-            Back to Providers
-          </span>
-          <span style={{ color: 'var(--border-color)', fontSize: '13px' }}>/</span>
-          <span style={{ fontWeight: 600, fontSize: '13px', color: 'var(--text-main)' }}>{viewingDetailProvider.name} Details</span>
-        </div>
-
-        {/* 1. Header connection info matching screenshot */}
-        <div className="card" style={{ padding: '24px', marginBottom: '24px', display: 'flex', alignItems: 'center', gap: '16px' }}>
-          <div style={{ 
-            width: '48px', 
-            height: '48px', 
-            borderRadius: '10px', 
-            background: viewingDetailProvider.color || 'var(--color-primary)', 
-            color: '#fff',
-            display: 'flex', 
-            alignItems: 'center', 
-            justifyContent: 'center'
-          }}>
-            <span className="material-symbols-outlined" style={{ fontSize: '24px' }}>smart_toy</span>
-          </div>
-          <div style={{ flexGrow: 1 }}>
-            <h2 style={{ fontSize: '20px', fontWeight: 700, margin: 0 }}>{viewingDetailProvider.name}</h2>
-            <div style={{ fontSize: '12px', color: 'var(--text-subtle)', marginTop: '4px' }}>
-              {activeConn ? '1 connection' : 'No connection configured'}
-            </div>
-          </div>
-        </div>
-
-        {/* 2. Provider Endpoint Details Box */}
-        <div className="card" style={{ padding: '20px', marginBottom: '24px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-            <h3 style={{ fontSize: '15px', fontWeight: 600, color: 'var(--text-main)', margin: 0 }}>OpenAI Compatible Details</h3>
-            <div style={{ display: 'flex', gap: '8px' }}>
-              {!activeConn && (
-                <button 
-                  onClick={() => isCustom ? setSelectedNode(viewingDetailProvider) : setSelectedStandard(viewingDetailProvider)}
-                  className="btn btn-primary"
-                  style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', height: '28px', background: '#ea580c', border: 'none' }}
-                >
-                  <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>add</span>
-                  Add API Key
-                </button>
-              )}
-              {activeConn && (
-                <>
-                  <button onClick={() => isCustom ? setSelectedNode(viewingDetailProvider) : setSelectedStandard(viewingDetailProvider)} className="btn btn-secondary" style={{ height: '28px', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                    <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>edit</span>
-                    Edit
-                  </button>
-                  <button onClick={handleRemoveConnection} className="btn btn-secondary" style={{ height: '28px', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '4px', color: 'var(--color-danger)', borderColor: 'rgba(239,68,68,0.2)' }}>
-                    <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>delete</span>
-                    Delete
-                  </button>
-                </>
-              )}
-            </div>
-          </div>
-          <div style={{ fontSize: '13px', color: 'var(--text-muted)' }}>
-            <strong>Chat Completions:</strong> {activeConn?.data?.baseUrl || 'Not configured'}
-          </div>
-        </div>
-
-{/* 3. Connection priority cards — removed per request */}
-
-        {/* 3.5 Provider prefix config */}
-        <div className="card" style={{ padding: '20px', marginBottom: '24px' }}>
-          <h3 style={{ fontSize: '15px', fontWeight: 600, color: 'var(--text-main)', margin: 0, marginBottom: '12px' }}>Model Prefix</h3>
-          <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '12px' }}>
-            Short prefix for model IDs (e.g. <code>ds/</code> for deepseek, <code>qw/</code> for qwen). Default: <code>{providerId}/</code>
-          </p>
-          <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
-            <input
-              type="text"
-              value={modelPrefix}
-              onChange={(e) => setModelPrefix(e.target.value)}
-              className="input-field"
-              placeholder={providerId + '/'}
-              style={{ maxWidth: '200px', fontFamily: 'var(--font-mono)', fontSize: '13px' }}
-            />
-            <button onClick={() => handleSavePrefix(providerId)} className="btn btn-primary" style={{ height: '36px', fontSize: '13px' }}>Save Prefix</button>
-          </div>
-        </div>
-
-        {/* 4. Available Models list selector section matching screenshot */}
-        <div className="card" style={{ padding: '20px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-            <h3 style={{ fontSize: '15px', fontWeight: 600, color: 'var(--text-main)', margin: 0 }}>Available Models</h3>
-            <select className="input-field" style={{ width: '130px', height: '28px', fontSize: '12px' }}>
-              <option>Thinking: Auto</option>
-            </select>
-          </div>
-          <p style={{ fontSize: '12px', color: 'var(--text-subtle)', margin: '0 0 16px' }}>
-            Add OpenAI-compatible models manually or import them from the /models endpoint.
-          </p>
-
-          {/* Form input fields */}
-          <form onSubmit={handleAddCustomModel} style={{ display: 'flex', gap: '12px', marginBottom: '24px' }}>
-            <input 
-              type="text" 
-              placeholder="Model ID (e.g. gpt-4o)"
-              value={customModelIdInput}
-              onChange={(e) => setCustomModelIdInput(e.target.value)}
-              className="input-field"
-              style={{ flexGrow: 1, height: '36px', fontSize: '13px' }}
-            />
-            <button type="submit" className="btn btn-primary" style={{ display: 'flex', alignItems: 'center', gap: '4px', height: '36px', fontSize: '13px' }}>
-              <span className="material-symbols-outlined" style={{ fontSize: '16px' }}>add</span>
-              Add
-            </button>
-            <button onClick={() => { fetchProviderModels(providerId).catch(() => {}); fetchEnabledModels(providerId); }} className="btn btn-secondary" style={{ display: 'flex', alignItems: 'center', gap: '6px', height: '36px', fontSize: '13px' }}>
-              <span className="material-symbols-outlined" style={{ fontSize: '16px' }}>download</span>
-              Refresh from upstream
-            </button>
-          </form>
-
-          {/* Select / Deselect All */}
-          <div style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>
-            <button onClick={() => handleSetEnabledModels(combinedModels.map(m => m.id))} className="btn btn-secondary" style={{ fontSize: '12px', padding: '6px 14px' }}>
-              Select All
-            </button>
-            <button onClick={() => handleSetEnabledModels([])} className="btn btn-secondary" style={{ fontSize: '12px', padding: '6px 14px' }}>
-              Deselect All
-            </button>
-            {enabledModelIds !== null && (
-              <span style={{ fontSize: '12px', color: 'var(--text-subtle)', alignSelf: 'center', marginLeft: '8px' }}>
-                {enabledModelIds.length} / {combinedModels.length} enabled
-              </span>
-            )}
-          </div>
-
-          {/* Model items grid list */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '12px' }}>
-            {combinedModels.map((m) => {
-              const checked = isModelEnabled(m.id);
-              const isCustomModel = customs.some(cm => cm.id === m.id);
-
-              return (
-                <div 
-                  key={m.id}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    padding: '12px',
-                    borderRadius: '8px',
-                    border: `1px solid ${checked ? 'var(--color-primary)' : 'var(--border-color)'}`,
-                    background: checked ? 'rgba(6,182,212,0.06)' : 'var(--bg-sidebar)',
-                    opacity: 1
-                  }}
-                >
-                  <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', flex: 1, userSelect: 'none' }}>
-                    <input
-                      type="checkbox"
-                      checked={checked}
-                      onChange={() => {
-                        const next = enabledModelIds === null
-                          ? combinedModels.map(x => x.id).filter(id => id !== m.id)
-                          : checked
-                            ? enabledModelIds.filter(id => id !== m.id)
-                            : [...enabledModelIds, m.id];
-                        handleSetEnabledModels(next);
-                      }}
-                      style={{ accentColor: 'var(--color-primary)', width: '18px', height: '18px', cursor: 'pointer' }}
-                    />
-                    <div>
-                      <div style={{ fontWeight: 600, fontSize: '13px' }}>{m.name}</div>
-                      <div style={{ fontSize: '11px', color: 'var(--text-subtle)', fontFamily: 'var(--font-mono)' }}>
-                        {modelPrefix || providerId}/{m.id}
-                      </div>
-                    </div>
-                  </label>
-
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    {isCustomModel && (
-                      <button 
-                        onClick={() => handleDeleteCustomModel(m.id)}
-                        style={{ background: 'transparent', border: 'none', color: 'var(--color-danger)', cursor: 'pointer', padding: 0 }}
-                      >
-                        <span className="material-symbols-outlined" style={{ fontSize: '16px' }}>delete</span>
-                      </button>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      </div>
-    );
+    activeConn = connections.find(c => c.provider === providerId);
+    metrics = getProviderMetrics(providerId);
   }
 
   return (
     <div>
-      {/* Main grids bar */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '32px' }}>
+      {viewingDetailProvider ? (
         <div>
-          <h1 className="page-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <span className="material-symbols-outlined text-primary" style={{ fontSize: '28px' }}>dns</span>
-            Providers
-          </h1>
-          <p className="page-description">Configure your active AI provider gateways and dynamic endpoints</p>
-        </div>
-
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-          <div style={{ position: 'relative' }}>
-            <span className="material-symbols-outlined" style={{ position: 'absolute', left: '10px', top: '10px', fontSize: '18px', color: 'var(--text-subtle)' }}>search</span>
-            <input 
-              type="text" 
-              placeholder="Search providers..." 
-              className="input-field" 
-              style={{ width: '220px', paddingLeft: '36px', height: '36px', fontSize: '13px' }}
-            />
+          {/* Navigation Breadcrumb */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '24px' }}>
+            <span 
+              onClick={() => setViewingDetailProvider(null)}
+              style={{ color: 'var(--text-subtle)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px', fontSize: '13px' }}
+            >
+              <span className="material-symbols-outlined" style={{ fontSize: '16px' }}>arrow_back</span>
+              Back to Providers
+            </span>
+            <span style={{ color: 'var(--border-color)', fontSize: '13px' }}>/</span>
+            <span style={{ fontWeight: 600, fontSize: '13px', color: 'var(--text-main)' }}>{viewingDetailProvider.name} Details</span>
           </div>
-          <button className="btn btn-secondary" style={{ background: '#fce7f3', color: '#db2777', borderColor: '#fbcfe8', height: '36px', fontSize: '13px', fontWeight: 600 }}>
-            💝 Donate
-          </button>
+
+          {/* 1. Header info */}
+          <div className="card" style={{ padding: '24px', marginBottom: '24px', display: 'flex', alignItems: 'center', gap: '16px' }}>
+            <div style={{ 
+              width: '48px', 
+              height: '48px', 
+              borderRadius: '10px', 
+              background: viewingDetailProvider.color || 'var(--color-primary)', 
+              color: '#fff',
+              display: 'flex', 
+              alignItems: 'center', 
+              justifyContent: 'center'
+            }}>
+              <span className="material-symbols-outlined" style={{ fontSize: '24px' }}>smart_toy</span>
+            </div>
+            <div style={{ flexGrow: 1 }}>
+              <h2 style={{ fontSize: '20px', fontWeight: 700, margin: 0 }}>{viewingDetailProvider.name}</h2>
+              <div style={{ fontSize: '12px', color: 'var(--text-subtle)', marginTop: '4px' }}>
+                {activeConn ? '1 connection' : 'No connection configured'}
+              </div>
+            </div>
+          </div>
+
+          {/* Dynamic metrics cards grid */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '16px', marginBottom: '24px' }}>
+            <div className="card" style={{ margin: 0, padding: '16px 20px' }}>
+              <div style={{ fontSize: '10px', fontWeight: 600, color: 'var(--text-subtle)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Status</div>
+              <div style={{ fontSize: '18px', fontWeight: 700, marginTop: '8px', color: activeConn ? (metrics.status === 'Healthy' ? 'var(--color-success)' : 'var(--color-warning)') : 'var(--text-subtle)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span className="status-dot" style={{ display: 'inline-block', width: '6px', height: '6px', borderRadius: '50%', background: activeConn ? (metrics.status === 'Healthy' ? 'var(--color-success)' : 'var(--color-warning)') : 'var(--text-subtle)', boxShadow: activeConn ? (metrics.status === 'Healthy' ? '0 0 6px var(--color-success)' : '0 0 6px var(--color-warning)') : 'none' }}></span>
+                {activeConn ? metrics.status : 'Disconnected'}
+              </div>
+            </div>
+            <div className="card" style={{ margin: 0, padding: '16px 20px' }}>
+              <div style={{ fontSize: '10px', fontWeight: 600, color: 'var(--text-subtle)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Models Available</div>
+              <div style={{ fontSize: '18px', fontWeight: 700, marginTop: '8px', color: 'var(--text-main)', fontFamily: 'var(--font-mono)' }}>{combinedModels.length}</div>
+            </div>
+            <div className="card" style={{ margin: 0, padding: '16px 20px' }}>
+              <div style={{ fontSize: '10px', fontWeight: 600, color: 'var(--text-subtle)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Avg Latency</div>
+              <div style={{ fontSize: '18px', fontWeight: 700, marginTop: '8px', color: 'var(--color-primary)', fontFamily: 'var(--font-mono)' }}>
+                {activeConn ? metrics.avgLatency : '—'}
+              </div>
+            </div>
+            <div className="card" style={{ margin: 0, padding: '16px 20px' }}>
+              <div style={{ fontSize: '10px', fontWeight: 600, color: 'var(--text-subtle)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Success Rate</div>
+              <div style={{ fontSize: '18px', fontWeight: 700, marginTop: '8px', color: activeConn ? (metrics.successRate.startsWith('100') || parseFloat(metrics.successRate) > 95 ? 'var(--color-success)' : 'var(--color-warning)') : 'var(--text-subtle)', fontFamily: 'var(--font-mono)' }}>
+                {activeConn ? metrics.successRate : '—'}
+              </div>
+            </div>
+          </div>
+
+          {/* 2. Provider Endpoint Details Box */}
+          <div className="card" style={{ padding: '20px', marginBottom: '24px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+              <h3 style={{ fontSize: '15px', fontWeight: 600, color: 'var(--text-main)', margin: 0 }}>Endpoint URL Configuration</h3>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                {!activeConn && (
+                  <button 
+                    onClick={() => isCustom ? setSelectedNode(viewingDetailProvider) : setSelectedStandard(viewingDetailProvider)}
+                    className="btn btn-primary"
+                    style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', height: '28px' }}
+                  >
+                    <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>add</span>
+                    Add API Key
+                  </button>
+                )}
+                {activeConn && (
+                  <>
+                    <button onClick={() => isCustom ? setSelectedNode(viewingDetailProvider) : setSelectedStandard(viewingDetailProvider)} className="btn btn-secondary" style={{ height: '28px', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                      <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>edit</span>
+                      Edit
+                    </button>
+                    <button onClick={handleRemoveConnection} className="btn btn-secondary" style={{ height: '28px', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '4px', color: 'var(--color-danger)', borderColor: 'rgba(239,68,68,0.2)' }}>
+                      <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>delete</span>
+                      Delete
+                    </button>
+                  </>
+                )}
+              </div>
+            </div>
+            <div style={{ fontSize: '13px', color: 'var(--text-muted)' }}>
+              <strong>Base Target endpoint:</strong> {activeConn?.data?.baseUrl || 'Not configured'}
+            </div>
+          </div>
+
+          {/* 3.5 Model prefix config */}
+          <div className="card" style={{ padding: '20px', marginBottom: '24px' }}>
+            <h3 style={{ fontSize: '15px', fontWeight: 600, color: 'var(--text-main)', margin: 0, marginBottom: '12px' }}>Model Prefix</h3>
+            <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '12px' }}>
+              Short prefix for model IDs (e.g. <code>ds/</code> for deepseek, <code>qw/</code> for qwen). Default: <code>{providerId}/</code>
+            </p>
+            <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+              <input
+                type="text"
+                value={modelPrefix}
+                onChange={(e) => setModelPrefix(e.target.value)}
+                className="input-field"
+                placeholder={providerId + '/'}
+                style={{ maxWidth: '200px', fontFamily: 'var(--font-mono)', fontSize: '13px' }}
+              />
+              <button onClick={() => handleSavePrefix(providerId)} className="btn btn-primary" style={{ height: '36px', fontSize: '13px' }}>Save Prefix</button>
+            </div>
+          </div>
+
+          {/* 4. Available Models */}
+          <div className="card" style={{ padding: '20px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+              <h3 style={{ fontSize: '15px', fontWeight: 600, color: 'var(--text-main)', margin: 0 }}>Available Models</h3>
+              <select className="input-field" style={{ width: '130px', height: '28px', fontSize: '12px' }}>
+                <option>Thinking: Auto</option>
+              </select>
+            </div>
+            <p style={{ fontSize: '12px', color: 'var(--text-subtle)', margin: '0 0 16px' }}>
+              Add OpenAI-compatible models manually or import them from the /models endpoint.
+            </p>
+
+            <form onSubmit={handleAddCustomModel} style={{ display: 'flex', gap: '12px', marginBottom: '24px' }}>
+              <input 
+                type="text" 
+                placeholder="Model ID (e.g. gpt-4o)"
+                value={customModelIdInput}
+                onChange={(e) => setCustomModelIdInput(e.target.value)}
+                className="input-field"
+                style={{ flexGrow: 1, height: '36px', fontSize: '13px' }}
+              />
+              <button type="submit" className="btn btn-primary" style={{ display: 'flex', alignItems: 'center', gap: '4px', height: '36px', fontSize: '13px' }}>
+                <span className="material-symbols-outlined" style={{ fontSize: '16px' }}>add</span>
+                Add
+              </button>
+              <button onClick={() => { fetchProviderModels(providerId).catch(() => {}); fetchEnabledModels(providerId); }} className="btn btn-secondary" style={{ display: 'flex', alignItems: 'center', gap: '6px', height: '36px', fontSize: '13px' }}>
+                <span className="material-symbols-outlined" style={{ fontSize: '16px' }}>download</span>
+                Refresh from upstream
+              </button>
+            </form>
+
+            <div style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>
+              <button onClick={() => handleSetEnabledModels(combinedModels.map(m => m.id))} className="btn btn-secondary" style={{ fontSize: '12px', padding: '6px 14px' }}>
+                Select All
+              </button>
+              <button onClick={() => handleSetEnabledModels([])} className="btn btn-secondary" style={{ fontSize: '12px', padding: '6px 14px' }}>
+                Deselect All
+              </button>
+              {enabledModelIds !== null && (
+                <span style={{ fontSize: '12px', color: 'var(--text-subtle)', alignSelf: 'center', marginLeft: '8px' }}>
+                  {enabledModelIds.length} / {combinedModels.length} enabled
+                </span>
+              )}
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '12px' }}>
+              {combinedModels.map((m) => {
+                const checked = isModelEnabled(m.id);
+                const isCustomModel = customs.some(cm => cm.id === m.id);
+
+                return (
+                  <div 
+                    key={m.id}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      padding: '12px',
+                      borderRadius: '8px',
+                      border: `1px solid ${checked ? 'var(--color-primary)' : 'var(--border-color)'}`,
+                      background: checked ? 'rgba(0,200,255,0.06)' : 'var(--bg-sidebar)',
+                      opacity: 1
+                    }}
+                  >
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', flex: 1, userSelect: 'none' }}>
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={() => {
+                          const next = enabledModelIds === null
+                            ? combinedModels.map(x => x.id).filter(id => id !== m.id)
+                            : checked
+                              ? enabledModelIds.filter(id => id !== m.id)
+                              : [...enabledModelIds, m.id];
+                          handleSetEnabledModels(next);
+                        }}
+                        style={{ accentColor: 'var(--color-primary)', width: '18px', height: '18px', cursor: 'pointer' }}
+                      />
+                      <div>
+                        <div style={{ fontWeight: 600, fontSize: '13px' }}>{m.name}</div>
+                        <div style={{ fontSize: '11px', color: 'var(--text-subtle)', fontFamily: 'var(--font-mono)' }}>
+                          {modelPrefix || providerId}/{m.id}
+                        </div>
+                      </div>
+                    </label>
+
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      {isCustomModel && (
+                        <button 
+                          onClick={() => handleDeleteCustomModel(m.id)}
+                          style={{ background: 'transparent', border: 'none', color: 'var(--color-danger)', cursor: 'pointer', padding: 0 }}
+                        >
+                          <span className="material-symbols-outlined" style={{ fontSize: '16px' }}>delete</span>
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
         </div>
-      </div>
+      ) : (
+        <>
+          {/* Main grids bar */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '32px' }}>
+            <div>
+              <h1 className="page-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span className="material-symbols-outlined text-primary" style={{ fontSize: '28px' }}>dns</span>
+                Providers
+              </h1>
+              <p className="page-description">Configure your active AI provider gateways and dynamic endpoints</p>
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <div style={{ position: 'relative' }}>
+                <span className="material-symbols-outlined" style={{ position: 'absolute', left: '10px', top: '10px', fontSize: '18px', color: 'var(--text-subtle)' }}>search</span>
+                <input 
+                  type="text" 
+                  placeholder="Search providers..." 
+                  className="input-field" 
+                  style={{ width: '220px', paddingLeft: '36px', height: '36px', fontSize: '13px' }}
+                />
+              </div>
+              <button className="btn btn-secondary" style={{ background: '#fce7f3', color: '#db2777', borderColor: '#fbcfe8', height: '36px', fontSize: '13px', fontWeight: 600 }}>
+                💝 Donate
+              </button>
+            </div>
+          </div>
+
+          {/* SECTION 1: Core AI Providers */}
+          <div className="card" style={{ background: 'transparent', border: 'none', padding: '0', marginBottom: '32px' }}>
+            <h2 style={{ fontSize: '18px', fontWeight: 600, color: 'var(--text-main)', marginBottom: '16px' }}>Core AI Providers</h2>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px' }}>
+              {CORE_PROVIDERS.map((provider) => {
+                const connectedCount = getProviderConnectionsCount(provider.id);
+                const isConnected = connectedCount > 0;
+                const metrics = getProviderMetrics(provider.id);
+                return (
+                  <div 
+                    key={provider.id} 
+                    className="card" 
+                    style={{ 
+                      display: 'flex', 
+                      flexDirection: 'column',
+                      gap: '12px', 
+                      margin: 0, 
+                      padding: '20px',
+                      cursor: 'pointer',
+                      border: isConnected ? '1px solid var(--color-primary)' : '1px solid var(--border-color)',
+                      transition: 'transform 0.15s ease, border-color 0.15s ease'
+                    }}
+                    onClick={() => {
+                      if (isConnected) {
+                        setViewingDetailProvider(provider);
+                      } else {
+                        if (provider.id === 'kilocode') {
+                          handleStartOauth();
+                        } else {
+                          setSelectedStandard(provider);
+                        }
+                      }
+                    }}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <div style={{ 
+                          width: '28px', 
+                          height: '28px', 
+                          borderRadius: '6px', 
+                          background: provider.color, 
+                          color: '#fff',
+                          display: 'flex', 
+                          alignItems: 'center', 
+                          justifyContent: 'center' 
+                        }}>
+                          <span className="material-symbols-outlined" style={{ fontSize: '15px' }}>{provider.icon}</span>
+                        </div>
+                        <span style={{ fontWeight: 700, fontSize: '14px', color: 'var(--text-main)' }}>{provider.name}</span>
+                      </div>
+                      <span style={{ fontSize: '10px', color: isConnected ? 'var(--color-success)' : 'var(--text-subtle)', background: isConnected ? 'rgba(46, 204, 113, 0.1)' : 'rgba(255, 255, 255, 0.03)', padding: '2px 8px', borderRadius: '10px' }}>
+                        {isConnected ? '● Healthy' : 'Disconnected'}
+                      </span>
+                    </div>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginTop: '4px', fontSize: '11px', color: 'var(--text-muted)' }}>
+                      <div>
+                        <div style={{ color: 'var(--text-subtle)', textTransform: 'uppercase', fontSize: '9px', fontWeight: '600' }}>Active Models</div>
+                        <div style={{ fontWeight: '600', color: 'var(--text-main)', marginTop: '2px', fontFamily: 'var(--font-mono)' }}>
+                          {isConnected ? (providerModels[provider.id]?.length || 8) : 0}
+                        </div>
+                      </div>
+                      <div>
+                        <div style={{ color: 'var(--text-subtle)', textTransform: 'uppercase', fontSize: '9px', fontWeight: '600' }}>Avg Latency</div>
+                        <div style={{ fontWeight: '600', color: 'var(--text-main)', marginTop: '2px', fontFamily: 'var(--font-mono)' }}>
+                          {isConnected ? metrics.avgLatency : '—'}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* SECTION 2: Custom Compatible Providers */}
+          <div className="card" style={{ background: 'transparent', border: 'none', padding: '0' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+              <h2 style={{ fontSize: '18px', fontWeight: 600, color: 'var(--text-main)' }}>Custom Providers (OpenAI/Anthropic Compatible)</h2>
+              <div style={{ display: 'flex', gap: '10px' }}>
+                <button 
+                  onClick={() => {
+                    setCompatType('anthropic-compatible');
+                    setShowAddNode(true);
+                  }} 
+                  className="btn btn-primary" 
+                  style={{ fontSize: '13px', padding: '8px 16px' }}
+                >
+                  + Add Anthropic Compatible
+                </button>
+                <button 
+                  onClick={() => {
+                    setCompatType('openai-compatible');
+                    setShowAddNode(true);
+                  }} 
+                  className="btn btn-secondary" 
+                  style={{ fontSize: '13px', padding: '8px 16px' }}
+                >
+                  + Add OpenAI Compatible
+                </button>
+              </div>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px' }}>
+              {nodes.length === 0 ? (
+                <div style={{ gridColumn: '1 / -1', textAlign: 'center', padding: '32px', border: '1px dashed var(--border-color)', borderRadius: '12px', color: 'var(--text-subtle)' }}>
+                  No custom compatible nodes created yet. Click one of the buttons above to register Sumopod or Databyte endpoints.
+                </div>
+              ) : (
+                nodes.map((node) => {
+                  const connectedCount = getProviderConnectionsCount(node.id);
+                  const isConnected = connectedCount > 0;
+                  const metrics = getProviderMetrics(node.id);
+                  return (
+                    <div 
+                      key={node.id} 
+                      className="card" 
+                      style={{ 
+                        display: 'flex', 
+                        flexDirection: 'column',
+                        gap: '12px', 
+                        margin: 0, 
+                        padding: '20px',
+                        cursor: 'pointer',
+                        border: isConnected ? '1px solid var(--color-primary)' : '1px solid var(--border-color)',
+                        transition: 'transform 0.15s ease, border-color 0.15s ease'
+                      }}
+                      onClick={() => {
+                        if (isConnected) {
+                          setViewingDetailProvider(node);
+                        } else {
+                          setSelectedNode(node);
+                        }
+                      }}
+                    >
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <div style={{ 
+                            width: '28px', 
+                            height: '28px', 
+                            borderRadius: '6px', 
+                            background: node.type === 'openai-compatible' ? 'rgba(0,200,255,0.1)' : 'rgba(234,88,12,0.1)', 
+                            color: node.type === 'openai-compatible' ? 'var(--color-primary)' : '#ea580c',
+                            display: 'flex', 
+                            alignItems: 'center', 
+                            justifyContent: 'center' 
+                          }}>
+                            <span className="material-symbols-outlined" style={{ fontSize: '15px' }}>{node.type === 'openai-compatible' ? 'api' : 'bubble_chart'}</span>
+                          </div>
+                          <span style={{ fontWeight: 700, fontSize: '14px', color: 'var(--text-main)' }}>{node.name}</span>
+                        </div>
+                        <span style={{ fontSize: '10px', color: isConnected ? 'var(--color-success)' : 'var(--text-subtle)', background: isConnected ? 'rgba(46, 204, 113, 0.1)' : 'rgba(255, 255, 255, 0.03)', padding: '2px 8px', borderRadius: '10px' }}>
+                          {isConnected ? '● Healthy' : 'Disconnected'}
+                        </span>
+                      </div>
+
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginTop: '4px', fontSize: '11px', color: 'var(--text-muted)' }}>
+                        <div>
+                          <div style={{ color: 'var(--text-subtle)', textTransform: 'uppercase', fontSize: '9px', fontWeight: '600' }}>Active Models</div>
+                          <div style={{ fontWeight: '600', color: 'var(--text-main)', marginTop: '2px', fontFamily: 'var(--font-mono)' }}>
+                            {isConnected ? (providerModels[node.id]?.length || 4) : 0}
+                          </div>
+                        </div>
+                        <div>
+                          <div style={{ color: 'var(--text-subtle)', textTransform: 'uppercase', fontSize: '9px', fontWeight: '600' }}>Avg Latency</div>
+                          <div style={{ fontWeight: '600', color: 'var(--text-main)', marginTop: '2px', fontFamily: 'var(--font-mono)' }}>
+                            {isConnected ? metrics.avgLatency : '—'}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Delete button */}
+                      <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '4px' }}>
+                        <button 
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDeleteNode(node.id);
+                          }}
+                          className="btn"
+                          style={{ padding: '2px 8px', fontSize: '10px', color: 'var(--color-danger)', border: '1px solid rgba(255,90,103,0.15)', background: 'transparent' }}
+                        >
+                          Delete Node
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </div>
+        </>
+      )}
 
       {/* MODAL 1: Create Custom Node */}
       {showAddNode && (
@@ -860,153 +1126,6 @@ export default function ProvidersPage() {
           </div>
         </div>
       )}
-
-      {/* SECTION 1: Core AI Providers */}
-      <div className="card" style={{ background: 'transparent', border: 'none', padding: '0', marginBottom: '32px' }}>
-        <h2 style={{ fontSize: '18px', fontWeight: 600, color: 'var(--text-main)', marginBottom: '16px' }}>Core AI Providers</h2>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: '16px' }}>
-          {CORE_PROVIDERS.map((provider) => {
-            const connectedCount = getProviderConnectionsCount(provider.id);
-            const isConnected = connectedCount > 0;
-            return (
-              <div 
-                key={provider.id} 
-                className="card" 
-                style={{ 
-                  display: 'flex', 
-                  alignItems: 'center', 
-                  gap: '12px', 
-                  margin: 0, 
-                  padding: '16px',
-                  cursor: 'pointer',
-                  border: isConnected ? '1px solid var(--color-success)' : '1px solid var(--border-color)',
-                  transition: 'transform 0.15s ease, border-color 0.15s ease'
-                }}
-                onClick={() => {
-                  if (isConnected) {
-                    setViewingDetailProvider(provider);
-                  } else {
-                    if (provider.id === 'kilocode') {
-                      handleStartOauth();
-                    } else {
-                      setSelectedStandard(provider);
-                    }
-                  }
-                }}
-              >
-                <div style={{ 
-                  width: '36px', 
-                  height: '36px', 
-                  borderRadius: '8px', 
-                  background: provider.color, 
-                  color: '#fff',
-                  display: 'flex', 
-                  alignItems: 'center', 
-                  justifyContent: 'center' 
-                }}>
-                  <span className="material-symbols-outlined" style={{ fontSize: '18px' }}>{provider.icon}</span>
-                </div>
-                <div>
-                  <div style={{ fontWeight: 700, fontSize: '14px' }}>{provider.name}</div>
-                  <div style={{ fontSize: '11px', color: isConnected ? 'var(--color-success)' : 'var(--text-subtle)', marginTop: '2px' }}>
-                    {isConnected ? `● ${connectedCount} Connected` : 'Click to connect'}
-                  </div>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* SECTION 2: Custom Compatible Providers */}
-      <div className="card" style={{ background: 'transparent', border: 'none', padding: '0' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-          <h2 style={{ fontSize: '18px', fontWeight: 600, color: 'var(--text-main)' }}>Custom Providers (OpenAI/Anthropic Compatible)</h2>
-          <div style={{ display: 'flex', gap: '10px' }}>
-            <button 
-              onClick={() => {
-                setCompatType('anthropic-compatible');
-                setShowAddNode(true);
-              }} 
-              className="btn btn-primary" 
-              style={{ background: '#ea580c', color: '#fff', fontSize: '13px', padding: '8px 16px' }}
-            >
-              + Add Anthropic Compatible
-            </button>
-            <button 
-              onClick={() => {
-                setCompatType('openai-compatible');
-                setShowAddNode(true);
-              }} 
-              className="btn btn-secondary" 
-              style={{ fontSize: '13px', padding: '8px 16px', background: '#fff', color: '#000', border: '1px solid #d1d5db' }}
-            >
-              + Add OpenAI Compatible
-            </button>
-          </div>
-        </div>
-
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: '16px' }}>
-          {nodes.length === 0 ? (
-            <div style={{ gridColumn: '1 / -1', textAlign: 'center', padding: '32px', border: '1px dashed var(--border-color)', borderRadius: '12px', color: 'var(--text-subtle)' }}>
-              No custom compatible nodes created yet. Click one of the buttons above to register Sumopod or Databyte endpoints.
-            </div>
-          ) : (
-            nodes.map((node) => {
-              const connectedCount = getProviderConnectionsCount(node.id);
-              const isConnected = connectedCount > 0;
-              return (
-                <div 
-                  key={node.id} 
-                  className="card" 
-                  style={{ display: 'flex', alignItems: 'center', gap: '12px', margin: 0, padding: '16px', position: 'relative', cursor: 'pointer' }}
-                  onClick={() => {
-                    if (isConnected) {
-                      setViewingDetailProvider(node);
-                    } else {
-                      setSelectedNode(node);
-                    }
-                  }}
-                >
-                  <div style={{ 
-                    width: '36px', 
-                    height: '36px', 
-                    borderRadius: '8px', 
-                    background: node.type === 'openai-compatible' ? 'rgba(16,185,129,0.1)' : 'rgba(234,88,12,0.1)', 
-                    display: 'flex', 
-                    alignItems: 'center', 
-                    justifyContent: 'center', 
-                    color: node.type === 'openai-compatible' ? 'var(--color-primary)' : '#ea580c' 
-                  }}>
-                    <span className="material-symbols-outlined">{node.type === 'openai-compatible' ? 'api' : 'bubble_chart'}</span>
-                  </div>
-                  <div style={{ marginRight: '24px' }}>
-                    <div style={{ fontWeight: 700, fontSize: '14px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '120px' }}>{node.name}</div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', marginTop: '2px' }}>
-                      {connectedCount > 0 ? (
-                        <span style={{ color: 'var(--color-success)' }}>● {connectedCount} Connected</span>
-                      ) : (
-                        <span style={{ color: 'var(--text-subtle)' }}>No keys added</span>
-                      )}
-                    </div>
-                  </div>
-                  
-                  {/* Delete button */}
-                  <button 
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleDeleteNode(node.id);
-                    }}
-                    style={{ position: 'absolute', right: '12px', top: '16px', background: 'transparent', border: 'none', color: 'var(--color-danger)', cursor: 'pointer' }}
-                  >
-                    <span className="material-symbols-outlined" style={{ fontSize: '16px' }}>delete</span>
-                  </button>
-                </div>
-              );
-            })
-          )}
-        </div>
-      </div>
     </div>
   );
 }

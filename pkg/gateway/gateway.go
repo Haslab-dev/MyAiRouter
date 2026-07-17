@@ -14,7 +14,7 @@ import (
 
 func RegisterGatewayRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /v1/chat/completions", handleChatCompletions)
-	mux.HandleFunc("GET /v1/models", handleListModels)
+	mux.HandleFunc("GET /v1/models", HandleListModels)
 }
 
 func authenticateGatewayRequest(r *http.Request) (string, bool) {
@@ -248,7 +248,7 @@ func handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 	WriteErrorResponse(w, lastStatus, errMsg)
 }
 
-func handleListModels(w http.ResponseWriter, r *http.Request) {
+func HandleListModels(w http.ResponseWriter, r *http.Request) {
 	_, authenticated := authenticateGatewayRequest(r)
 	if !authenticated {
 		WriteErrorResponse(w, http.StatusUnauthorized, "Invalid API key")

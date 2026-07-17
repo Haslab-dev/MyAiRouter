@@ -59,8 +59,8 @@ export default function TokenSaverPage() {
     <div>
       <div className="page-header">
         <div>
-          <h1 className="page-title">Token Saver Options</h1>
-          <p className="page-description">Optimize prompt context and LLM outputs to significantly reduce API costs.</p>
+          <h1 className="page-title">Payload Compression</h1>
+          <p className="page-description">Optimize prompt context payload volumes and LLM response lengths to minimize network traffic and API usage.</p>
         </div>
       </div>
 

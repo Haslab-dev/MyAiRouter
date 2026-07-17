@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	internalGateway "myAiRouter/internal/gateway"
 	"myAiRouter/pkg/db"
 	"myAiRouter/pkg/gateway"
 	"myAiRouter/pkg/logger"
@@ -31,7 +32,7 @@ func main() {
 	mux := http.NewServeMux()
 
 	// Register compatibility V1 gateway endpoints
-	gateway.RegisterGatewayRoutes(mux)
+	internalGateway.RegisterGatewayRoutes(mux)
 
 	// Register admin REST endpoints
 	gateway.RegisterAdminRoutes(mux)

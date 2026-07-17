@@ -72,15 +72,15 @@ export default function EndpointPage() {
     <div>
       <div className="page-header">
         <div>
-          <h1 className="page-title">Endpoint & Keys</h1>
-          <p className="page-description">Configure your developer client and authenticate with the local AI gateway.</p>
+          <h1 className="page-title">Gateway Connection</h1>
+          <p className="page-description">Configure client ingress endpoints and register developer authentication access keys.</p>
         </div>
       </div>
 
       <div className="card">
         <h2 className="card-title">
           <span className="material-symbols-outlined text-primary">hub</span>
-          Connection Settings
+          Ingress Connection Settings
         </h2>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginTop: '16px' }}>
           <div>
@@ -117,16 +117,16 @@ export default function EndpointPage() {
       <div className="card">
         <h2 className="card-title">
           <span className="material-symbols-outlined text-primary">key</span>
-          Developer API Keys
+          Gateway Access Keys
         </h2>
         <p className="page-description" style={{ marginBottom: '20px' }}>
-          Create local authentication tokens to connect your CLI, code extensions, or custom SDK clients.
+          Generate local authentication keys to route requests from code editors, CLI tools, or external applications.
         </p>
 
         <form onSubmit={handleCreateKey} style={{ display: 'flex', gap: '12px', marginBottom: '24px' }}>
           <input
             type="text"
-            placeholder="Key name (e.g. VS Code, Cline, Cursor)"
+            placeholder="Key name/label (e.g. VS Code, Cline, Cursor)"
             value={newKeyName}
             onChange={(e) => setNewKeyName(e.target.value)}
             className="input-field"
@@ -134,7 +134,7 @@ export default function EndpointPage() {
             style={{ maxWidth: '400px' }}
           />
           <button type="submit" className="btn btn-primary" disabled={loading}>
-            {loading ? 'Creating...' : 'Create Key'}
+            {loading ? 'Generating...' : 'Generate Key'}
           </button>
         </form>
 
@@ -144,8 +144,8 @@ export default function EndpointPage() {
           <table className="custom-table">
             <thead>
               <tr>
-                <th>Name</th>
-                <th>API Key</th>
+                <th>Label</th>
+                <th>Access Key</th>
                 <th>Created</th>
                 <th>Status</th>
                 <th style={{ textAlign: 'right' }}>Actions</th>
@@ -155,7 +155,7 @@ export default function EndpointPage() {
               {keys.length === 0 ? (
                 <tr>
                   <td colSpan="5" style={{ textAlign: 'center', color: 'var(--text-subtle)', padding: '24px' }}>
-                    No API keys created yet. Generate one above to get started.
+                    No access keys created yet. Generate one above to get started.
                   </td>
                 </tr>
               ) : (

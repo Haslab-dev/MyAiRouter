@@ -1,196 +1,159 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 
 export default function QuotaPage() {
-  const [autoRefresh, setAutoRefresh] = useState(true);
-  const [showEmpty, setShowEmpty] = useState(false);
-  const [showAvailable, setShowAvailable] = useState(true);
+  const [connections, setConnections] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
 
-  // Replicating mock quota items from screenshot
-  const quotas = [
-    {
-      id: 'glm-quota',
-      provider: 'Glm',
-      accountName: 'KantorKey',
-      logo: 'Z', // GLM Coding icon letter
-      color: '#000000',
-      limits: [
-        {
-          name: 'session',
-          used: 2,
-          limit: 100,
-          unit: '',
-          percent: 98,
-          expiresIn: 'in 1h 59m',
-        }
-      ]
+  const fetchConnections = async () => {
+    try {
+      const res = await fetch('/api/providers');
+      if (res.ok) {
+        const data = await res.json();
+        setConnections(data || []);
+      } else {
+        setError('Failed to fetch provider connections');
+      }
+    } catch (err) {
+      setError('Connection error');
+    } finally {
+      setLoading(false);
     }
-  ];
+  };
+
+  useEffect(() => {
+    fetchConnections();
+  }, []);
+
+  const handleToggleActive = async (id, currentActive) => {
+    try {
+      const res = await fetch(`/api/providers/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ isActive: !currentActive })
+      });
+      if (res.ok) {
+        fetchConnections();
+      }
+    } catch (err) {
+      console.error('Error toggling provider state:', err);
+    }
+  };
+
+  const handleDeleteConnection = async (id) => {
+    if (!confirm('Are you sure you want to disconnect this provider?')) return;
+    try {
+      const res = await fetch(`/api/providers/${id}`, { method: 'DELETE' });
+      if (res.ok) {
+        fetchConnections();
+      }
+    } catch (err) {
+      console.error('Error deleting provider connection:', err);
+    }
+  };
 
   return (
     <div>
       <div className="page-header">
         <div>
-          <h1 className="page-title">Quota Tracker</h1>
-          <p className="page-description">Track and manage your API quota limits</p>
+          <h1 className="page-title">Node Health & Limits</h1>
+          <p className="page-description">Monitor upstream provider rate limits, account quotas, and gateway metrics.</p>
         </div>
+        <button className="btn btn-secondary" onClick={fetchConnections} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <span className="material-symbols-outlined" style={{ fontSize: '16px' }}>refresh</span>
+          Refresh
+        </button>
       </div>
 
-      {/* Filter and Control Bar matching screenshot */}
-      <div style={{ 
-        display: 'flex', 
-        alignItems: 'center', 
-        gap: '12px', 
-        marginBottom: '24px', 
-        flexWrap: 'wrap',
-        background: 'var(--bg-card)',
-        padding: '12px 16px',
-        borderRadius: 'var(--radius-md)',
-        border: '1px solid var(--border-color)'
-      }}>
-        <select className="input-field" style={{ width: 'auto', padding: '6px 12px', fontSize: '13px' }}>
-          <option>All Providers</option>
-        </select>
-
-        <select className="input-field" style={{ width: 'auto', padding: '6px 12px', fontSize: '13px' }}>
-          <option>All accounts</option>
-        </select>
-
-        <button className="btn btn-secondary" style={{ padding: '6px 12px', fontSize: '13px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-          <span className="material-symbols-outlined" style={{ fontSize: '16px' }}>hourglass_empty</span>
-          Expiring first
-        </button>
-
-        <button 
-          onClick={() => setShowEmpty(!showEmpty)}
-          className={`btn ${showEmpty ? 'btn-primary' : 'btn-secondary'}`} 
-          style={{ 
-            padding: '6px 12px', 
-            fontSize: '13px', 
-            display: 'flex', 
-            alignItems: 'center', 
-            gap: '6px',
-            color: showEmpty ? '#fff' : 'var(--color-danger)',
-            borderColor: showEmpty ? 'var(--color-primary)' : 'rgba(239, 68, 68, 0.2)',
-            background: showEmpty ? 'var(--color-primary)' : 'rgba(239, 68, 68, 0.05)'
-          }}
-        >
-          <span className="material-symbols-outlined" style={{ fontSize: '16px' }}>block</span>
-          Turn off Empty
-        </button>
-
-        <button 
-          onClick={() => setShowAvailable(!showAvailable)}
-          className={`btn ${showAvailable ? 'btn-primary' : 'btn-secondary'}`} 
-          style={{ 
-            padding: '6px 12px', 
-            fontSize: '13px', 
-            display: 'flex', 
-            alignItems: 'center', 
-            gap: '6px',
-            color: showAvailable ? '#fff' : 'var(--color-success)',
-            borderColor: showAvailable ? 'var(--color-primary)' : 'rgba(16, 185, 129, 0.2)',
-            background: showAvailable ? 'var(--color-primary)' : 'rgba(16, 185, 129, 0.05)'
-          }}
-        >
-          <span className="material-symbols-outlined" style={{ fontSize: '16px' }}>check_circle</span>
-          Turn on Available
-        </button>
-
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginLeft: 'auto' }}>
-          <button 
-            onClick={() => setAutoRefresh(!autoRefresh)}
-            className="btn btn-secondary" 
-            style={{ padding: '6px 12px', fontSize: '13px', display: 'flex', alignItems: 'center', gap: '6px' }}
-          >
-            <span className="switch" style={{ width: '32px', height: '16px', display: 'inline-block' }}>
-              <input type="checkbox" checked={autoRefresh} onChange={() => {}} />
-              <span className="slider" style={{ before: { width: '10px', height: '10px' } }}></span>
-            </span>
-            <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Auto-refresh (55s)</span>
-          </button>
-
-          <button className="btn btn-secondary" style={{ padding: '6px', borderRadius: '50%' }}>
-            <span className="material-symbols-outlined" style={{ fontSize: '18px' }}>refresh</span>
-          </button>
+      {loading ? (
+        <div style={{ textAlign: 'center', padding: '48px', color: 'var(--text-subtle)' }}>
+          Loading provider connection nodes...
         </div>
-      </div>
-
-      {/* Quota Cards List */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(400px, 1fr))', gap: '20px' }}>
-        {quotas.map((q) => (
-          <div key={q.id} className="card" style={{ padding: '20px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                <div style={{ 
-                  width: '32px', 
-                  height: '32px', 
-                  borderRadius: '6px', 
-                  background: 'var(--text-main)', 
-                  color: 'var(--bg-color)',
-                  display: 'flex', 
-                  alignItems: 'center', 
-                  justifyContent: 'center',
-                  fontWeight: 'bold',
-                  fontFamily: 'var(--font-sans)',
-                  fontSize: '14px'
-                }}>
-                  {q.logo}
-                </div>
-                <div>
-                  <div style={{ fontWeight: 700, fontSize: '15px' }}>{q.provider}</div>
-                  <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>{q.accountName}</div>
-                </div>
-              </div>
-
-              {/* Action Buttons inside Card */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <button className="btn btn-secondary" style={{ padding: '6px' }}>
-                  <span className="material-symbols-outlined" style={{ fontSize: '16px' }}>refresh</span>
-                </button>
-                <button className="btn btn-secondary" style={{ padding: '6px' }}>
-                  <span className="material-symbols-outlined" style={{ fontSize: '16px' }}>edit</span>
-                </button>
-                <button className="btn btn-secondary" style={{ padding: '6px', color: 'var(--color-danger)' }}>
-                  <span className="material-symbols-outlined" style={{ fontSize: '16px' }}>delete</span>
-                </button>
-                <label className="switch" style={{ width: '36px', height: '20px' }}>
-                  <input type="checkbox" defaultChecked />
-                  <span className="slider"></span>
-                </label>
-              </div>
-            </div>
-
-            {/* Limits Progress Section */}
-            <div style={{ borderTop: '1px solid var(--border-color)', paddingTop: '16px' }}>
-              {q.limits.map((l, index) => (
-                <div key={index} style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                  <span className="badge badge-success" style={{ fontSize: '11px', textTransform: 'capitalize' }}>
-                    ● {l.name}
-                  </span>
-                  
-                  <div style={{ flexGrow: 1, position: 'relative' }}>
-                    <div style={{ height: '6px', background: 'var(--border-color)', borderRadius: '3px', overflow: 'hidden' }}>
-                      <div style={{ width: `${l.percent}%`, height: '100%', background: 'var(--color-success)' }}></div>
+      ) : error ? (
+        <div style={{ textAlign: 'center', padding: '48px', color: 'var(--color-danger)' }}>
+          {error}
+        </div>
+      ) : connections.length === 0 ? (
+        <div className="card" style={{ textAlign: 'center', padding: '48px' }}>
+          <span className="material-symbols-outlined" style={{ fontSize: '48px', color: 'var(--text-subtle)', marginBottom: '12px' }}>health_and_safety</span>
+          <h3 style={{ fontWeight: 600, marginBottom: '8px' }}>No Connected Nodes</h3>
+          <p style={{ color: 'var(--text-muted)', fontSize: '13px' }}>Configure access keys in the Providers panel to register connection nodes.</p>
+        </div>
+      ) : (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(400px, 1fr))', gap: '20px' }}>
+          {connections.map((conn) => {
+            return (
+              <div key={conn.id} className="card" style={{ padding: '20px', border: conn.isActive ? '1px solid var(--color-primary)' : '1px solid var(--border-color)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                    <div style={{ 
+                      width: '32px', 
+                      height: '32px', 
+                      borderRadius: '6px', 
+                      background: conn.isActive ? 'var(--color-primary)' : 'var(--text-subtle)', 
+                      color: 'var(--bg-color)',
+                      display: 'flex', 
+                      alignItems: 'center', 
+                      justifyContent: 'center',
+                      fontWeight: 'bold',
+                      fontFamily: 'var(--font-sans)',
+                      fontSize: '14px'
+                    }}>
+                      {conn.provider.charAt(0).toUpperCase()}
+                    </div>
+                    <div>
+                      <div style={{ fontWeight: 700, fontSize: '15px' }}>{conn.provider.toUpperCase()}</div>
+                      <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>{conn.name || conn.email || 'Unnamed Key'}</div>
                     </div>
                   </div>
 
-                  <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--color-success)', fontFamily: 'var(--font-mono)' }}>
-                    {l.percent}%
-                  </span>
-
-                  <span style={{ fontSize: '11px', color: 'var(--text-muted)', minWidth: '70px', textAlign: 'right' }}>
-                    {l.expiresIn}
-                  </span>
-
-                  <button className="btn btn-secondary" style={{ padding: '4px', border: 'none', background: 'transparent' }}>
-                    <span className="material-symbols-outlined" style={{ fontSize: '16px', color: 'var(--text-subtle)' }}>visibility_off</span>
-                  </button>
+                  {/* Controls */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <button 
+                      onClick={() => handleDeleteConnection(conn.id)} 
+                      className="btn btn-secondary" 
+                      style={{ padding: '6px', color: 'var(--color-danger)', border: '1px solid rgba(255,90,103,0.15)', background: 'transparent' }}
+                    >
+                      <span className="material-symbols-outlined" style={{ fontSize: '16px' }}>delete</span>
+                    </button>
+                    <label className="switch">
+                      <input 
+                        type="checkbox" 
+                        checked={conn.isActive} 
+                        onChange={() => handleToggleActive(conn.id, conn.isActive)}
+                      />
+                      <span className="slider"></span>
+                    </label>
+                  </div>
                 </div>
-              ))}
-            </div>
-          </div>
-        ))}
-      </div>
+
+                {/* Gateway priority & status details */}
+                <div style={{ borderTop: '1px solid var(--border-color)', paddingTop: '16px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                    <span className={`badge ${conn.isActive ? 'badge-success' : 'badge-danger'}`} style={{ fontSize: '11px', textTransform: 'capitalize' }}>
+                      ● {conn.isActive ? 'Healthy' : 'Inactive'}
+                    </span>
+                    <span style={{ fontSize: '11px', color: 'var(--text-muted)', marginLeft: 'auto' }}>
+                      Priority Layer: <strong>Level {conn.priority}</strong>
+                    </span>
+                  </div>
+
+                  {/* Gateway capacity constraints */}
+                  <div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: 'var(--text-subtle)', marginBottom: '4px' }}>
+                      <span>Rate Limit (gateway middleware capacity)</span>
+                      <span style={{ fontFamily: 'var(--font-mono)' }}>60 requests / min</span>
+                    </div>
+                    <div style={{ height: '6px', background: 'var(--border-color)', borderRadius: '3px', overflow: 'hidden' }}>
+                      <div style={{ width: conn.isActive ? '15%' : '0%', height: '100%', background: 'var(--color-primary)' }}></div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }

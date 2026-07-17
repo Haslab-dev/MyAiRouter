@@ -46,10 +46,10 @@ export default function ConsoleLogPage() {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexShrink: 0 }}>
         <div>
           <h1 className="page-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <span className="material-symbols-outlined text-primary" style={{ fontSize: '28px' }}>list_alt</span>
-            Console Log
+            <span className="material-symbols-outlined text-primary" style={{ fontSize: '28px' }}>insights</span>
+            Traffic Logs
           </h1>
-          <p className="page-description">Real-time terminal stream from the myAiRouter daemon process</p>
+          <p className="page-description">Real-time request stream and console output from the active myAiRouter daemon process.</p>
         </div>
 
         <div style={{ display: 'flex', gap: '10px' }}>
@@ -85,15 +85,15 @@ export default function ConsoleLogPage() {
       {/* Monospace terminal body */}
       <div style={{
         flexGrow: 1,
-        background: '#0a0d0c',
-        borderRadius: '12px',
+        background: '#0c1017',
+        borderRadius: 'var(--radius-md)',
         border: '1px solid var(--border-color)',
         padding: '20px',
         fontFamily: 'var(--font-mono)',
-        fontSize: '13px',
-        color: '#a7f3d0', // Mint green text
+        fontSize: '12px',
+        color: '#E1E7EF', 
         overflowY: 'auto',
-        boxShadow: 'inset 0 4px 20px rgba(0,0,0,0.5)',
+        boxShadow: 'inset 0 4px 20px rgba(0,0,0,0.6)',
         lineHeight: '1.6'
       }}>
         {logs.length === 0 ? (
@@ -102,8 +102,8 @@ export default function ConsoleLogPage() {
           </div>
         ) : (
           logs.map((log, index) => (
-            <div key={index} style={{ display: 'flex', gap: '12px', borderBottom: '1px solid rgba(255,255,255,0.02)', padding: '2px 0' }}>
-              <span style={{ color: '#047857', userSelect: 'none', width: '32px', textAlign: 'right' }}>{index + 1}</span>
+            <div key={index} style={{ display: 'flex', gap: '12px', borderBottom: '1px solid rgba(255,255,255,0.01)', padding: '4px 0' }}>
+              <span style={{ color: 'var(--text-subtle)', userSelect: 'none', width: '32px', textAlign: 'right' }}>{index + 1}</span>
               <span style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>{log}</span>
             </div>
           ))

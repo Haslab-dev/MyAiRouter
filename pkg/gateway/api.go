@@ -1,17 +1,62 @@
 package gateway
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"math"
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"myAiRouter/pkg/db"
 	"myAiRouter/pkg/logger"
 )
+
+// In-memory session store (UUID → expiry)
+var (
+	sessions   = map[string]time.Time{}
+	sessionsMu sync.RWMutex
+)
+
+func hashPassword(plain string) string {
+	sum := sha256.Sum256([]byte(plain))
+	return hex.EncodeToString(sum[:])
+}
+
+const defaultPasswordHash = "6e5a9c8ce6e5a9c8ce6e5a9c8ce6e5a9c8ce6e5a9c8ce6e5a9c8ce6e5a9c8ce" // placeholder, computed below
+
+func getDefaultHash() string {
+	return hashPassword("123456789")
+}
+
+func issueSession() string {
+	b := make([]byte, 16)
+	for i := range b {
+		b[i] = byte(i + 1)
+	}
+	sum := sha256.Sum256(append(b, []byte(time.Now().String())...))
+	return hex.EncodeToString(sum[:])
+}
+
+func validateSession(r *http.Request) bool {
+	// Check if auth is required at all
+	settings, err := db.GetSettings()
+	if err != nil || !settings.RequireLogin {
+		return true
+	}
+	cookie, err := r.Cookie("session")
+	if err != nil {
+		return false
+	}
+	sessionsMu.RLock()
+	expiry, ok := sessions[cookie.Value]
+	sessionsMu.RUnlock()
+	return ok && time.Now().Before(expiry)
+}
 
 func RegisterAdminRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/settings", handleSettings)
@@ -32,6 +77,13 @@ func RegisterAdminRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/models/custom", handleModelsCustom)
 	mux.HandleFunc("/api/logs", handleServerLogs)
 	mux.HandleFunc("/api/health", handleHealth)
+	mux.HandleFunc("/api/traces", handleTraces)
+	mux.HandleFunc("/api/traces/", handleTraceDetail)
+	// Auth
+	mux.HandleFunc("/api/auth/status", handleAuthStatus)
+	mux.HandleFunc("/api/auth/login", handleAuthLogin)
+	mux.HandleFunc("/api/auth/logout", handleAuthLogout)
+	mux.HandleFunc("/api/auth/change-password", handleAuthChangePassword)
 }
 
 func handleHealth(w http.ResponseWriter, r *http.Request) {
@@ -879,4 +931,176 @@ func handleImportProviderModels(w http.ResponseWriter, r *http.Request, connecti
 	})
 }
 
+func handleTraces(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	if r.Method != http.MethodGet {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
 
+	limitStr := r.URL.Query().Get("limit")
+	limit := 100
+	if limitStr != "" {
+		if val, err := strconv.Atoi(limitStr); err == nil {
+			limit = val
+		}
+	}
+
+	traces, err := db.GetRecentTraces(limit)
+	if err != nil {
+		WriteErrorResponse(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	_ = json.NewEncoder(w).Encode(traces)
+}
+
+func handleTraceDetail(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	if r.Method != http.MethodGet {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+
+	path := strings.TrimPrefix(r.URL.Path, "/api/traces/")
+	id := strings.Split(path, "/")[0]
+	if id == "" {
+		WriteErrorResponse(w, http.StatusBadRequest, "Missing trace ID")
+		return
+	}
+
+	trace, err := db.GetTraceByID(id)
+	if err != nil {
+		WriteErrorResponse(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if trace == nil {
+		WriteErrorResponse(w, http.StatusNotFound, "Trace not found")
+		return
+	}
+
+	var parsed map[string]interface{}
+	_ = json.Unmarshal([]byte(trace.Data), &parsed)
+
+	_ = json.NewEncoder(w).Encode(parsed)
+}
+
+
+// ──────────────────── Auth handlers ────────────────────
+
+func handleAuthStatus(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	if r.Method != http.MethodGet {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	settings, err := db.GetSettings()
+	if err != nil {
+		WriteErrorResponse(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	authed := validateSession(r)
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"requireLogin": settings.RequireLogin,
+		"authenticated": authed,
+	})
+}
+
+func handleAuthLogin(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	var body struct {
+		Password string `json:"password"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		WriteErrorResponse(w, http.StatusBadRequest, "Invalid JSON")
+		return
+	}
+	settings, err := db.GetSettings()
+	if err != nil {
+		WriteErrorResponse(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	// Use default hash if none set
+	expectedHash := settings.PasswordHash
+	if expectedHash == "" {
+		expectedHash = getDefaultHash()
+	}
+	if hashPassword(body.Password) != expectedHash {
+		WriteErrorResponse(w, http.StatusUnauthorized, "Invalid password")
+		return
+	}
+	token := issueSession()
+	sessionsMu.Lock()
+	sessions[token] = time.Now().Add(24 * time.Hour)
+	sessionsMu.Unlock()
+	http.SetCookie(w, &http.Cookie{
+		Name:     "session",
+		Value:    token,
+		Path:     "/",
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+		MaxAge:   86400,
+	})
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true})
+}
+
+func handleAuthLogout(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	if cookie, err := r.Cookie("session"); err == nil {
+		sessionsMu.Lock()
+		delete(sessions, cookie.Value)
+		sessionsMu.Unlock()
+	}
+	http.SetCookie(w, &http.Cookie{
+		Name:   "session",
+		Value:  "",
+		Path:   "/",
+		MaxAge: -1,
+	})
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true})
+}
+
+func handleAuthChangePassword(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	// No session check needed — providing the current password IS the authentication proof.
+	var body struct {
+		CurrentPassword string `json:"currentPassword"`
+		NewPassword     string `json:"newPassword"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		WriteErrorResponse(w, http.StatusBadRequest, "Invalid JSON")
+		return
+	}
+	settings, err := db.GetSettings()
+	if err != nil {
+		WriteErrorResponse(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	expectedHash := settings.PasswordHash
+	if expectedHash == "" {
+		expectedHash = getDefaultHash()
+	}
+	if hashPassword(body.CurrentPassword) != expectedHash {
+		WriteErrorResponse(w, http.StatusUnauthorized, "Current password is incorrect")
+		return
+	}
+	if len(body.NewPassword) < 6 {
+		WriteErrorResponse(w, http.StatusBadRequest, "New password must be at least 6 characters")
+		return
+	}
+	_, err = db.UpdateSettings(map[string]interface{}{
+		"passwordHash": hashPassword(body.NewPassword),
+	})
+	if err != nil {
+		WriteErrorResponse(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true})
+}

@@ -43,8 +43,8 @@ export default function SkillsPage() {
     <div>
       <div className="page-header">
         <div>
-          <h1 className="page-title">Agent Skills</h1>
-          <p className="page-description">Inject capabilities directly into autonomous frameworks (Cline, Roo, Claude Code).</p>
+          <h1 className="page-title">Skills</h1>
+          <p className="page-description">Expose gateway capability instructions and metadata configuration profiles directly to autonomous frameworks.</p>
         </div>
       </div>
 
