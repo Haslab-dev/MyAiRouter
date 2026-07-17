@@ -1,0 +1,6 @@
+myAiRouter
+.env
+web/dist
+web/node_modules
+*.db
+*.sqlite
