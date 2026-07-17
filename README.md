@@ -29,16 +29,29 @@ go build -o myAiRouter main.go
 
 ---
 
-## 2. Run the Gateway Server
+## 2. Install
 
-Start the executable binary:
 ```bash
-./myAiRouter
+curl -fsSL https://haslab-dev.github.io/MyAiRouter/website/install.sh | bash
 ```
 
-By default, the server runs on port `20128`. You can change this by setting the `PORT` environment variable:
+Installs to `/usr/local/bin/myairouter`.
+
+---
+
+## 3. Run
+
 ```bash
-PORT=8080 ./myAiRouter
+myairouter            # foreground
+myairouter start -d   # background (daemon)
+myairouter stop       # stop daemon
+myairouter restart    # restart daemon
+myairouter bg         # background alias
+```
+
+By default, the server runs on port `20128`. Set `PORT` to change:
+```bash
+PORT=8080 myairouter
 ```
 
 On startup, `myAiRouter` will:
@@ -49,7 +62,16 @@ On startup, `myAiRouter` will:
 
 ---
 
-## 3. Configure a Provider Account
+## 4. Build from Source
+
+```bash
+cd web && npm install && npm run build && cd ..
+go build -o myAiRouter .
+```
+
+---
+
+## 5. Configure a Provider Account
 
 1. Open your web browser and navigate to the dashboard at: **`http://localhost:20128/`**.
 2. Go to the **Providers** section using the sidebar navigation.
@@ -61,7 +83,7 @@ On startup, `myAiRouter` will:
 
 ---
 
-## 4. Authenticate and Route Requests
+## 6. Authenticate and Route Requests
 
 By default, API gateway authentication is disabled. You can configure and query completions directly:
 
@@ -91,7 +113,7 @@ curl -N http://localhost:20128/v1/chat/completions \
 
 ---
 
-## 5. Offline Agent Skills Setup
+## 7. Offline Agent Skills Setup
 
 Your gateway hosts local instructions that autonomous agents (such as Cline, Roo Code, or Claude Code) can load.
 * Entry point skill: `http://localhost:20128/skills/myairouter/SKILL.md`

@@ -59,4 +59,3 @@ chmod +x /usr/local/bin/myairouter
 rm -f "/tmp/$ARCHIVE" "/tmp/checksums.txt"
 
 echo "Installed myairouter $VERSION"
-myairouter --help
