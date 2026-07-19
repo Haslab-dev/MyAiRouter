@@ -79,6 +79,7 @@ func RegisterAdminRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/usage/logs", handleUsageLogs)
 	mux.HandleFunc("/api/usage/charts", handleUsageCharts)
 	mux.HandleFunc("/api/usage/models", handleUsageModels)
+	mux.HandleFunc("/api/usage/provider-summary", handleProviderUsageSummary)
 	mux.HandleFunc("/api/models/disabled", handleModelsDisabled)
 	mux.HandleFunc("/api/models/enabled", handleModelsEnabled)
 	mux.HandleFunc("/api/models/custom", handleModelsCustom)
@@ -393,7 +394,8 @@ func handleCombos(w http.ResponseWriter, r *http.Request) {
 
 func handleUsageStats(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	stats, err := db.GetUsageStats()
+	provider := r.URL.Query().Get("provider")
+	stats, err := db.GetUsageStats(provider)
 	if err != nil {
 		WriteErrorResponse(w, http.StatusInternalServerError, err.Error())
 		return
@@ -404,6 +406,7 @@ func handleUsageStats(w http.ResponseWriter, r *http.Request) {
 func handleUsageLogs(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	limitStr := r.URL.Query().Get("limit")
+	provider := r.URL.Query().Get("provider")
 	limit := 50
 	if limitStr != "" {
 		if parsed, err := strconv.Atoi(limitStr); err == nil {
@@ -411,7 +414,7 @@ func handleUsageLogs(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	logs, err := db.GetRecentLogs(limit)
+	logs, err := db.GetRecentLogs(limit, provider)
 	if err != nil {
 		WriteErrorResponse(w, http.StatusInternalServerError, err.Error())
 		return
@@ -421,6 +424,8 @@ func handleUsageLogs(w http.ResponseWriter, r *http.Request) {
 
 func handleUsageCharts(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
+
+	provider := r.URL.Query().Get("provider")
 
 	type ChartPoint struct {
 		Label  string  `json:"label"`
@@ -437,16 +442,22 @@ func handleUsageCharts(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Group by hour for today (local time is UTC+7, but let's query all requests in the last 24 hours to keep it robust)
+	whereClause := "WHERE timestamp >= datetime('now', '-24 hours')"
+	args := []interface{}{}
+	if provider != "" {
+		whereClause += " AND provider = ?"
+		args = append(args, provider)
+	}
+
 	rows, err := db.DB.Query(`
 		SELECT 
 			STRFTIME('%H', timestamp) as hour_part,
 			SUM(promptTokens + completionTokens) as total_tokens,
 			SUM(cost) as total_cost
 		FROM usageHistory
-		WHERE timestamp >= datetime('now', '-24 hours')
+		`+whereClause+`
 		GROUP BY hour_part
-	`)
+	`, args...)
 	if err == nil {
 		defer rows.Close()
 		for rows.Next() {
@@ -676,7 +687,22 @@ func handleUsageModels(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusMethodNotAllowed)
 		return
 	}
-	summaries, err := db.GetModelUsageSummary()
+	provider := r.URL.Query().Get("provider")
+	summaries, err := db.GetModelUsageSummary(provider)
+	if err != nil {
+		WriteErrorResponse(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	_ = json.NewEncoder(w).Encode(summaries)
+}
+
+func handleProviderUsageSummary(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	if r.Method != http.MethodGet {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	summaries, err := db.GetProviderUsageSummary()
 	if err != nil {
 		WriteErrorResponse(w, http.StatusInternalServerError, err.Error())
 		return

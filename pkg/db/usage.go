@@ -371,10 +371,15 @@ func updateDailySummary(dateKey string, entry *UsageEntry) error {
 	return err
 }
 
-func GetUsageStats() (*UsageStats, error) {
+func GetUsageStats(provider string) (*UsageStats, error) {
 	var stats UsageStats
-	// Sum from daily aggregates for performance, or usageHistory directly
-	row := DB.QueryRow("SELECT COUNT(*), SUM(promptTokens), SUM(completionTokens), SUM(cost) FROM usageHistory")
+	where := ""
+	args := []interface{}{}
+	if provider != "" {
+		where = " WHERE provider = ?"
+		args = append(args, provider)
+	}
+	row := DB.QueryRow("SELECT COUNT(*), SUM(promptTokens), SUM(completionTokens), SUM(cost) FROM usageHistory"+where, args...)
 	var requests, prompt, completion sql.NullInt64
 	var cost sql.NullFloat64
 	if err := row.Scan(&requests, &prompt, &completion, &cost); err != nil {
@@ -388,12 +393,12 @@ func GetUsageStats() (*UsageStats, error) {
 
 	// Get cached tokens sum
 	var cachedSum int
-	_ = DB.QueryRow("SELECT COALESCE(SUM(cachedTokens), 0) FROM usageHistory").Scan(&cachedSum)
+	_ = DB.QueryRow("SELECT COALESCE(SUM(cachedTokens), 0) FROM usageHistory"+where, args...).Scan(&cachedSum)
 	stats.TotalCachedTokens = cachedSum
 	return &stats, nil
 }
 
-func GetRecentLogs(limit int) ([]UsageEntry, error) {
+func GetRecentLogs(limit int, provider string) ([]UsageEntry, error) {
 	keys, err := ListApiKeys()
 	keyNameMap := make(map[string]string)
 	if err == nil {
@@ -402,11 +407,17 @@ func GetRecentLogs(limit int) ([]UsageEntry, error) {
 		}
 	}
 
-	rows, err := DB.Query(
-		`SELECT id, timestamp, provider, model, connectionId, apiKey, endpoint, promptTokens, completionTokens, cachedTokens, cost, status, tokens, meta 
-		FROM usageHistory ORDER BY id DESC LIMIT ?`,
-		limit,
-	)
+	query := `SELECT id, timestamp, provider, model, connectionId, apiKey, endpoint, promptTokens, completionTokens, cachedTokens, cost, status, tokens, meta 
+		FROM usageHistory`
+	args := []interface{}{}
+	if provider != "" {
+		query += " WHERE provider = ?"
+		args = append(args, provider)
+	}
+	query += " ORDER BY id DESC LIMIT ?"
+	args = append(args, limit)
+
+	rows, err := DB.Query(query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -484,8 +495,8 @@ type ModelUsageSummary struct {
 	Cost             float64 `json:"cost"`
 }
 
-func GetModelUsageSummary() ([]ModelUsageSummary, error) {
-	rows, err := DB.Query(`
+func GetModelUsageSummary(provider string) ([]ModelUsageSummary, error) {
+	query := `
 		SELECT 
 			model, 
 			COALESCE(provider, '') as provider,
@@ -495,10 +506,15 @@ func GetModelUsageSummary() ([]ModelUsageSummary, error) {
 			SUM(completionTokens) as completionTokens,
 			COALESCE(SUM(cachedTokens), 0) as cachedTokens,
 			SUM(cost) as cost
-		FROM usageHistory
-		GROUP BY model, provider
-		ORDER BY cost DESC
-	`)
+		FROM usageHistory`
+	args := []interface{}{}
+	if provider != "" {
+		query += " WHERE provider = ?"
+		args = append(args, provider)
+	}
+	query += " GROUP BY model, provider ORDER BY cost DESC"
+
+	rows, err := DB.Query(query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -508,6 +524,45 @@ func GetModelUsageSummary() ([]ModelUsageSummary, error) {
 	for rows.Next() {
 		var s ModelUsageSummary
 		if err := rows.Scan(&s.Model, &s.Provider, &s.Requests, &s.LastUsed, &s.PromptTokens, &s.CompletionTokens, &s.CachedTokens, &s.Cost); err != nil {
+			return nil, err
+		}
+		s.Cost = math.Round(s.Cost*10000) / 10000
+		summaries = append(summaries, s)
+	}
+	return summaries, nil
+}
+
+type ProviderUsageSummary struct {
+	Provider         string  `json:"provider"`
+	Requests         int     `json:"requests"`
+	PromptTokens     int     `json:"promptTokens"`
+	CompletionTokens int     `json:"completionTokens"`
+	CachedTokens     int     `json:"cachedTokens"`
+	Cost             float64 `json:"cost"`
+}
+
+func GetProviderUsageSummary() ([]ProviderUsageSummary, error) {
+	rows, err := DB.Query(`
+		SELECT 
+			COALESCE(provider, 'unknown') as provider,
+			COUNT(*) as requests,
+			SUM(promptTokens) as promptTokens,
+			SUM(completionTokens) as completionTokens,
+			COALESCE(SUM(cachedTokens), 0) as cachedTokens,
+			SUM(cost) as cost
+		FROM usageHistory
+		GROUP BY provider
+		ORDER BY cost DESC
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var summaries []ProviderUsageSummary
+	for rows.Next() {
+		var s ProviderUsageSummary
+		if err := rows.Scan(&s.Provider, &s.Requests, &s.PromptTokens, &s.CompletionTokens, &s.CachedTokens, &s.Cost); err != nil {
 			return nil, err
 		}
 		s.Cost = math.Round(s.Cost*10000) / 10000

@@ -23,6 +23,7 @@ export default function UsagePage() {
 
   const [connections, setConnections] = useState([]);
   const [nodesList, setNodesList] = useState([]);
+  const [selectedProvider, setSelectedProvider] = useState('');
 
   // Tree zoom state (no pan)
   const [treeScale, setTreeScale] = useState(1);
@@ -51,10 +52,10 @@ export default function UsagePage() {
 
   const [settings, setSettings] = useState(null);
 
-  const fetchData = async () => {
+  const fetchData = useCallback(async (provider) => {
     try {
-      // 1. Overall stats
-      const statsRes = await fetch('/api/usage/stats');
+      const statsUrl = provider ? `/api/usage/stats?provider=${encodeURIComponent(provider)}` : '/api/usage/stats';
+      const statsRes = await fetch(statsUrl);
       if (statsRes.ok) {
         const data = await statsRes.json();
         setStats({
@@ -66,35 +67,33 @@ export default function UsagePage() {
         });
       }
 
-      // 1.5. Ingress Settings for compression calculations
       const settingsRes = await fetch('/api/settings');
       if (settingsRes.ok) {
         setSettings(await settingsRes.json());
       }
 
-      // 2. Recent Logs & Detailed Logs
-      const logsRes = await fetch('/api/usage/logs?limit=100');
+      const logsUrl = provider ? `/api/usage/logs?limit=100&provider=${encodeURIComponent(provider)}` : '/api/usage/logs?limit=100';
+      const logsRes = await fetch(logsUrl);
       if (logsRes.ok) {
         const data = (await logsRes.json()) || [];
         setLogs(data.slice(0, 8));
         setDetailedLogs(data);
       }
 
-      // 3. Hourly charts
-      const chartRes = await fetch('/api/usage/charts');
+      const chartUrl = provider ? `/api/usage/charts?provider=${encodeURIComponent(provider)}` : '/api/usage/charts';
+      const chartRes = await fetch(chartUrl);
       if (chartRes.ok) {
         const data = await chartRes.json();
         setChartData(data || []);
       }
 
-      // 4. Model usage summaries
-      const modelRes = await fetch('/api/usage/models');
+      const modelUrl = provider ? `/api/usage/models?provider=${encodeURIComponent(provider)}` : '/api/usage/models';
+      const modelRes = await fetch(modelUrl);
       if (modelRes.ok) {
         const data = await modelRes.json();
         setModelSummaries(data || []);
       }
 
-      // 5. Providers for tree network
       const [connRes, nodeRes] = await Promise.all([
         fetch('/api/providers'),
         fetch('/api/provider-nodes')
@@ -109,13 +108,13 @@ export default function UsagePage() {
     } catch (err) {
       console.error('Error fetching analytics stats:', err);
     }
-  };
+  }, []);
 
   useEffect(() => {
-    fetchData();
-    const interval = setInterval(fetchData, 15000);
+    fetchData(selectedProvider);
+    const interval = setInterval(() => fetchData(selectedProvider), 15000);
     return () => clearInterval(interval);
-  }, []);
+  }, [selectedProvider, fetchData]);
 
   const isProviderActive = (providerId) => {
     return connections.some(c => c.provider === providerId && c.isActive);
@@ -230,10 +229,11 @@ export default function UsagePage() {
   const modelUsageStats = (() => {
     const counts = {};
     detailedLogs.forEach(l => {
-      counts[l.model] = (counts[l.model] || 0) + 1;
+      const key = (l.provider ? l.provider + '/' : '') + l.model;
+      counts[key] = (counts[key] || 0) + 1;
     });
     const sorted = Object.entries(counts)
-      .map(([model, count]) => ({ model, count }))
+      .map(([key, count]) => ({ model: key, count }))
       .sort((a, b) => b.count - a.count);
     
     const total = detailedLogs.length;
@@ -351,6 +351,34 @@ export default function UsagePage() {
 
       {activeTab === 'overview' ? (
         <>
+          {/* Summary bar with provider filter */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-subtle)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Filter by Provider</span>
+              <select
+                value={selectedProvider}
+                onChange={e => { setSelectedProvider(e.target.value); setCurrentPage(1); }}
+                style={{
+                  background: 'var(--bg-sidebar)',
+                  color: 'var(--text-main)',
+                  border: '1px solid var(--border-color)',
+                  borderRadius: '6px',
+                  padding: '6px 12px',
+                  fontSize: '12px',
+                  cursor: 'pointer'
+                }}
+              >
+                <option value="">All Providers</option>
+                {connections.filter(c => c.isActive).map(c => (
+                  <option key={c.id || c.provider} value={c.provider}>{c.name || c.provider}</option>
+                ))}
+              </select>
+            </div>
+            <div style={{ fontSize: '11px', color: 'var(--text-subtle)' }}>
+              {selectedProvider ? `Showing: ${selectedProvider}` : 'Overall Summary'}
+            </div>
+          </div>
+
           {/* 1. Usage statistics cards */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '16px', marginBottom: '24px' }}>
             <div className="card" style={{ margin: 0, padding: '16px 20px' }}>
@@ -359,8 +387,13 @@ export default function UsagePage() {
             </div>
 
             <div className="card" style={{ margin: 0, padding: '16px 20px' }}>
-              <div style={{ fontSize: '10px', fontWeight: 600, color: 'var(--text-subtle)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Total Tokens</div>
-              <div style={{ fontSize: '20px', fontWeight: 700, marginTop: '8px', color: 'var(--text-main)', fontFamily: 'var(--font-mono)' }}>{(stats.totalPromptTokens + stats.totalCompletionTokens).toLocaleString()}</div>
+              <div style={{ fontSize: '10px', fontWeight: 600, color: 'var(--text-subtle)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Input Tokens</div>
+              <div style={{ fontSize: '20px', fontWeight: 700, marginTop: '8px', color: 'var(--text-main)', fontFamily: 'var(--font-mono)' }}>{stats.totalPromptTokens.toLocaleString()}</div>
+            </div>
+
+            <div className="card" style={{ margin: 0, padding: '16px 20px' }}>
+              <div style={{ fontSize: '10px', fontWeight: 600, color: 'var(--text-subtle)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Output Tokens</div>
+              <div style={{ fontSize: '20px', fontWeight: 700, marginTop: '8px', color: 'var(--text-main)', fontFamily: 'var(--font-mono)' }}>{stats.totalCompletionTokens.toLocaleString()}</div>
             </div>
 
             <div className="card" style={{ margin: 0, padding: '16px 20px' }}>
@@ -369,23 +402,13 @@ export default function UsagePage() {
             </div>
 
             <div className="card" style={{ margin: 0, padding: '16px 20px' }}>
-              <div style={{ fontSize: '10px', fontWeight: 600, color: 'var(--text-subtle)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Avg Latency</div>
-              <div style={{ fontSize: '20px', fontWeight: 700, marginTop: '8px', color: 'var(--color-primary)', fontFamily: 'var(--font-mono)' }}>{averageLatency}ms</div>
-            </div>
-
-            <div className="card" style={{ margin: 0, padding: '16px 20px' }}>
-              <div style={{ fontSize: '10px', fontWeight: 600, color: 'var(--text-subtle)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Est. Cost</div>
-              <div style={{ fontSize: '20px', fontWeight: 700, marginTop: '8px', color: 'var(--color-warning)', fontFamily: 'var(--font-mono)' }}>${stats.totalCost.toFixed(4)}</div>
-            </div>
-
-            <div className="card" style={{ margin: 0, padding: '16px 20px' }}>
               <div style={{ fontSize: '10px', fontWeight: 600, color: 'var(--text-subtle)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Compression</div>
               <div style={{ fontSize: '20px', fontWeight: 700, marginTop: '8px', color: 'var(--color-success)', fontFamily: 'var(--font-mono)' }}>{compressionSavedPct}%</div>
             </div>
 
             <div className="card" style={{ margin: 0, padding: '16px 20px' }}>
-              <div style={{ fontSize: '10px', fontWeight: 600, color: 'var(--text-subtle)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Cache Hit Rate</div>
-              <div style={{ fontSize: '20px', fontWeight: 700, marginTop: '8px', color: 'var(--color-success)', fontFamily: 'var(--font-mono)' }}>{cacheHitRate}%</div>
+              <div style={{ fontSize: '10px', fontWeight: 600, color: 'var(--text-subtle)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Est. Cost</div>
+              <div style={{ fontSize: '20px', fontWeight: 700, marginTop: '8px', color: 'var(--color-warning)', fontFamily: 'var(--font-mono)' }}>${stats.totalCost.toFixed(4)}</div>
             </div>
           </div>
 
@@ -715,62 +738,49 @@ export default function UsagePage() {
         /* Side-by-Side Tables Layout */
         <div style={{ display: 'grid', gridTemplateColumns: '4.5fr 5.5fr', gap: '24px', alignItems: 'start' }}>
           
-          {/* Left Table: Usage by Model */}
+          {/* Left Table: Usage by Model / Provider */}
           <div className="card" style={{ padding: '20px', margin: 0 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
               <h3 className="card-title" style={{ fontSize: '13px', textTransform: 'uppercase', letterSpacing: '0.5px', color: 'var(--text-subtle)', margin: 0 }}>
-                Usage by Model
+                Usage by Provider/Model
               </h3>
-              <div style={{ display: 'flex', gap: '4px', background: 'var(--bg-sidebar)', padding: '4px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
-                <button 
-                  onClick={() => setTableViewMode('cost')} 
-                  className="btn" 
-                  style={{
-                    fontSize: '11px', padding: '2px 10px', borderRadius: '4px', border: 'none', cursor: 'pointer',
-                    background: tableViewMode === 'cost' ? 'var(--color-primary)' : 'transparent',
-                    color: tableViewMode === 'cost' ? '#fff' : 'var(--text-muted)'
-                  }}
-                >
-                  Costs
-                </button>
-                <button 
-                  onClick={() => setTableViewMode('tokens')} 
-                  className="btn" 
-                  style={{
-                    fontSize: '11px', padding: '2px 10px', borderRadius: '4px', border: 'none', cursor: 'pointer',
-                    background: tableViewMode === 'tokens' ? 'var(--color-primary)' : 'transparent',
-                    color: tableViewMode === 'tokens' ? '#fff' : 'var(--text-muted)'
-                  }}
-                >
-                  Tokens
-                </button>
+              <div style={{ fontSize: '11px', color: 'var(--text-subtle)', fontWeight: 600 }}>
+                {modelSummaries.length} entries
               </div>
             </div>
 
             {modelSummaries.length === 0 ? (
               <div style={{ padding: '32px 0', textAlign: 'center', color: 'var(--text-subtle)', fontSize: '12px' }}>
-                No request models registered.
+                No request data registered.
               </div>
             ) : (
               <div style={{ overflowX: 'auto' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '11px', textAlign: 'left' }}>
                   <thead>
                     <tr style={{ borderBottom: '1px solid var(--border-color)', color: 'var(--text-subtle)' }}>
-                      <th style={{ padding: '10px 8px' }}>MODEL</th>
+                      <th style={{ padding: '10px 8px' }}>PROVIDER / MODEL</th>
                       <th style={{ padding: '10px 8px' }}>REQ</th>
-                      <th style={{ padding: '10px 8px', textAlign: 'right' }}>{tableViewMode === 'cost' ? 'COST' : 'TOKENS'}</th>
+                      <th style={{ padding: '10px 8px', textAlign: 'right' }}>COST</th>
                     </tr>
                   </thead>
                   <tbody>
                     {modelSummaries.map((row, index) => {
-                      const totalVal = tableViewMode === 'cost' ? `$${row.cost.toFixed(4)}` : (row.promptTokens + row.completionTokens).toLocaleString();
+                      const label = row.provider ? row.provider + '/' + row.model : row.model;
                       return (
                         <tr key={index} style={{ borderBottom: '1px solid var(--border-color)', color: 'var(--text-main)' }}>
                           <td style={{ padding: '10px 8px', fontWeight: 600 }}>
-                            {row.model}
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                              <div style={{
+                                width: '18px', height: '18px', borderRadius: '3px',
+                                background: getProviderColor(row.provider), color: '#fff',
+                                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                fontSize: '9px', fontWeight: 700, textTransform: 'uppercase'
+                              }}>{row.provider ? row.provider.charAt(0) : '?'}</div>
+                              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{label}</span>
+                            </div>
                           </td>
                           <td style={{ padding: '10px 8px', color: 'var(--text-subtle)' }}>{row.requests}</td>
-                          <td style={{ padding: '10px 8px', fontWeight: 700, color: 'var(--color-primary)', textAlign: 'right' }}>{totalVal}</td>
+                          <td style={{ padding: '10px 8px', fontWeight: 700, color: 'var(--color-primary)', textAlign: 'right' }}>${row.cost.toFixed(4)}</td>
                         </tr>
                       );
                     })}
@@ -780,7 +790,7 @@ export default function UsagePage() {
             )}
           </div>
 
-          {/* Right Table: Requests Log with Pagination */}
+          {/* Right Table: Request Logs with detail columns */}
           <div className="card" style={{ padding: '20px', margin: 0 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
               <h3 className="card-title" style={{ fontSize: '13px', textTransform: 'uppercase', letterSpacing: '0.5px', color: 'var(--text-subtle)', margin: 0 }}>
@@ -808,48 +818,51 @@ export default function UsagePage() {
                       <thead>
                         <tr style={{ borderBottom: '1px solid var(--border-color)', color: 'var(--text-subtle)' }}>
                           <th style={{ padding: '10px 8px' }}>DATE</th>
+                          <th style={{ padding: '10px 8px', textAlign: 'right' }}>TPS</th>
+                          <th style={{ padding: '10px 8px' }}>PROVIDER</th>
                           <th style={{ padding: '10px 8px' }}>MODEL</th>
-                          <th style={{ padding: '10px 8px' }}>STATUS</th>
                           <th style={{ padding: '10px 8px', textAlign: 'right' }}>COST</th>
+                          <th style={{ padding: '10px 8px', textAlign: 'right' }}>IN / OUT</th>
                         </tr>
                       </thead>
                       <tbody>
                         {paginatedLogs.map((row, index) => {
-                          const statusColor = row.status === 'ok' ? 'var(--color-success)' : 'var(--color-danger)';
+                          let parsedMeta = {};
+                          try { parsedMeta = JSON.parse(row.meta); } catch(e) {}
+                          const durationMs = parsedMeta.duration_ms || 0;
+                          const totalTokens = row.promptTokens + row.completionTokens;
+                          const tps = durationMs > 0 ? (totalTokens / (durationMs / 1000)).toFixed(1) : '—';
                           return (
                             <tr key={index} style={{ borderBottom: '1px solid var(--border-color)', color: 'var(--text-main)' }}>
                               <td style={{ padding: '10px 8px', color: 'var(--text-subtle)', whiteSpace: 'nowrap' }}>
                                 {formatLogDate(row.timestamp)}
                               </td>
+                              <td style={{ padding: '10px 8px', fontFamily: 'var(--font-mono)', textAlign: 'right', fontWeight: 600, color: 'var(--color-primary)' }}>
+                                {tps}
+                              </td>
                               <td style={{ padding: '10px 8px', fontWeight: 600 }}>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                                   <div style={{
-                                    width: '18px',
-                                    height: '18px',
-                                    borderRadius: '3px',
-                                    background: getProviderColor(row.provider),
-                                    color: '#fff',
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    justifyContent: 'center',
-                                    fontSize: '9px',
-                                    fontWeight: 700,
-                                    textTransform: 'uppercase'
+                                    width: '18px', height: '18px', borderRadius: '3px',
+                                    background: getProviderColor(row.provider), color: '#fff',
+                                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                    fontSize: '9px', fontWeight: 700, textTransform: 'uppercase'
                                   }}>
-                                    {row.provider ? row.provider.charAt(0) : 'M'}
+                                    {row.provider ? row.provider.charAt(0) : '?'}
                                   </div>
-                                  <span style={{ maxWidth: '120px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                    {row.model}
+                                  <span style={{ maxWidth: '100px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                    {row.provider || '—'}
                                   </span>
                                 </div>
                               </td>
-                              <td style={{ padding: '10px 8px' }}>
-                                <span style={{ color: statusColor, fontWeight: 600 }}>
-                                  {row.status === 'ok' ? 'Success' : 'Error'}
-                                </span>
+                              <td style={{ padding: '10px 8px', fontWeight: 600, maxWidth: '140px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                {row.model}
                               </td>
                               <td style={{ padding: '10px 8px', fontWeight: 600, textAlign: 'right' }}>
                                 ${row.cost.toFixed(5)}
+                              </td>
+                              <td style={{ padding: '10px 8px', fontFamily: 'var(--font-mono)', textAlign: 'right', fontSize: '10px', color: 'var(--text-subtle)' }}>
+                                {row.promptTokens.toLocaleString()}↑ / {row.completionTokens.toLocaleString()}↓
                               </td>
                             </tr>
                           );
