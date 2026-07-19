@@ -6,6 +6,19 @@ This tutorial guides you through compiling, running, and configuring your newly 
 
 ---
 
+## Memory Comparison
+
+| Router | Runtime | Memory (idle) |
+|--------|---------|--------------|
+| **MyAiRouter** | Native Go | ~14 MB - 23 MB |
+| 9Router Next.js | Next.js server | ~132 MB |
+| 9Router Node process | Node.js | ~58 MB |
+| **Total 9Router** | Node + Next | **~190 MB** |
+
+**MyAiRouter: 14 MB - 23 MB — 9Router: ~190 MB — ≈8× less memory**
+
+---
+
 ## 1. Build the Application
 
 Because `myAiRouter` embeds all frontend assets directly into the Go executable, you only need to run a simple build step to generate the final standalone binary.
