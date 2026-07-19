@@ -4,6 +4,12 @@ import (
 	"encoding/json"
 )
 
+type PipelineStep struct {
+	Name    string                 `json:"name"`
+	Enabled bool                   `json:"enabled"`
+	Config  map[string]interface{} `json:"config"`
+}
+
 type Settings struct {
 	RtkEnabled      bool   `json:"rtkEnabled"`
 	HeadroomEnabled bool   `json:"headroomEnabled"`
@@ -14,6 +20,14 @@ type Settings struct {
 	PonytailLevel   string `json:"ponytailLevel"`
 	RequireLogin    bool   `json:"requireLogin"`
 	PasswordHash    string `json:"passwordHash"`
+
+	// New prompt optimizer fields
+	OptimizerEnabled     bool           `json:"optimizerEnabled"`
+	OptimizationEngine   string         `json:"optimizationEngine"`
+	OptimizationProfile  string         `json:"optimizationProfile"`
+	OptimizationGoal     string         `json:"optimizationGoal"`
+	PipelineSteps        []PipelineStep `json:"pipelineSteps"`
+	TraceStorageMode     string         `json:"traceStorageMode"`
 }
 
 func GetSettings() (*Settings, error) {
@@ -26,6 +40,28 @@ func GetSettings() (*Settings, error) {
 	var settings Settings
 	if err := json.Unmarshal([]byte(dataStr), &settings); err != nil {
 		return nil, err
+	}
+
+	// Apply default values for dynamic migration fallback
+	if settings.OptimizationEngine == "" {
+		settings.OptimizationEngine = "auto"
+	}
+	if settings.OptimizationProfile == "" {
+		settings.OptimizationProfile = "balanced"
+	}
+	if settings.OptimizationGoal == "" {
+		settings.OptimizationGoal = "balanced"
+	}
+	if len(settings.PipelineSteps) == 0 {
+		settings.PipelineSteps = []PipelineStep{
+			{Name: "tool", Enabled: true, Config: nil},
+			{Name: "structure", Enabled: true, Config: nil},
+			{Name: "dedup", Enabled: true, Config: nil},
+			{Name: "markdown", Enabled: true, Config: nil},
+		}
+	}
+	if settings.TraceStorageMode == "" {
+		settings.TraceStorageMode = "store_both" // Default is permissive for benchmark replays
 	}
 
 	return &settings, nil

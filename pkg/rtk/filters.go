@@ -342,20 +342,40 @@ func FilterDedupLog(input string) string {
 		return input
 	}
 	var result []string
-	seen := make(map[string]int)
-	for _, l := range lines {
-		trimmed := strings.TrimSpace(l)
+	n := len(lines)
+	i := 0
+	for i < n {
+		line := lines[i]
+		trimmed := strings.TrimSpace(line)
 		if len(trimmed) == 0 {
+			result = append(result, line)
+			i++
 			continue
 		}
-		// Abstract digits to dedup matching formats (e.g. timestamps)
 		abstracted := regexp.MustCompile(`\d`).ReplaceAllString(trimmed, "X")
-		seen[abstracted]++
-		if seen[abstracted] <= 3 {
-			result = append(result, l)
-		} else if seen[abstracted] == 4 {
-			result = append(result, "... (duplicate lines omitted)")
+		j := i + 1
+		for j < n {
+			nextTrimmed := strings.TrimSpace(lines[j])
+			if len(nextTrimmed) == 0 {
+				break
+			}
+			nextAbstracted := regexp.MustCompile(`\d`).ReplaceAllString(nextTrimmed, "X")
+			if nextAbstracted != abstracted {
+				break
+			}
+			j++
 		}
+		repeatCount := j - i
+		if repeatCount > 3 {
+			result = append(result, lines[i])
+			result = append(result, lines[i+1])
+			result = append(result, fmt.Sprintf("... (repeated %d times)", repeatCount-2))
+		} else {
+			for k := i; k < j; k++ {
+				result = append(result, lines[k])
+			}
+		}
+		i = j
 	}
 	return strings.Join(result, "\n")
 }

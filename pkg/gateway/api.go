@@ -14,6 +14,13 @@ import (
 
 	"myAiRouter/pkg/db"
 	"myAiRouter/pkg/logger"
+	"myAiRouter/pkg/optimizer"
+	"myAiRouter/pkg/optimizer/planner"
+	"myAiRouter/pkg/optimizer/registry"
+	"myAiRouter/pkg/optimizer/runner"
+	_ "myAiRouter/pkg/optimizer/passes"
+	_ "myAiRouter/pkg/optimizer/profiles"
+	_ "myAiRouter/pkg/optimizer/validators"
 )
 
 // In-memory session store (UUID → expiry)
@@ -79,6 +86,10 @@ func RegisterAdminRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/health", handleHealth)
 	mux.HandleFunc("/api/traces", handleTraces)
 	mux.HandleFunc("/api/traces/", handleTraceDetail)
+	// Prompt Optimizer
+	mux.HandleFunc("/api/optimizer/engines", handleOptimizerEngines)
+	mux.HandleFunc("/api/optimizer/preview", handleOptimizerPreview)
+	mux.HandleFunc("/api/optimizer/benchmark", handleOptimizerBenchmark)
 	// Auth
 	mux.HandleFunc("/api/auth/status", handleAuthStatus)
 	mux.HandleFunc("/api/auth/login", handleAuthLogin)
@@ -1103,4 +1114,268 @@ func handleAuthChangePassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true})
+}
+
+func handleOptimizerEngines(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	if r.Method != http.MethodGet {
+		WriteErrorResponse(w, http.StatusMethodNotAllowed, "Method not allowed")
+		return
+	}
+	_ = json.NewEncoder(w).Encode(registry.GetEngines())
+}
+
+type PreviewRequest struct {
+	Prompt        string             `json:"prompt"`
+	Engine        string             `json:"engine"`
+	Power         string             `json:"power"`
+	Goal          string             `json:"goal"`
+	PipelineSteps []db.PipelineStep  `json:"pipelineSteps"`
+}
+
+func handleOptimizerPreview(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	if r.Method != http.MethodPost {
+		WriteErrorResponse(w, http.StatusMethodNotAllowed, "Method not allowed")
+		return
+	}
+
+	var req PreviewRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		WriteErrorResponse(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+
+	if req.Engine == "" {
+		req.Engine = "auto"
+	}
+	if req.Power == "" {
+		req.Power = "balanced"
+	}
+	if req.Goal == "" {
+		req.Goal = "balanced"
+	}
+
+	messages := []interface{}{
+		map[string]interface{}{"role": "user", "content": req.Prompt},
+	}
+
+	ratio := 0.60
+	aggr := 0.5
+	switch req.Power {
+	case "lite":
+		ratio = 0.85
+		aggr = 0.3
+	case "balanced":
+		ratio = 0.60
+		aggr = 0.5
+	case "aggressive":
+		ratio = 0.40
+		aggr = 0.7
+	case "extreme":
+		ratio = 0.20
+		aggr = 0.9
+	}
+
+	optCtx := &optimizer.OptimizationContext{
+		Context:  r.Context(),
+		Messages: messages,
+		Goal:     req.Goal,
+		Profile: optimizer.CompressionProfile{
+			Name:           req.Power,
+			TargetRatio:    ratio,
+			Aggressiveness: aggr,
+		},
+		Metadata: make(map[string]interface{}),
+	}
+
+	loadedAnalyzers := registry.GetAnalyzers()
+	for _, a := range loadedAnalyzers {
+		_ = a.Analyze(optCtx)
+	}
+
+	plannerObj := planner.NewPlanner()
+	plan, err := plannerObj.Plan(optCtx, req.Engine, req.PipelineSteps)
+	if err != nil {
+		WriteErrorResponse(w, http.StatusInternalServerError, "Planning failed: "+err.Error())
+		return
+	}
+
+	runnerObj := runner.NewRunner()
+	res, err := runnerObj.Run(optCtx, plan)
+	if err != nil {
+		WriteErrorResponse(w, http.StatusInternalServerError, "Runner failed: "+err.Error())
+		return
+	}
+
+	var optimizedPrompt string
+	if len(res.Messages) > 0 {
+		if m, ok := res.Messages[0].(map[string]interface{}); ok {
+			optimizedPrompt, _ = m["content"].(string)
+		}
+	}
+
+	type PreviewResponse struct {
+		Plan   interface{} `json:"plan"`
+		Before interface{} `json:"before"`
+		After  interface{} `json:"after"`
+		Passes []string    `json:"passes"`
+		Report interface{} `json:"report"`
+	}
+
+	_ = json.NewEncoder(w).Encode(PreviewResponse{
+		Plan: plan,
+		Before: map[string]interface{}{
+			"prompt": req.Prompt,
+			"tokens": res.OriginalTokens,
+			"bytes":  res.OriginalBytes,
+		},
+		After: map[string]interface{}{
+			"prompt": optimizedPrompt,
+			"tokens": res.OptimizedTokens,
+			"bytes":  res.OptimizedBytes,
+		},
+		Passes: res.Passes,
+		Report: res,
+	})
+}
+
+func handleOptimizerBenchmark(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	if r.Method != http.MethodPost {
+		WriteErrorResponse(w, http.StatusMethodNotAllowed, "Method not allowed")
+		return
+	}
+
+	traces, err := db.GetRecentTraces(100)
+	if err != nil {
+		WriteErrorResponse(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	settings, err := db.GetSettings()
+	if err != nil {
+		WriteErrorResponse(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	ratio := 0.60
+	aggr := 0.5
+	switch settings.OptimizationProfile {
+	case "lite":
+		ratio = 0.85
+		aggr = 0.3
+	case "balanced":
+		ratio = 0.60
+		aggr = 0.5
+	case "aggressive":
+		ratio = 0.40
+		aggr = 0.7
+	case "extreme":
+		ratio = 0.20
+		aggr = 0.9
+	}
+
+	type EngineStats struct {
+		Savings     float64 `json:"savings"`
+		LatencyMs   float64 `json:"latencyMs"`
+		SuccessRate float64 `json:"successRate"`
+		SampleCount int     `json:"sampleCount"`
+	}
+
+	results := make(map[string]map[string]*EngineStats)
+	enginesToTest := []string{"tool", "structure", "fusion"}
+
+	for _, engine := range enginesToTest {
+		results[engine] = make(map[string]*EngineStats)
+		for _, cat := range []string{"json", "code", "log", "markdown", "text", "all"} {
+			results[engine][cat] = &EngineStats{Savings: 0, LatencyMs: 0, SuccessRate: 0, SampleCount: 0}
+		}
+	}
+
+	plannerObj := planner.NewPlanner()
+	runnerObj := runner.NewRunner()
+	loadedAnalyzers := registry.GetAnalyzers()
+
+	for _, t := range traces {
+		var traceData map[string]interface{}
+		if err := json.Unmarshal([]byte(t.Data), &traceData); err != nil {
+			continue
+		}
+
+		origMsgsObj, ok := traceData["originalMessages"]
+		if !ok || origMsgsObj == nil {
+			continue
+		}
+
+		origMsgs, ok := origMsgsObj.([]interface{})
+		if !ok || len(origMsgs) == 0 {
+			continue
+		}
+
+		optCtx := &optimizer.OptimizationContext{
+			Context:  r.Context(),
+			Messages: origMsgs,
+			Goal:     settings.OptimizationGoal,
+			Profile: optimizer.CompressionProfile{
+				Name:           settings.OptimizationProfile,
+				TargetRatio:    ratio,
+				Aggressiveness: aggr,
+			},
+			Metadata: make(map[string]interface{}),
+		}
+
+		for _, a := range loadedAnalyzers {
+			_ = a.Analyze(optCtx)
+		}
+
+		category := optCtx.ContentType
+
+		for _, engine := range enginesToTest {
+			optCtxCopy := optCtx.Clone()
+			plan, err := plannerObj.Plan(optCtxCopy, engine, nil)
+			if err != nil {
+				continue
+			}
+
+			t0 := time.Now()
+			res, err := runnerObj.Run(optCtxCopy, plan)
+			dur := time.Since(t0)
+
+			savings := 0.0
+			success := 1.0
+			if err != nil {
+				success = 0.0
+			} else if res.OriginalTokens > 0 {
+				savings = float64(res.SavedTokens) / float64(res.OriginalTokens)
+			}
+
+			catStats := results[engine][category]
+			if catStats != nil {
+				catStats.Savings += savings
+				catStats.LatencyMs += float64(dur.Milliseconds())
+				catStats.SuccessRate += success
+				catStats.SampleCount++
+			}
+
+			allStats := results[engine]["all"]
+			allStats.Savings += savings
+			allStats.LatencyMs += float64(dur.Milliseconds())
+			allStats.SuccessRate += success
+			allStats.SampleCount++
+		}
+	}
+
+	for _, engine := range enginesToTest {
+		for _, cat := range []string{"json", "code", "log", "markdown", "text", "all"} {
+			s := results[engine][cat]
+			if s.SampleCount > 0 {
+				s.Savings = (s.Savings / float64(s.SampleCount)) * 100
+				s.LatencyMs = s.LatencyMs / float64(s.SampleCount)
+				s.SuccessRate = (s.SuccessRate / float64(s.SampleCount)) * 100
+			}
+		}
+	}
+
+	_ = json.NewEncoder(w).Encode(results)
 }

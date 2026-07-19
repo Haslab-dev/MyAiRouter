@@ -9,6 +9,16 @@ import (
 )
 
 func Observability(ctx *context.GatewayContext, next HandlerFunc) error {
+	var originalMessages []interface{}
+	settings, dbErr := db.GetSettings()
+	if dbErr == nil && settings != nil && settings.TraceStorageMode != "disabled" && settings.TraceStorageMode != "metadata_only" {
+		if msgs, ok := ctx.RequestBody["messages"].([]interface{}); ok {
+			// Deep clone messages
+			msgBytes, _ := json.Marshal(msgs)
+			_ = json.Unmarshal(msgBytes, &originalMessages)
+		}
+	}
+
 	// Execute the downstream pipeline first to capture outcomes and metrics
 	err := next(ctx)
 
@@ -93,6 +103,16 @@ func Observability(ctx *context.GatewayContext, next HandlerFunc) error {
 		"steps":            steps,
 		"errors":           ctx.Errors,
 	}
+
+	if settings != nil && settings.TraceStorageMode != "disabled" {
+		if settings.TraceStorageMode == "store_both" {
+			traceData["originalMessages"] = originalMessages
+			traceData["optimizedMessages"] = ctx.RequestBody["messages"]
+		} else if settings.TraceStorageMode == "store_compressed" {
+			traceData["optimizedMessages"] = ctx.RequestBody["messages"]
+		}
+	}
+
 	traceJSON, _ := json.Marshal(traceData)
 	_ = db.SaveRequestTrace(ctx.RequestID, ctx.Provider, ctx.Model, connID, statusStr, string(traceJSON))
 

@@ -52,7 +52,7 @@ func main() {
 
 
 func printHelp() {
-	fmt.Println(`myairouter - AI model router and gateway
+	fmt.Print(`myairouter - AI model router and gateway
 
 Usage:
   myairouter            start server (foreground)
