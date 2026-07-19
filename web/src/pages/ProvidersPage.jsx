@@ -41,6 +41,32 @@ export default function ProvidersPage() {
   const [credName, setCredName] = useState('');
   const [credKey, setCredKey] = useState('');
   const [credPriority, setCredPriority] = useState(1);
+  const [customHeaders, setCustomHeaders] = useState([{ key: '', value: '' }]);
+
+  useEffect(() => {
+    const providerId = selectedNode?.id || selectedStandard?.id;
+    if (providerId) {
+      const activeConn = connections.find(c => c.provider === providerId);
+      if (activeConn) {
+        setCredName(activeConn.name || '');
+        setCredKey(activeConn.data?.apiKey || '');
+        setCredPriority(activeConn.priority || 1);
+        const hdrs = activeConn.data?.headers || {};
+        const headerList = Object.keys(hdrs).map(k => ({ key: k, value: hdrs[k] }));
+        setCustomHeaders(headerList.length > 0 ? headerList : [{ key: '', value: '' }]);
+      } else {
+        setCredName('');
+        setCredKey('');
+        setCredPriority(1);
+        setCustomHeaders([{ key: '', value: '' }]);
+      }
+    } else {
+      setCredName('');
+      setCredKey('');
+      setCredPriority(1);
+      setCustomHeaders([{ key: '', value: '' }]);
+    }
+  }, [selectedNode, selectedStandard, connections]);
 
   // Kilo Code OAuth state
   const [showOauth, setShowOauth] = useState(false);
@@ -233,7 +259,25 @@ export default function ProvidersPage() {
     e.preventDefault();
     if (!credKey.trim() || !selectedNode) return;
 
-    const payload = {
+    const headersMap = {};
+    customHeaders.forEach(h => {
+      if (h.key.trim() && h.value.trim()) {
+        headersMap[h.key.trim()] = h.value.trim();
+      }
+    });
+
+    const activeConn = connections.find(c => c.provider === selectedNode.id);
+    const isEdit = !!activeConn;
+
+    const payload = isEdit ? {
+      name: credName || `ProdKey`,
+      priority: parseInt(credPriority, 10) || 1,
+      data: {
+        apiKey: credKey,
+        baseUrl: activeConn.data?.baseUrl || selectedNode.data?.baseUrl || '',
+        headers: headersMap
+      }
+    } : {
       id: `${selectedNode.id}-conn-${Date.now()}`,
       provider: selectedNode.id,
       authType: 'apikey',
@@ -241,18 +285,23 @@ export default function ProvidersPage() {
       email: '',
       priority: parseInt(credPriority, 10) || 1,
       isActive: true,
-      data: { apiKey: credKey, baseUrl: selectedNode.data?.baseUrl }
+      data: { 
+        apiKey: credKey, 
+        baseUrl: selectedNode.data?.baseUrl || '',
+        headers: headersMap
+      }
     };
 
     try {
-      const res = await fetch('/api/providers', {
-        method: 'POST',
+      const res = await fetch(isEdit ? `/api/providers/${activeConn.id}` : '/api/providers', {
+        method: isEdit ? 'PATCH' : 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
       if (res.ok) {
         setCredName('');
         setCredKey('');
+        setCustomHeaders([{ key: '', value: '' }]);
         setSelectedNode(null);
         fetchData();
       }
@@ -272,7 +321,25 @@ export default function ProvidersPage() {
       'glm-coding': 'https://open.bigmodel.cn/api/coding/paas/v4',
     };
 
-    const payload = {
+    const headersMap = {};
+    customHeaders.forEach(h => {
+      if (h.key.trim() && h.value.trim()) {
+        headersMap[h.key.trim()] = h.value.trim();
+      }
+    });
+
+    const activeConn = connections.find(c => c.provider === selectedStandard.id);
+    const isEdit = !!activeConn;
+
+    const payload = isEdit ? {
+      name: credName || `ProdKey`,
+      priority: parseInt(credPriority, 10) || 1,
+      data: {
+        apiKey: credKey,
+        baseUrl: activeConn.data?.baseUrl || defaultUrls[selectedStandard.id] || '',
+        headers: headersMap
+      }
+    } : {
       id: `${selectedStandard.id}-conn-${Date.now()}`,
       provider: selectedStandard.id,
       authType: 'apikey',
@@ -280,18 +347,23 @@ export default function ProvidersPage() {
       email: '',
       priority: parseInt(credPriority, 10) || 1,
       isActive: true,
-      data: { apiKey: credKey, baseUrl: defaultUrls[selectedStandard.id] || '' }
+      data: { 
+        apiKey: credKey, 
+        baseUrl: defaultUrls[selectedStandard.id] || '',
+        headers: headersMap
+      }
     };
 
     try {
-      const res = await fetch('/api/providers', {
-        method: 'POST',
+      const res = await fetch(isEdit ? `/api/providers/${activeConn.id}` : '/api/providers', {
+        method: isEdit ? 'PATCH' : 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
       if (res.ok) {
         setCredName('');
         setCredKey('');
+        setCustomHeaders([{ key: '', value: '' }]);
         setSelectedStandard(null);
         fetchData();
       }
@@ -1006,6 +1078,60 @@ export default function ProvidersPage() {
               />
             </div>
 
+            <div className="form-group" style={{ marginTop: '12px' }}>
+              <label className="form-label">Custom HTTP Headers</label>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                {customHeaders.map((hdr, idx) => (
+                  <div key={idx} style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                    <input
+                      type="text"
+                      placeholder="Header-Name"
+                      value={hdr.key}
+                      onChange={(e) => {
+                        const updated = [...customHeaders];
+                        updated[idx].key = e.target.value;
+                        setCustomHeaders(updated);
+                      }}
+                      className="input-field"
+                      style={{ flex: 1, height: '32px', fontSize: '12px' }}
+                    />
+                    <input
+                      type="text"
+                      placeholder="value"
+                      value={hdr.value}
+                      onChange={(e) => {
+                        const updated = [...customHeaders];
+                        updated[idx].value = e.target.value;
+                        setCustomHeaders(updated);
+                      }}
+                      className="input-field"
+                      style={{ flex: 1, height: '32px', fontSize: '12px' }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const updated = customHeaders.filter((_, i) => i !== idx);
+                        setCustomHeaders(updated.length > 0 ? updated : [{ key: '', value: '' }]);
+                      }}
+                      className="btn btn-secondary"
+                      style={{ padding: '0 8px', height: '32px', display: 'flex', alignItems: 'center', borderColor: 'rgba(239,68,68,0.2)', color: 'var(--color-danger)' }}
+                    >
+                      <span className="material-symbols-outlined" style={{ fontSize: '16px' }}>delete</span>
+                    </button>
+                  </div>
+                ))}
+                <button
+                  type="button"
+                  onClick={() => setCustomHeaders([...customHeaders, { key: '', value: '' }])}
+                  className="btn btn-secondary"
+                  style={{ alignSelf: 'flex-start', padding: '4px 12px', fontSize: '11px', height: '24px', display: 'flex', alignItems: 'center', gap: '4px', marginTop: '4px' }}
+                >
+                  <span className="material-symbols-outlined" style={{ fontSize: '12px' }}>add</span>
+                  Add Header
+                </button>
+              </div>
+            </div>
+
             <div style={{ display: 'flex', gap: '12px', marginTop: '16px' }}>
               <button type="submit" className="btn btn-primary">Save Credentials</button>
               <button type="button" onClick={() => setSelectedNode(null)} className="btn btn-secondary">Cancel</button>
@@ -1052,6 +1178,60 @@ export default function ProvidersPage() {
                 className="input-field"
                 min="1"
               />
+            </div>
+
+            <div className="form-group" style={{ marginTop: '12px' }}>
+              <label className="form-label">Custom HTTP Headers</label>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                {customHeaders.map((hdr, idx) => (
+                  <div key={idx} style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                    <input
+                      type="text"
+                      placeholder="Header-Name"
+                      value={hdr.key}
+                      onChange={(e) => {
+                        const updated = [...customHeaders];
+                        updated[idx].key = e.target.value;
+                        setCustomHeaders(updated);
+                      }}
+                      className="input-field"
+                      style={{ flex: 1, height: '32px', fontSize: '12px' }}
+                    />
+                    <input
+                      type="text"
+                      placeholder="value"
+                      value={hdr.value}
+                      onChange={(e) => {
+                        const updated = [...customHeaders];
+                        updated[idx].value = e.target.value;
+                        setCustomHeaders(updated);
+                      }}
+                      className="input-field"
+                      style={{ flex: 1, height: '32px', fontSize: '12px' }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const updated = customHeaders.filter((_, i) => i !== idx);
+                        setCustomHeaders(updated.length > 0 ? updated : [{ key: '', value: '' }]);
+                      }}
+                      className="btn btn-secondary"
+                      style={{ padding: '0 8px', height: '32px', display: 'flex', alignItems: 'center', borderColor: 'rgba(239,68,68,0.2)', color: 'var(--color-danger)' }}
+                    >
+                      <span className="material-symbols-outlined" style={{ fontSize: '16px' }}>delete</span>
+                    </button>
+                  </div>
+                ))}
+                <button
+                  type="button"
+                  onClick={() => setCustomHeaders([...customHeaders, { key: '', value: '' }])}
+                  className="btn btn-secondary"
+                  style={{ alignSelf: 'flex-start', padding: '4px 12px', fontSize: '11px', height: '24px', display: 'flex', alignItems: 'center', gap: '4px', marginTop: '4px' }}
+                >
+                  <span className="material-symbols-outlined" style={{ fontSize: '12px' }}>add</span>
+                  Add Header
+                </button>
+              </div>
             </div>
 
             <div style={{ display: 'flex', gap: '12px', marginTop: '16px' }}>

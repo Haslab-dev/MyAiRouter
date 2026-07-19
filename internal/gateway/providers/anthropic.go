@@ -49,6 +49,15 @@ func (p *AnthropicProvider) Execute(ctx context.Context, conn *db.ProviderConnec
 	req.Header.Set("x-api-key", apiKey)
 	req.Header.Set("anthropic-version", "2023-06-01")
 
+	// Inject custom headers
+	if headers, ok := conn.Data["headers"].(map[string]interface{}); ok {
+		for k, v := range headers {
+			if valStr, ok := v.(string); ok {
+				req.Header.Set(k, valStr)
+			}
+		}
+	}
+
 	client := &http.Client{Timeout: 60 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
