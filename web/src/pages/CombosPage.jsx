@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react';
+import { useSnackbar } from '../stores/snackbar';
 
 export default function CombosPage() {
+  const notify = useSnackbar((s) => s.notify);
   const [combos, setCombos] = useState([]);
   const [providers, setProviders] = useState([]);
   const [showForm, setShowForm] = useState(false);
@@ -72,14 +74,22 @@ export default function CombosPage() {
       setSelectedModels([]);
       setShowForm(false);
       setEditCombo(null);
-      fetchCombos();
+      await fetchCombos();
+      notify('Route saved successfully!', 'success');
+    } else {
+      notify('Failed to save route.', 'error');
     }
   };
 
   const handleDelete = async (id) => {
     if (!confirm('Delete this combo?')) return;
     const res = await fetch(`/api/combos?id=${id}`, { method: 'DELETE' });
-    if (res.ok) fetchCombos();
+    if (res.ok) {
+      await fetchCombos();
+      notify('Route deleted.', 'info');
+    } else {
+      notify('Failed to delete route.', 'error');
+    }
   };
 
   const addModel = (modelId) => {

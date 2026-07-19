@@ -12,6 +12,7 @@ import TracesPage from './pages/TracesPage';
 import LoginPage from './pages/LoginPage';
 import OnboardingPage from './pages/OnboardingPage';
 import UserMenu from './components/UserMenu';
+import Snackbar from './components/Snackbar';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 
 const NAV_ITEMS = [
@@ -149,6 +150,7 @@ const activeConns = conns.filter(c => c.isActive);
           </Routes>
         </main>
       </div>
+      <Snackbar />
     </div>
   );
 }

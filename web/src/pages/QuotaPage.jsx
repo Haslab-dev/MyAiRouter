@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react';
+import { useSnackbar } from '../stores/snackbar';
 
 export default function QuotaPage() {
+  const notify = useSnackbar((s) => s.notify);
   const [connections, setConnections] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -33,10 +35,14 @@ export default function QuotaPage() {
         body: JSON.stringify({ isActive: !currentActive })
       });
       if (res.ok) {
-        fetchConnections();
+        await fetchConnections();
+        notify(`Provider ${currentActive ? 'disabled' : 'enabled'} successfully.`, 'success');
+      } else {
+        notify('Failed to update provider status.', 'error');
       }
     } catch (err) {
       console.error('Error toggling provider state:', err);
+      notify('Error updating provider.', 'error');
     }
   };
 
@@ -45,10 +51,14 @@ export default function QuotaPage() {
     try {
       const res = await fetch(`/api/providers/${id}`, { method: 'DELETE' });
       if (res.ok) {
-        fetchConnections();
+        await fetchConnections();
+        notify('Provider connection removed.', 'info');
+      } else {
+        notify('Failed to remove provider.', 'error');
       }
     } catch (err) {
       console.error('Error deleting provider connection:', err);
+      notify('Error removing provider.', 'error');
     }
   };
 

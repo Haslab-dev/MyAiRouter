@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react';
+import { useSnackbar } from '../stores/snackbar';
 
 export default function EndpointPage() {
+  const notify = useSnackbar((s) => s.notify);
   const [keys, setKeys] = useState([]);
   const [newKeyName, setNewKeyName] = useState('');
   const [copiedKeyId, setCopiedKeyId] = useState(null);
@@ -38,13 +40,17 @@ export default function EndpointPage() {
 
       if (res.ok) {
         setNewKeyName('');
-        fetchKeys();
+        await fetchKeys();
+        notify('API key created successfully!', 'success');
       } else {
         const data = await res.json();
-        setError(data.error || 'Failed to create key');
+        const msg = data.error || 'Failed to create key';
+        setError(msg);
+        notify(msg, 'error');
       }
     } catch (err) {
       setError('Connection error');
+      notify('Connection error', 'error');
     } finally {
       setLoading(false);
     }
@@ -55,10 +61,14 @@ export default function EndpointPage() {
     try {
       const res = await fetch(`/api/keys?id=${id}`, { method: 'DELETE' });
       if (res.ok) {
-        fetchKeys();
+        await fetchKeys();
+        notify('API key deleted.', 'info');
+      } else {
+        notify('Failed to delete API key.', 'error');
       }
     } catch (err) {
       console.error('Error deleting key:', err);
+      notify('Error deleting key.', 'error');
     }
   };
 

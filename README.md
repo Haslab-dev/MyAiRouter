@@ -71,7 +71,20 @@ go build -o myAiRouter .
 
 ---
 
-## 5. Configure a Provider Account
+## 5. Version Management
+
+```bash
+make patch-version          # bump patch (0.1.0 → 0.1.1)
+make minor-version          # bump minor, reset patch (0.1.0 → 0.2.0)
+make major-version          # bump major, reset minor+patch (0.1.0 → 1.0.0)
+make set-version V=x.y.z    # set explicit version
+```
+
+Updates both `main.go` (backend) and `web/package.json` (client).
+
+---
+
+## 6. Configure a Provider Account
 
 1. Open your web browser and navigate to the dashboard at: **`http://localhost:20128/`**.
 2. Go to the **Providers** section using the sidebar navigation.

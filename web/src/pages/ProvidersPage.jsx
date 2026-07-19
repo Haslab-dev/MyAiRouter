@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useSnackbar } from '../stores/snackbar';
 
 const CORE_PROVIDERS = [
   { id: 'kilocode', name: 'Kilo Code', type: 'oauth', icon: 'grid_view', color: '#eab308', desc: 'Secure authorization code login' },
@@ -9,6 +10,7 @@ const CORE_PROVIDERS = [
 ];
 
 export default function ProvidersPage() {
+  const notify = useSnackbar((s) => s.notify);
   const [connections, setConnections] = useState([]);
   const [nodes, setNodes] = useState([]);
   const [customModels, setCustomModels] = useState([]);
@@ -42,6 +44,7 @@ export default function ProvidersPage() {
   const [credKey, setCredKey] = useState('');
   const [credPriority, setCredPriority] = useState(1);
   const [customHeaders, setCustomHeaders] = useState([{ key: '', value: '' }]);
+
 
   useEffect(() => {
     const providerId = selectedNode?.id || selectedStandard?.id;
@@ -123,7 +126,7 @@ export default function ProvidersPage() {
   }, []);
 
   const getProviderMetrics = (providerId) => {
-    const providerLogs = detailedLogs.filter(l => 
+    const providerLogs = detailedLogs.filter(l =>
       l.provider?.toLowerCase() === providerId.toLowerCase() ||
       (connections.find(c => c.id === l.connectionId)?.provider?.toLowerCase() === providerId.toLowerCase())
     );
@@ -149,7 +152,7 @@ export default function ProvidersPage() {
           totalLatency += meta.duration_ms;
           latencyCount++;
         }
-      } catch (e) {}
+      } catch (e) { }
     });
 
     const avgLatency = latencyCount > 0 ? (totalLatency / latencyCount).toFixed(0) + 'ms' : '—';
@@ -285,8 +288,8 @@ export default function ProvidersPage() {
       email: '',
       priority: parseInt(credPriority, 10) || 1,
       isActive: true,
-      data: { 
-        apiKey: credKey, 
+      data: {
+        apiKey: credKey,
         baseUrl: selectedNode.data?.baseUrl || '',
         headers: headersMap
       }
@@ -303,10 +306,15 @@ export default function ProvidersPage() {
         setCredKey('');
         setCustomHeaders([{ key: '', value: '' }]);
         setSelectedNode(null);
-        fetchData();
+        await fetchData();
+        notify(isEdit ? 'Credentials updated successfully!' : 'Credentials saved successfully!', 'success');
+      } else {
+        const errorData = await res.json().catch(() => ({}));
+        notify(errorData.error || 'Failed to save credentials.', 'error');
       }
     } catch (err) {
       console.error(err);
+      notify('Error saving credentials.', 'error');
     }
   };
 
@@ -347,8 +355,8 @@ export default function ProvidersPage() {
       email: '',
       priority: parseInt(credPriority, 10) || 1,
       isActive: true,
-      data: { 
-        apiKey: credKey, 
+      data: {
+        apiKey: credKey,
         baseUrl: defaultUrls[selectedStandard.id] || '',
         headers: headersMap
       }
@@ -365,10 +373,15 @@ export default function ProvidersPage() {
         setCredKey('');
         setCustomHeaders([{ key: '', value: '' }]);
         setSelectedStandard(null);
-        fetchData();
+        await fetchData();
+        notify(isEdit ? 'Credentials updated successfully!' : 'Credentials saved successfully!', 'success');
+      } else {
+        const errorData = await res.json().catch(() => ({}));
+        notify(errorData.error || 'Failed to save credentials.', 'error');
       }
     } catch (err) {
       console.error(err);
+      notify('Error saving credentials.', 'error');
     }
   };
 
@@ -394,10 +407,14 @@ export default function ProvidersPage() {
         setNodeName('');
         setNodeUrl('');
         setShowAddNode(false);
-        fetchData();
+        await fetchData();
+        notify('Provider node created successfully!', 'success');
+      } else {
+        notify('Failed to create node.', 'error');
       }
     } catch (err) {
       console.error(err);
+      notify('Error creating node.', 'error');
     }
   };
 
@@ -407,10 +424,14 @@ export default function ProvidersPage() {
       const res = await fetch(`/api/provider-nodes/${id}`, { method: 'DELETE' });
       if (res.ok) {
         setViewingDetailProvider(null);
-        fetchData();
+        await fetchData();
+        notify('Provider node deleted successfully!', 'info');
+      } else {
+        notify('Failed to delete node.', 'error');
       }
     } catch (err) {
       console.error(err);
+      notify('Error deleting node.', 'error');
     }
   };
 
@@ -422,9 +443,15 @@ export default function ProvidersPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ providerAlias: providerId, ids }),
       });
-      if (res.ok) fetchEnabledModels(providerId);
+      if (res.ok) {
+        await fetchEnabledModels(providerId);
+        notify('Model status updated!', 'success');
+      } else {
+        notify('Failed to update model status.', 'error');
+      }
     } catch (err) {
       console.error(err);
+      notify('Error updating model status.', 'error');
     }
   };
 
@@ -452,10 +479,14 @@ export default function ProvidersPage() {
       const res = await fetch(`/api/providers/${conn.id}`, { method: 'DELETE' });
       if (res.ok) {
         setViewingDetailProvider(null);
-        fetchData();
+        await fetchData();
+        notify('Credentials connection deleted.', 'info');
+      } else {
+        notify('Failed to delete credentials connection.', 'error');
       }
     } catch (err) {
       console.error(err);
+      notify('Error deleting credentials connection.', 'error');
     }
   };
 
@@ -479,10 +510,14 @@ export default function ProvidersPage() {
       });
       if (res.ok) {
         setCustomModelIdInput('');
-        fetchData();
+        await fetchData();
+        notify('Custom model added successfully!', 'success');
+      } else {
+        notify('Failed to add custom model.', 'error');
       }
     } catch (err) {
       console.error('Error adding custom model:', err);
+      notify('Error adding custom model.', 'error');
     }
   };
 
@@ -494,9 +529,15 @@ export default function ProvidersPage() {
       const res = await fetch(`/api/models/custom?providerAlias=${encodeURIComponent(viewingDetailProvider.id)}&id=${encodeURIComponent(modelId)}`, {
         method: 'DELETE'
       });
-      if (res.ok) fetchData();
+      if (res.ok) {
+        await fetchData();
+        notify('Custom model deleted.', 'info');
+      } else {
+        notify('Failed to delete custom model.', 'error');
+      }
     } catch (err) {
       console.error(err);
+      notify('Error deleting custom model.', 'error');
     }
   };
 
@@ -508,27 +549,22 @@ export default function ProvidersPage() {
     const conn = connections.find(c => c.provider === providerId);
     if (!conn) return;
     const data = { ...(conn.data || {}), modelPrefix };
-    await fetch(`/api/providers/${conn.id}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ data }),
-    });
-    // Re-fetch v1/models so model list reflects new prefix
-    const v1Res = await fetch('/v1/models');
-    if (v1Res.ok) {
-      const v1data = await v1Res.json();
-      const grouped = {};
-      (v1data.data || []).forEach(m => {
-        const prov = m.owned_by || 'openai';
-        const fullID = m.id || '';
-        const slash = fullID.indexOf('/');
-        const modelId = slash > 0 ? fullID.slice(slash + 1) : fullID;
-        if (!grouped[prov]) grouped[prov] = [];
-        if (!grouped[prov].some(x => x.id === modelId)) {
-          grouped[prov].push({ id: modelId, name: modelId, ownedBy: prov });
-        }
+    try {
+      const res = await fetch(`/api/providers/${conn.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ data }),
       });
-      setProviderModels(grouped);
+      if (res.ok) {
+        await fetchData();
+        await fetchProviderModels(providerId);
+        notify('Model prefix updated and models reloaded!', 'success');
+      } else {
+        notify('Failed to update model prefix.', 'error');
+      }
+    } catch (err) {
+      console.error(err);
+      notify('Error updating model prefix.', 'error');
     }
   };
 
@@ -564,7 +600,7 @@ export default function ProvidersPage() {
         <div>
           {/* Navigation Breadcrumb */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '24px' }}>
-            <span 
+            <span
               onClick={() => setViewingDetailProvider(null)}
               style={{ color: 'var(--text-subtle)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px', fontSize: '13px' }}
             >
@@ -577,14 +613,14 @@ export default function ProvidersPage() {
 
           {/* 1. Header info */}
           <div className="card" style={{ padding: '24px', marginBottom: '24px', display: 'flex', alignItems: 'center', gap: '16px' }}>
-            <div style={{ 
-              width: '48px', 
-              height: '48px', 
-              borderRadius: '10px', 
-              background: viewingDetailProvider.color || 'var(--color-primary)', 
+            <div style={{
+              width: '48px',
+              height: '48px',
+              borderRadius: '10px',
+              background: viewingDetailProvider.color || 'var(--color-primary)',
               color: '#fff',
-              display: 'flex', 
-              alignItems: 'center', 
+              display: 'flex',
+              alignItems: 'center',
               justifyContent: 'center'
             }}>
               <span className="material-symbols-outlined" style={{ fontSize: '24px' }}>smart_toy</span>
@@ -630,7 +666,7 @@ export default function ProvidersPage() {
               <h3 style={{ fontSize: '15px', fontWeight: 600, color: 'var(--text-main)', margin: 0 }}>Endpoint URL Configuration</h3>
               <div style={{ display: 'flex', gap: '8px' }}>
                 {!activeConn && (
-                  <button 
+                  <button
                     onClick={() => isCustom ? setSelectedNode(viewingDetailProvider) : setSelectedStandard(viewingDetailProvider)}
                     className="btn btn-primary"
                     style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', height: '28px' }}
@@ -690,8 +726,8 @@ export default function ProvidersPage() {
             </p>
 
             <form onSubmit={handleAddCustomModel} style={{ display: 'flex', gap: '12px', marginBottom: '24px' }}>
-              <input 
-                type="text" 
+              <input
+                type="text"
                 placeholder="Model ID (e.g. gpt-4o)"
                 value={customModelIdInput}
                 onChange={(e) => setCustomModelIdInput(e.target.value)}
@@ -702,7 +738,7 @@ export default function ProvidersPage() {
                 <span className="material-symbols-outlined" style={{ fontSize: '16px' }}>add</span>
                 Add
               </button>
-              <button onClick={() => { fetchProviderModels(providerId).catch(() => {}); fetchEnabledModels(providerId); }} className="btn btn-secondary" style={{ display: 'flex', alignItems: 'center', gap: '6px', height: '36px', fontSize: '13px' }}>
+              <button onClick={() => { fetchProviderModels(providerId).catch(() => { }); fetchEnabledModels(providerId); }} className="btn btn-secondary" style={{ display: 'flex', alignItems: 'center', gap: '6px', height: '36px', fontSize: '13px' }}>
                 <span className="material-symbols-outlined" style={{ fontSize: '16px' }}>download</span>
                 Refresh from upstream
               </button>
@@ -728,7 +764,7 @@ export default function ProvidersPage() {
                 const isCustomModel = customs.some(cm => cm.id === m.id);
 
                 return (
-                  <div 
+                  <div
                     key={m.id}
                     style={{
                       display: 'flex',
@@ -765,7 +801,7 @@ export default function ProvidersPage() {
 
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                       {isCustomModel && (
-                        <button 
+                        <button
                           onClick={() => handleDeleteCustomModel(m.id)}
                           style={{ background: 'transparent', border: 'none', color: 'var(--color-danger)', cursor: 'pointer', padding: 0 }}
                         >
@@ -794,16 +830,13 @@ export default function ProvidersPage() {
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
               <div style={{ position: 'relative' }}>
                 <span className="material-symbols-outlined" style={{ position: 'absolute', left: '10px', top: '10px', fontSize: '18px', color: 'var(--text-subtle)' }}>search</span>
-                <input 
-                  type="text" 
-                  placeholder="Search providers..." 
-                  className="input-field" 
+                <input
+                  type="text"
+                  placeholder="Search providers..."
+                  className="input-field"
                   style={{ width: '220px', paddingLeft: '36px', height: '36px', fontSize: '13px' }}
                 />
               </div>
-              <button className="btn btn-secondary" style={{ background: '#fce7f3', color: '#db2777', borderColor: '#fbcfe8', height: '36px', fontSize: '13px', fontWeight: 600 }}>
-                💝 Donate
-              </button>
             </div>
           </div>
 
@@ -816,14 +849,14 @@ export default function ProvidersPage() {
                 const isConnected = connectedCount > 0;
                 const metrics = getProviderMetrics(provider.id);
                 return (
-                  <div 
-                    key={provider.id} 
-                    className="card" 
-                    style={{ 
-                      display: 'flex', 
+                  <div
+                    key={provider.id}
+                    className="card"
+                    style={{
+                      display: 'flex',
                       flexDirection: 'column',
-                      gap: '12px', 
-                      margin: 0, 
+                      gap: '12px',
+                      margin: 0,
                       padding: '20px',
                       cursor: 'pointer',
                       border: isConnected ? '1px solid var(--color-primary)' : '1px solid var(--border-color)',
@@ -843,15 +876,15 @@ export default function ProvidersPage() {
                   >
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <div style={{ 
-                          width: '28px', 
-                          height: '28px', 
-                          borderRadius: '6px', 
-                          background: provider.color, 
+                        <div style={{
+                          width: '28px',
+                          height: '28px',
+                          borderRadius: '6px',
+                          background: provider.color,
                           color: '#fff',
-                          display: 'flex', 
-                          alignItems: 'center', 
-                          justifyContent: 'center' 
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center'
                         }}>
                           <span className="material-symbols-outlined" style={{ fontSize: '15px' }}>{provider.icon}</span>
                         </div>
@@ -887,22 +920,22 @@ export default function ProvidersPage() {
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
               <h2 style={{ fontSize: '18px', fontWeight: 600, color: 'var(--text-main)' }}>Custom Providers (OpenAI/Anthropic Compatible)</h2>
               <div style={{ display: 'flex', gap: '10px' }}>
-                <button 
+                <button
                   onClick={() => {
                     setCompatType('anthropic-compatible');
                     setShowAddNode(true);
-                  }} 
-                  className="btn btn-primary" 
+                  }}
+                  className="btn btn-primary"
                   style={{ fontSize: '13px', padding: '8px 16px' }}
                 >
                   + Add Anthropic Compatible
                 </button>
-                <button 
+                <button
                   onClick={() => {
                     setCompatType('openai-compatible');
                     setShowAddNode(true);
-                  }} 
-                  className="btn btn-secondary" 
+                  }}
+                  className="btn btn-secondary"
                   style={{ fontSize: '13px', padding: '8px 16px' }}
                 >
                   + Add OpenAI Compatible
@@ -921,14 +954,14 @@ export default function ProvidersPage() {
                   const isConnected = connectedCount > 0;
                   const metrics = getProviderMetrics(node.id);
                   return (
-                    <div 
-                      key={node.id} 
-                      className="card" 
-                      style={{ 
-                        display: 'flex', 
+                    <div
+                      key={node.id}
+                      className="card"
+                      style={{
+                        display: 'flex',
                         flexDirection: 'column',
-                        gap: '12px', 
-                        margin: 0, 
+                        gap: '12px',
+                        margin: 0,
                         padding: '20px',
                         cursor: 'pointer',
                         border: isConnected ? '1px solid var(--color-primary)' : '1px solid var(--border-color)',
@@ -944,15 +977,15 @@ export default function ProvidersPage() {
                     >
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                          <div style={{ 
-                            width: '28px', 
-                            height: '28px', 
-                            borderRadius: '6px', 
-                            background: node.type === 'openai-compatible' ? 'rgba(0,200,255,0.1)' : 'rgba(234,88,12,0.1)', 
+                          <div style={{
+                            width: '28px',
+                            height: '28px',
+                            borderRadius: '6px',
+                            background: node.type === 'openai-compatible' ? 'rgba(0,200,255,0.1)' : 'rgba(234,88,12,0.1)',
                             color: node.type === 'openai-compatible' ? 'var(--color-primary)' : '#ea580c',
-                            display: 'flex', 
-                            alignItems: 'center', 
-                            justifyContent: 'center' 
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center'
                           }}>
                             <span className="material-symbols-outlined" style={{ fontSize: '15px' }}>{node.type === 'openai-compatible' ? 'api' : 'bubble_chart'}</span>
                           </div>
@@ -980,7 +1013,7 @@ export default function ProvidersPage() {
 
                       {/* Delete button */}
                       <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '4px' }}>
-                        <button 
+                        <button
                           onClick={(e) => {
                             e.stopPropagation();
                             handleDeleteNode(node.id);
@@ -1005,12 +1038,12 @@ export default function ProvidersPage() {
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 999 }}>
           <form onSubmit={handleCreateNode} className="card" style={{ maxWidth: '500px', width: '100%', margin: '20px' }}>
             <h3 className="card-title">Add {compatType === 'openai-compatible' ? 'OpenAI' : 'Anthropic'} Compatible Node</h3>
-            
+
             <div className="form-group">
               <label className="form-label">Node Name</label>
-              <input 
-                type="text" 
-                placeholder="e.g. Sumopod, Databyte" 
+              <input
+                type="text"
+                placeholder="e.g. Sumopod, Databyte"
                 value={nodeName}
                 onChange={(e) => setNodeName(e.target.value)}
                 className="input-field"
@@ -1020,9 +1053,9 @@ export default function ProvidersPage() {
 
             <div className="form-group">
               <label className="form-label">Base URL Endpoint</label>
-              <input 
-                type="text" 
-                placeholder="https://api.example.com/v1" 
+              <input
+                type="text"
+                placeholder="https://api.example.com/v1"
                 value={nodeUrl}
                 onChange={(e) => setNodeUrl(e.target.value)}
                 className="input-field"
@@ -1043,12 +1076,12 @@ export default function ProvidersPage() {
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 999 }}>
           <form onSubmit={handleAddCustomCred} className="card" style={{ maxWidth: '500px', width: '100%', margin: '20px' }}>
             <h3 className="card-title">Add Credentials to {selectedNode.name}</h3>
-            
+
             <div className="form-group">
               <label className="form-label">Connection Name</label>
-              <input 
-                type="text" 
-                placeholder="e.g. Primary Key" 
+              <input
+                type="text"
+                placeholder="e.g. Primary Key"
                 value={credName}
                 onChange={(e) => setCredName(e.target.value)}
                 className="input-field"
@@ -1057,9 +1090,9 @@ export default function ProvidersPage() {
 
             <div className="form-group">
               <label className="form-label">API Key / Access Token</label>
-              <input 
-                type="password" 
-                placeholder="sk-..." 
+              <input
+                type="password"
+                placeholder="sk-..."
                 value={credKey}
                 onChange={(e) => setCredKey(e.target.value)}
                 className="input-field"
@@ -1069,8 +1102,8 @@ export default function ProvidersPage() {
 
             <div className="form-group">
               <label className="form-label">Priority Order</label>
-              <input 
-                type="number" 
+              <input
+                type="number"
                 value={credPriority}
                 onChange={(e) => setCredPriority(e.target.value)}
                 className="input-field"
@@ -1145,12 +1178,12 @@ export default function ProvidersPage() {
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 999 }}>
           <form onSubmit={handleAddStandardCred} className="card" style={{ maxWidth: '500px', width: '100%', margin: '20px' }}>
             <h3 className="card-title">Configure {selectedStandard.name} Credentials</h3>
-            
+
             <div className="form-group">
               <label className="form-label">Connection Label Name</label>
-              <input 
-                type="text" 
-                placeholder={`e.g. My ${selectedStandard.name}`} 
+              <input
+                type="text"
+                placeholder={`e.g. My ${selectedStandard.name}`}
                 value={credName}
                 onChange={(e) => setCredName(e.target.value)}
                 className="input-field"
@@ -1159,9 +1192,9 @@ export default function ProvidersPage() {
 
             <div className="form-group">
               <label className="form-label">API Key / Token</label>
-              <input 
-                type="password" 
-                placeholder="Enter auth credentials key" 
+              <input
+                type="password"
+                placeholder="Enter auth credentials key"
                 value={credKey}
                 onChange={(e) => setCredKey(e.target.value)}
                 className="input-field"
@@ -1171,8 +1204,8 @@ export default function ProvidersPage() {
 
             <div className="form-group">
               <label className="form-label">Priority</label>
-              <input 
-                type="number" 
+              <input
+                type="number"
                 value={credPriority}
                 onChange={(e) => setCredPriority(e.target.value)}
                 className="input-field"
@@ -1247,7 +1280,7 @@ export default function ProvidersPage() {
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 999 }}>
           <div className="card" style={{ maxWidth: '500px', width: '100%', margin: '20px', textAlign: 'center' }}>
             <h3 className="card-title" style={{ justifyContent: 'center' }}>Kilo Code Device Authorization</h3>
-            
+
             {oauthStatus === 'initiating' && (
               <p style={{ margin: '20px 0', color: 'var(--text-muted)' }}>Initiating secure connection with kilocode.ai...</p>
             )}
@@ -1260,10 +1293,10 @@ export default function ProvidersPage() {
                 <div style={{ fontSize: '28px', fontWeight: 800, letterSpacing: '2px', background: 'rgba(0,0,0,0.2)', padding: '12px', borderRadius: '8px', marginBottom: '16px', fontFamily: 'var(--font-mono)', color: 'var(--color-primary)' }}>
                   {oauthData.user_code}
                 </div>
-                <a 
-                  href={oauthData.verification_uri} 
-                  target="_blank" 
-                  rel="noreferrer" 
+                <a
+                  href={oauthData.verification_uri}
+                  target="_blank"
+                  rel="noreferrer"
                   className="btn btn-primary"
                   style={{ textDecoration: 'none', marginBottom: '12px' }}
                 >
@@ -1292,12 +1325,12 @@ export default function ProvidersPage() {
             )}
 
             <div style={{ display: 'flex', justifyContent: 'center', marginTop: '16px' }}>
-              <button 
-                type="button" 
+              <button
+                type="button"
                 onClick={() => {
                   setShowOauth(false);
                   setOauthStatus('idle');
-                }} 
+                }}
                 className="btn btn-secondary"
               >
                 {oauthStatus === 'success' ? 'Done' : 'Cancel'}
