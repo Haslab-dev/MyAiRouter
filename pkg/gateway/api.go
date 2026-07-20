@@ -674,6 +674,11 @@ func handleKilocodePoll(w http.ResponseWriter, r *http.Request) {
 
 func handleServerLogs(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
+	if r.Method == http.MethodDelete {
+		logger.ClearLogs()
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"logs": []interface{}{}})
+		return
+	}
 	if r.Method != http.MethodGet {
 		w.WriteHeader(http.StatusMethodNotAllowed)
 		return

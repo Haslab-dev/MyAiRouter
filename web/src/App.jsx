@@ -14,6 +14,7 @@ import OnboardingPage from './pages/OnboardingPage';
 import UserMenu from './components/UserMenu';
 import Snackbar from './components/Snackbar';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
+import { ThemeProvider, useTheme } from './contexts/ThemeContext';
 
 const NAV_ITEMS = [
   { to: '/usage', label: 'Overview', icon: 'dashboard' },
@@ -26,6 +27,37 @@ const NAV_ITEMS = [
   { to: '/skills', label: 'Skills', icon: 'conversion_path' },
   { to: '/console-log', label: 'Traffic', icon: 'insights' },
 ];
+
+function ThemeToggle() {
+  const { theme, toggleTheme } = useTheme();
+  const isDark = theme === 'dark';
+
+  return (
+    <button
+      onClick={toggleTheme}
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        width: '32px',
+        height: '32px',
+        borderRadius: '8px',
+        border: '1px solid var(--border-color)',
+        background: 'transparent',
+        cursor: 'pointer',
+        color: 'var(--text-muted)',
+        transition: 'all 0.2s ease',
+      }}
+      title={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
+    >
+      {isDark ? (
+        <span className="material-symbols-outlined" style={{ fontSize: '18px' }}>light_mode</span>
+      ) : (
+        <span className="material-symbols-outlined" style={{ fontSize: '18px' }}>dark_mode</span>
+      )}
+    </button>
+  );
+}
 
 function AppShell() {
   const { status, onboardingDone } = useAuth();
@@ -57,9 +89,9 @@ const activeConns = conns.filter(c => c.isActive);
   if (status === null) {
     return (
       <div style={{
-        minHeight: '100vh', background: '#0B0F14',
+        minHeight: '100vh', background: 'var(--bg-color)',
         display: 'flex', alignItems: 'center', justifyContent: 'center',
-        color: '#9AA5B5', fontSize: '14px', gap: '10px',
+        color: 'var(--text-muted)', fontSize: '14px', gap: '10px',
       }}>
         <span className="material-symbols-outlined" style={{ fontSize: '20px', animation: 'spin 1s linear infinite' }}>progress_activity</span>
         Connecting to gateway...
@@ -102,6 +134,7 @@ const activeConns = conns.filter(c => c.isActive);
         </div>
 
         <div className="top-bar-right">
+          <ThemeToggle />
           <div className="status-indicator">
             <span className="status-dot"></span>
             <span>Gateway Active</span>
@@ -157,8 +190,10 @@ const activeConns = conns.filter(c => c.isActive);
 
 export default function App() {
   return (
-    <AuthProvider>
-      <AppShell />
-    </AuthProvider>
+    <ThemeProvider>
+      <AuthProvider>
+        <AppShell />
+      </AuthProvider>
+    </ThemeProvider>
   );
 }

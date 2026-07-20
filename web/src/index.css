@@ -20,11 +20,53 @@
   --glow-primary: 0 0 24px rgba(0, 200, 255, 0.08), 0 4px 20px rgba(0, 0, 0, 0.4);
   --glow-success: 0 0 20px rgba(46, 204, 113, 0.08);
   --glow-danger: 0 0 20px rgba(255, 90, 103, 0.08);
+  --search-bg: rgba(255, 255, 255, 0.03);
+  --input-bg: rgba(255, 255, 255, 0.04);
+  --nav-hover: rgba(255, 255, 255, 0.02);
+  --nav-active-bg: rgba(0, 200, 255, 0.05);
+  --nav-active-border: rgba(0, 200, 255, 0.15);
+  --status-bg: rgba(46, 204, 113, 0.05);
+  --status-border: rgba(46, 204, 113, 0.15);
   --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
   --font-mono: 'JetBrains Mono', monospace;
   --radius-lg: 12px;
   --radius-md: 8px;
   --radius-sm: 4px;
+  --ambient-gradient: radial-gradient(ellipse 80% 50% at 50% -10%, rgba(0, 200, 255, 0.04) 0%, transparent 70%),
+    radial-gradient(ellipse 60% 40% at 80% 100%, rgba(154, 165, 181, 0.02) 0%, transparent 60%),
+    radial-gradient(ellipse 40% 30% at 20% 80%, rgba(46, 204, 113, 0.02) 0%, transparent 50%);
+}
+
+[data-theme="light"] {
+  --bg-color: #F5F7FA;
+  --bg-sidebar: #EAEEF2;
+  --bg-card: #FFFFFF;
+  --bg-card-hover: #F8FAFC;
+  --bg-surface: rgba(0, 0, 0, 0.02);
+  --border-color: #D8DFE6;
+  --border-color-focus: #7C3AED;
+  --text-main: #1A2332;
+  --text-muted: #5C6B7A;
+  --text-subtle: #8A9BAA;
+  --color-primary: #7C3AED;
+  --color-primary-hover: #8B5CF6;
+  --color-secondary: #5C6B7A;
+  --color-success: #059669;
+  --color-danger: #DC2626;
+  --color-warning: #D97706;
+  --glow-primary: 0 0 24px rgba(124, 58, 237, 0.1), 0 4px 20px rgba(0, 0, 0, 0.06);
+  --glow-success: 0 0 20px rgba(5, 150, 105, 0.08);
+  --glow-danger: 0 0 20px rgba(220, 38, 38, 0.08);
+  --search-bg: rgba(0, 0, 0, 0.03);
+  --input-bg: rgba(0, 0, 0, 0.03);
+  --nav-hover: rgba(0, 0, 0, 0.03);
+  --nav-active-bg: rgba(124, 58, 237, 0.06);
+  --nav-active-border: rgba(124, 58, 237, 0.15);
+  --status-bg: rgba(5, 150, 105, 0.06);
+  --status-border: rgba(5, 150, 105, 0.15);
+  --ambient-gradient: radial-gradient(ellipse 80% 50% at 50% -10%, rgba(124, 58, 237, 0.03) 0%, transparent 70%),
+    radial-gradient(ellipse 60% 40% at 80% 100%, rgba(92, 107, 122, 0.02) 0%, transparent 60%),
+    radial-gradient(ellipse 40% 30% at 20% 80%, rgba(5, 150, 105, 0.02) 0%, transparent 50%);
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -41,10 +83,7 @@ body::before {
   content: '';
   position: fixed;
   top: 0; left: 0; right: 0; bottom: 0;
-  background:
-    radial-gradient(ellipse 80% 50% at 50% -10%, rgba(0, 200, 255, 0.04) 0%, transparent 70%),
-    radial-gradient(ellipse 60% 40% at 80% 100%, rgba(154, 165, 181, 0.02) 0%, transparent 60%),
-    radial-gradient(ellipse 40% 30% at 20% 80%, rgba(46, 204, 113, 0.02) 0%, transparent 50%);
+  background: var(--ambient-gradient);
   pointer-events: none;
   z-index: 0;
 }
@@ -65,7 +104,7 @@ body::before {
   align-items: center;
   justify-content: space-between;
   padding: 0 24px;
-  background-color: #0b0f14;
+  background-color: var(--bg-sidebar);
   z-index: 100;
 }
 
@@ -109,7 +148,7 @@ body::before {
 .search-wrapper {
   display: flex;
   align-items: center;
-  background: rgba(255, 255, 255, 0.03);
+  background: var(--search-bg);
   border: 1px solid var(--border-color);
   border-radius: var(--radius-md);
   padding: 6px 12px;
@@ -159,8 +198,8 @@ body::before {
   gap: 6px;
   font-size: 11px;
   color: var(--text-muted);
-  background: rgba(46, 204, 113, 0.05);
-  border: 1px solid rgba(46, 204, 113, 0.15);
+  background: var(--status-bg);
+  border: 1px solid var(--status-border);
   padding: 4px 10px;
   border-radius: 20px;
 }
@@ -213,7 +252,7 @@ body::before {
 
 .sidebar {
   width: 200px;
-  background-color: #0b0f14;
+  background-color: var(--bg-sidebar);
   border-right: 1px solid var(--border-color);
   display: flex;
   flex-direction: column;
@@ -243,13 +282,13 @@ body::before {
 
 .nav-item:hover {
   color: var(--text-main);
-  background-color: rgba(255, 255, 255, 0.02);
+  background-color: var(--nav-hover);
 }
 
 .nav-item.active {
   color: var(--color-primary);
-  background-color: rgba(0, 200, 255, 0.05);
-  border: 1px solid rgba(0, 200, 255, 0.15);
+  background-color: var(--nav-active-bg);
+  border: 1px solid var(--nav-active-border);
 }
 
 .sidebar-footer {
@@ -264,7 +303,7 @@ body::before {
   flex: 1;
   padding: 24px;
   overflow-y: auto;
-  background-color: #0B0F14;
+  background-color: var(--bg-color);
 }
 
 .page-header {
@@ -344,7 +383,7 @@ body::before {
 .input-field {
   width: 100%;
   padding: 10px 14px;
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--input-bg);
   border: 1px solid var(--border-color);
   border-radius: var(--radius-md);
   color: var(--text-main);
@@ -458,7 +497,7 @@ input:checked + .slider:before { transform: translateX(22px); }
 }
 
 .btn-secondary {
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--input-bg);
   color: var(--text-muted);
   border: 1px solid var(--border-color);
 }

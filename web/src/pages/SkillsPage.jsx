@@ -28,9 +28,10 @@ const SKILLS = [
 export default function SkillsPage() {
   const [copiedId, setCopiedId] = useState(null);
 
+  const baseUrl = `${window.location.protocol}//${window.location.host}`;
+
   const getSkillUrl = (id) => {
-    // Generate local skill link
-    return `http://localhost:20128/skills/${id}/SKILL.md`;
+    return `${baseUrl}/skills/${id}/SKILL.md`;
   };
 
   const copyLink = (id) => {

@@ -24,7 +24,7 @@ export default function LoginPage() {
   return (
     <div style={{
       minHeight: '100vh',
-      background: '#0B0F14',
+      background: 'var(--bg-color)',
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'center',
@@ -35,13 +35,15 @@ export default function LoginPage() {
       <div style={{
         position: 'absolute', top: '-20%', left: '50%', transform: 'translateX(-50%)',
         width: '800px', height: '400px',
-        background: 'radial-gradient(ellipse, rgba(0,200,255,0.06) 0%, transparent 70%)',
+        background: 'radial-gradient(ellipse, var(--color-primary) 0%, transparent 70%)',
+        opacity: 0.08,
         pointerEvents: 'none',
       }} />
       <div style={{
         position: 'absolute', bottom: '-10%', right: '-10%',
         width: '400px', height: '400px',
-        background: 'radial-gradient(ellipse, rgba(46,204,113,0.04) 0%, transparent 70%)',
+        background: 'radial-gradient(ellipse, var(--color-success) 0%, transparent 70%)',
+        opacity: 0.05,
         pointerEvents: 'none',
       }} />
 
@@ -56,7 +58,7 @@ export default function LoginPage() {
         <div style={{ textAlign: 'center', marginBottom: '40px' }}>
           <div style={{
             width: '56px', height: '56px',
-            background: 'linear-gradient(135deg, #00C8FF, #0088bb)',
+            background: 'linear-gradient(135deg, var(--color-primary), var(--color-primary-hover))',
             borderRadius: '14px',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             margin: '0 auto 16px',
@@ -64,23 +66,23 @@ export default function LoginPage() {
           }}>
             <span className="material-symbols-outlined" style={{ fontSize: '28px', color: '#fff' }}>router</span>
           </div>
-          <h1 style={{ fontSize: '22px', fontWeight: 800, color: '#F3F6FA', letterSpacing: '-0.5px' }}>myAiRouter</h1>
-          <p style={{ fontSize: '13px', color: '#9AA5B5', marginTop: '6px' }}>Enter your password to access the gateway</p>
+          <h1 style={{ fontSize: '22px', fontWeight: 800, color: 'var(--text-main)', letterSpacing: '-0.5px' }}>myAiRouter</h1>
+          <p style={{ fontSize: '13px', color: 'var(--text-muted)', marginTop: '6px' }}>Enter your password to access the gateway</p>
         </div>
 
         {/* Card */}
         <div style={{
-          background: '#121821',
-          border: '1px solid #222B36',
+          background: 'var(--bg-card)',
+          border: '1px solid var(--border-color)',
           borderRadius: '16px',
           padding: '32px',
-          boxShadow: '0 8px 40px rgba(0,0,0,0.4)',
+          boxShadow: 'var(--glow-primary)',
         }}>
           <form onSubmit={handleSubmit}>
             <div style={{ marginBottom: '20px' }}>
               <label style={{
                 display: 'block',
-                fontSize: '11px', fontWeight: 600, color: '#9AA5B5',
+                fontSize: '11px', fontWeight: 600, color: 'var(--text-muted)',
                 textTransform: 'uppercase', letterSpacing: '0.8px',
                 marginBottom: '8px',
               }}>
@@ -96,18 +98,18 @@ export default function LoginPage() {
                   style={{
                     width: '100%',
                     padding: '12px 44px 12px 14px',
-                    background: 'rgba(255,255,255,0.04)',
-                    border: `1px solid ${error ? '#FF5A67' : '#222B36'}`,
+                    background: 'var(--input-bg)',
+                    border: `1px solid ${error ? 'var(--color-danger)' : 'var(--border-color)'}`,
                     borderRadius: '8px',
-                    color: '#F3F6FA',
+                    color: 'var(--text-main)',
                     fontSize: '14px',
                     fontFamily: 'Inter, sans-serif',
                     outline: 'none',
                     transition: 'border-color 0.2s',
                     boxSizing: 'border-box',
                   }}
-                  onFocus={e => e.target.style.borderColor = error ? '#FF5A67' : '#00C8FF'}
-                  onBlur={e => e.target.style.borderColor = error ? '#FF5A67' : '#222B36'}
+                  onFocus={e => e.target.style.borderColor = error ? 'var(--color-danger)' : 'var(--color-primary)'}
+                  onBlur={e => e.target.style.borderColor = error ? 'var(--color-danger)' : 'var(--border-color)'}
                 />
                 <button
                   type="button"
@@ -115,7 +117,7 @@ export default function LoginPage() {
                   style={{
                     position: 'absolute', right: '12px', top: '50%', transform: 'translateY(-50%)',
                     background: 'none', border: 'none', cursor: 'pointer',
-                    color: '#9AA5B5', padding: 0,
+                    color: 'var(--text-muted)', padding: 0,
                   }}
                 >
                   <span className="material-symbols-outlined" style={{ fontSize: '18px' }}>
@@ -124,7 +126,7 @@ export default function LoginPage() {
                 </button>
               </div>
               {error && (
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '8px', color: '#FF5A67', fontSize: '12px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '8px', color: 'var(--color-danger)', fontSize: '12px' }}>
                   <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>error</span>
                   {error}
                 </div>
@@ -138,8 +140,8 @@ export default function LoginPage() {
                 width: '100%',
                 padding: '13px',
                 background: loading || !password
-                  ? 'rgba(0,200,255,0.3)'
-                  : 'linear-gradient(135deg, #00C8FF, #00a4d6)',
+                  ? 'var(--nav-active-bg)'
+                  : 'linear-gradient(135deg, var(--color-primary), var(--color-primary-hover))',
                 border: 'none',
                 borderRadius: '8px',
                 color: '#fff',
@@ -152,7 +154,7 @@ export default function LoginPage() {
                 alignItems: 'center',
                 justifyContent: 'center',
                 gap: '8px',
-                boxShadow: loading || !password ? 'none' : '0 4px 16px rgba(0,200,255,0.25)',
+                boxShadow: loading || !password ? 'none' : 'var(--glow-primary)',
               }}
             >
               {loading ? (
@@ -170,8 +172,8 @@ export default function LoginPage() {
           </form>
         </div>
 
-        <p style={{ textAlign: 'center', fontSize: '11px', color: '#4e5a6a', marginTop: '20px' }}>
-          Default password: <code style={{ fontFamily: 'JetBrains Mono, monospace', color: '#9AA5B5' }}>123456789</code>
+        <p style={{ textAlign: 'center', fontSize: '11px', color: 'var(--text-subtle)', marginTop: '20px' }}>
+          Default password: <code style={{ fontFamily: 'JetBrains Mono, monospace', color: 'var(--text-muted)' }}>123456789</code>
         </p>
       </div>
 

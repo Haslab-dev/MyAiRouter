@@ -15,37 +15,37 @@ function StepWelcome({ onNext }) {
     <div style={{ textAlign: 'center' }}>
       <div style={{
         width: '72px', height: '72px',
-        background: 'linear-gradient(135deg, #00C8FF, #0088bb)',
+        background: 'linear-gradient(135deg, var(--color-primary), var(--color-primary-hover))',
         borderRadius: '20px',
         display: 'flex', alignItems: 'center', justifyContent: 'center',
         margin: '0 auto 24px',
-        boxShadow: '0 0 60px rgba(0,200,255,0.35)',
+        boxShadow: 'var(--glow-primary)',
       }}>
         <span className="material-symbols-outlined" style={{ fontSize: '36px', color: '#fff' }}>router</span>
       </div>
-      <h1 style={{ fontSize: '28px', fontWeight: 800, color: '#F3F6FA', letterSpacing: '-0.5px', marginBottom: '12px' }}>
+      <h1 style={{ fontSize: '28px', fontWeight: 800, color: 'var(--text-main)', letterSpacing: '-0.5px', marginBottom: '12px' }}>
         Welcome to myAiRouter
       </h1>
-      <p style={{ fontSize: '14px', color: '#9AA5B5', lineHeight: 1.7, maxWidth: '360px', margin: '0 auto 32px' }}>
+      <p style={{ fontSize: '14px', color: 'var(--text-muted)', lineHeight: 1.7, maxWidth: '360px', margin: '0 auto 32px' }}>
         Your self-hosted AI gateway. Route requests across multiple providers, manage keys, compress tokens, and monitor traffic — all from one place.
       </p>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px', marginBottom: '36px', maxWidth: '440px', margin: '0 auto 36px' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px', marginBottom: '36px', maxWidth: '440px', marginLeft: 'auto', marginRight: 'auto' }}>
         {[
           { icon: 'alt_route', label: 'Smart Routing', desc: 'Route across providers' },
           { icon: 'compress', label: 'Token Saving', desc: 'Reduce costs up to 40%' },
           { icon: 'monitoring', label: 'Analytics', desc: 'Full traffic visibility' },
         ].map(f => (
           <div key={f.label} style={{
-            background: 'rgba(255,255,255,0.03)',
-            border: '1px solid #222B36',
+            background: 'var(--bg-surface)',
+            border: '1px solid var(--border-color)',
             borderRadius: '12px',
             padding: '14px 10px',
             textAlign: 'center',
           }}>
-            <span className="material-symbols-outlined" style={{ fontSize: '22px', color: '#00C8FF', display: 'block', marginBottom: '6px' }}>{f.icon}</span>
-            <div style={{ fontSize: '12px', fontWeight: 700, color: '#F3F6FA', marginBottom: '2px' }}>{f.label}</div>
-            <div style={{ fontSize: '10px', color: '#9AA5B5' }}>{f.desc}</div>
+            <span className="material-symbols-outlined" style={{ fontSize: '22px', color: 'var(--color-primary)', display: 'block', marginBottom: '6px' }}>{f.icon}</span>
+            <div style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text-main)', marginBottom: '2px' }}>{f.label}</div>
+            <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>{f.desc}</div>
           </div>
         ))}
       </div>
@@ -107,12 +107,12 @@ function StepPassword({ onNext, onSkip }) {
       {/* Toggle */}
       <div style={{
         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        background: 'rgba(255,255,255,0.03)', border: '1px solid #222B36',
+        background: 'var(--bg-surface)', border: '1px solid var(--border-color)',
         borderRadius: '10px', padding: '14px 16px', marginBottom: '20px', cursor: 'pointer',
       }} onClick={() => setEnableAuth(v => !v)}>
         <div>
-          <div style={{ fontWeight: 600, fontSize: '13px', color: '#F3F6FA' }}>Enable password protection</div>
-          <div style={{ fontSize: '11px', color: '#9AA5B5', marginTop: '2px' }}>Require login to access the dashboard</div>
+          <div style={{ fontWeight: 600, fontSize: '13px', color: 'var(--text-main)' }}>Enable password protection</div>
+          <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px' }}>Require login to access the dashboard</div>
         </div>
         <label className="switch" style={{ pointerEvents: 'none' }}>
           <input type="checkbox" checked={enableAuth} onChange={() => {}} />
@@ -232,15 +232,15 @@ function StepProvider({ onNext }) {
             style={{
               display: 'flex', alignItems: 'center', gap: '10px',
               padding: '12px 14px',
-              background: nodeType === p.id ? `${p.color}20` : 'rgba(255,255,255,0.03)',
-              border: `1px solid ${nodeType === p.id ? p.color : '#222B36'}`,
+              background: nodeType === p.id ? `${p.color}20` : 'var(--bg-surface)',
+              border: `1px solid ${nodeType === p.id ? p.color : 'var(--border-color)'}`,
               borderRadius: '10px', cursor: 'pointer',
               transition: 'all 0.15s',
               fontFamily: 'Inter, sans-serif',
             }}
           >
-            <span className="material-symbols-outlined" style={{ fontSize: '18px', color: nodeType === p.id ? p.color : '#9AA5B5' }}>{p.icon}</span>
-            <span style={{ fontSize: '13px', fontWeight: 600, color: nodeType === p.id ? '#F3F6FA' : '#9AA5B5' }}>{p.label}</span>
+            <span className="material-symbols-outlined" style={{ fontSize: '18px', color: nodeType === p.id ? p.color : 'var(--text-muted)' }}>{p.icon}</span>
+            <span style={{ fontSize: '13px', fontWeight: 600, color: nodeType === p.id ? 'var(--text-main)' : 'var(--text-muted)' }}>{p.label}</span>
           </button>
         ))}
       </div>
@@ -342,19 +342,19 @@ const iconCircle = (color) => ({
   margin: '0 auto 16px',
   boxShadow: `0 0 40px ${color}55`,
 });
-const stepTitle = { fontSize: '22px', fontWeight: 800, color: '#F3F6FA', letterSpacing: '-0.3px', marginBottom: '8px' };
-const stepDesc = { fontSize: '13px', color: '#9AA5B5', lineHeight: 1.7, maxWidth: '340px', margin: '0 auto' };
-const fieldLabel = { display: 'block', fontSize: '11px', fontWeight: 600, color: '#9AA5B5', textTransform: 'uppercase', letterSpacing: '0.8px', marginBottom: '6px' };
+const stepTitle = { fontSize: '22px', fontWeight: 800, color: 'var(--text-main)', letterSpacing: '-0.3px', marginBottom: '8px' };
+const stepDesc = { fontSize: '13px', color: 'var(--text-muted)', lineHeight: 1.7, maxWidth: '340px', margin: '0 auto' };
+const fieldLabel = { display: 'block', fontSize: '11px', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.8px', marginBottom: '6px' };
 const inputStyle = (hasError) => ({
   width: '100%', padding: '11px 14px',
-  background: 'rgba(255,255,255,0.04)',
-  border: `1px solid ${hasError ? '#FF5A67' : '#222B36'}`,
+  background: 'var(--input-bg)',
+  border: `1px solid ${hasError ? 'var(--color-danger)' : 'var(--border-color)'}`,
   borderRadius: '8px',
-  color: '#F3F6FA', fontSize: '13px', fontFamily: 'Inter, sans-serif',
+  color: 'var(--text-main)', fontSize: '13px', fontFamily: 'Inter, sans-serif',
   outline: 'none', boxSizing: 'border-box',
 });
-const eyeBtn = { position: 'absolute', right: '12px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: '#9AA5B5', padding: 0 };
-const errorBox = { display: 'flex', alignItems: 'center', gap: '6px', color: '#FF5A67', fontSize: '12px', background: 'rgba(255,90,103,0.08)', padding: '8px 12px', borderRadius: '6px' };
+const eyeBtn = { position: 'absolute', right: '12px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: 0 };
+const errorBox = { display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--color-danger)', fontSize: '12px', background: 'rgba(220, 38, 38, 0.08)', padding: '8px 12px', borderRadius: '6px' };
 
 /* ────────── Main Onboarding component ────────── */
 export default function OnboardingPage() {
@@ -367,7 +367,7 @@ export default function OnboardingPage() {
   return (
     <div style={{
       minHeight: '100vh',
-      background: '#0B0F14',
+      background: 'var(--bg-color)',
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'center',
@@ -375,8 +375,8 @@ export default function OnboardingPage() {
       overflow: 'hidden',
     }}>
       {/* Ambient glows */}
-      <div style={{ position: 'absolute', top: '-15%', left: '50%', transform: 'translateX(-50%)', width: '900px', height: '450px', background: 'radial-gradient(ellipse, rgba(0,200,255,0.07) 0%, transparent 70%)', pointerEvents: 'none' }} />
-      <div style={{ position: 'absolute', bottom: '-10%', right: '0', width: '500px', height: '500px', background: 'radial-gradient(ellipse, rgba(46,204,113,0.04) 0%, transparent 70%)', pointerEvents: 'none' }} />
+      <div style={{ position: 'absolute', top: '-15%', left: '50%', transform: 'translateX(-50%)', width: '900px', height: '450px', background: 'radial-gradient(ellipse, var(--color-primary) 0%, transparent 70%)', opacity: 0.07, pointerEvents: 'none' }} />
+      <div style={{ position: 'absolute', bottom: '-10%', right: '0', width: '500px', height: '500px', background: 'radial-gradient(ellipse, var(--color-success) 0%, transparent 70%)', opacity: 0.05, pointerEvents: 'none' }} />
 
       <div style={{ width: '100%', maxWidth: '520px', padding: '0 20px', position: 'relative', zIndex: 1 }}>
         {/* Step progress indicator */}
@@ -385,11 +385,11 @@ export default function OnboardingPage() {
             <div key={s.id} style={{ display: 'flex', alignItems: 'center' }}>
               <div style={{
                 width: '28px', height: '28px', borderRadius: '50%',
-                background: i < step ? '#2ECC71' : i === step ? '#00C8FF' : 'rgba(255,255,255,0.06)',
-                border: `2px solid ${i < step ? '#2ECC71' : i === step ? '#00C8FF' : '#222B36'}`,
+                background: i < step ? 'var(--color-success)' : i === step ? 'var(--color-primary)' : 'var(--input-bg)',
+                border: `2px solid ${i < step ? 'var(--color-success)' : i === step ? 'var(--color-primary)' : 'var(--border-color)'}`,
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                 fontSize: '11px', fontWeight: 700,
-                color: i <= step ? '#fff' : '#4e5a6a',
+                color: i <= step ? '#fff' : 'var(--text-subtle)',
                 transition: 'all 0.3s',
                 flexShrink: 0,
               }}>
@@ -397,11 +397,11 @@ export default function OnboardingPage() {
                   ? <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>check</span>
                   : i + 1}
               </div>
-              <div style={{ fontSize: '11px', color: i === step ? '#F3F6FA' : '#4e5a6a', fontWeight: i === step ? 600 : 400, margin: '0 8px', whiteSpace: 'nowrap' }}>
+              <div style={{ fontSize: '11px', color: i === step ? 'var(--text-main)' : 'var(--text-subtle)', fontWeight: i === step ? 600 : 400, margin: '0 8px', whiteSpace: 'nowrap' }}>
                 {s.label}
               </div>
               {i < STEPS.length - 1 && (
-                <div style={{ width: '32px', height: '1px', background: i < step ? '#2ECC71' : '#222B36', transition: 'background 0.3s', marginRight: '8px' }} />
+                <div style={{ width: '32px', height: '1px', background: i < step ? 'var(--color-success)' : 'var(--border-color)', transition: 'background 0.3s', marginRight: '8px' }} />
               )}
             </div>
           ))}
@@ -409,11 +409,11 @@ export default function OnboardingPage() {
 
         {/* Card */}
         <div style={{
-          background: '#121821',
-          border: '1px solid #222B36',
+          background: 'var(--bg-card)',
+          border: '1px solid var(--border-color)',
           borderRadius: '20px',
           padding: '36px',
-          boxShadow: '0 12px 60px rgba(0,0,0,0.5)',
+          boxShadow: 'var(--glow-primary)',
         }}>
           {step === 0 && <StepWelcome onNext={next} />}
           {step === 1 && <StepPassword onNext={next} onSkip={next} />}

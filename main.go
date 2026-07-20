@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"embed"
 	"fmt"
 	"io"
@@ -8,7 +9,9 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
+	"time"
 
 	internalGateway "myAiRouter/internal/gateway"
 	"myAiRouter/pkg/db"
@@ -68,47 +71,37 @@ Usage:
 
 func startServer() {
 
-	logger.Log("Starting myAiRouter...")
+	logger.LogMessage("Starting myAiRouter...")
 
-	// 1. Initialize SQLite Database
 	if err := db.InitDB(); err != nil {
-		logger.Log("Failed to initialize database: %v", err)
+		logger.LogError(fmt.Sprintf("Failed to initialize database: %v", err))
 		os.Exit(1)
 	}
-	logger.Log("Database initialized successfully.")
+	logger.LogMessage("Database initialized successfully.")
 
-	// 2. Setup Server Routing
 	mux := http.NewServeMux()
 
-	// Register compatibility V1 gateway endpoints
 	internalGateway.RegisterGatewayRoutes(mux)
-
-	// Register admin REST endpoints
 	gateway.RegisterAdminRoutes(mux)
 
-	// Setup embedded skills sub-filesystem
 	skillsFS, err := fs.Sub(embedFS, "skills")
 	if err == nil {
 		mux.Handle("/skills/", http.StripPrefix("/skills/", http.FileServer(http.FS(skillsFS))))
 	}
 
-	// Setup embedded static files sub-filesystem
 	distFS, err := fs.Sub(embedFS, "web/dist")
 	if err != nil {
-		logger.Log("Failed to retrieve embedded filesystem: %v", err)
+		logger.LogError(fmt.Sprintf("Failed to retrieve embedded filesystem: %v", err))
 		os.Exit(1)
 	}
 
-	// SPA router fallback: serve embedded frontend assets
 	fileServer := http.FileServer(http.FS(distFS))
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		// If path matches API endpoints, return 404 instead of serving HTML
 		if strings.HasPrefix(r.URL.Path, "/v1/") || strings.HasPrefix(r.URL.Path, "/api/") || strings.HasPrefix(r.URL.Path, "/skills/") {
 			http.NotFound(w, r)
 			return
 		}
 
-		// Clean path for filesystem query
 		cleanPath := filepath.Clean(r.URL.Path)
 		if cleanPath == "/" {
 			cleanPath = "index.html"
@@ -116,11 +109,8 @@ func startServer() {
 			cleanPath = strings.TrimPrefix(cleanPath, "/")
 		}
 
-		// Check if file exists in embedded assets
 		_, err := distFS.Open(cleanPath)
 		if err != nil {
-			// File not found (e.g. client-side route like /dashboard/providers)
-			// Serve the main index.html to allow SPA router to handle it
 			indexFile, err := distFS.Open("index.html")
 			if err != nil {
 				http.Error(w, "Index file not found in assets", http.StatusInternalServerError)
@@ -132,14 +122,11 @@ func startServer() {
 			return
 		}
 
-		// File exists, serve it
 		fileServer.ServeHTTP(w, r)
 	})
 
-	// Wrap in CORS and Logging middleware
 	handler := corsAndLogMiddleware(mux)
 
-	// 3. Start Listener
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "20128"
@@ -149,16 +136,42 @@ func startServer() {
 		host = "0.0.0.0"
 	}
 	addr := host + ":" + port
-	logger.Log("myAiRouter listening on %s", addr)
+	logger.LogMessage(fmt.Sprintf("myAiRouter listening on %s", addr))
 	if err := http.ListenAndServe(addr, handler); err != nil {
-		logger.Log("Server failed to start: %v", err)
+		logger.LogError(fmt.Sprintf("Server failed to start: %v", err))
 		os.Exit(1)
 	}
 }
 
+type responseWriter struct {
+	http.ResponseWriter
+	statusCode int
+	body       *bytes.Buffer
+}
+
+func (rw *responseWriter) WriteHeader(code int) {
+	rw.statusCode = code
+	rw.ResponseWriter.WriteHeader(code)
+}
+
+func (rw *responseWriter) Write(b []byte) (int, error) {
+	rw.body.Write(b)
+	return rw.ResponseWriter.Write(b)
+}
+
+type bodyReader struct {
+	io.ReadCloser
+	body *bytes.Buffer
+}
+
+func (br *bodyReader) Read(b []byte) (int, error) {
+	n, err := br.ReadCloser.Read(b)
+	br.body.Write(b[:n])
+	return n, err
+}
+
 func corsAndLogMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Setup CORS headers
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PATCH, PUT, DELETE, OPTIONS")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, x-api-key, anthropic-version")
@@ -168,9 +181,39 @@ func corsAndLogMiddleware(next http.Handler) http.Handler {
 			return
 		}
 
-		// Log request details
-		logger.Log("%s %s from %s", r.Method, r.URL.Path, r.RemoteAddr)
+		start := time.Now()
 
-		next.ServeHTTP(w, r)
+		reqBody := ""
+		if r.Body != nil && r.Method != http.MethodGet {
+			var buf bytes.Buffer
+			io.Copy(&buf, r.Body)
+			reqBody = sanitizeRequestBody(buf.String())
+			r.Body = io.NopCloser(bytes.NewBuffer(buf.Bytes()))
+		}
+
+		rw := &responseWriter{
+			ResponseWriter: w,
+			statusCode:     http.StatusOK,
+			body:           bytes.NewBuffer(nil),
+		}
+
+		next.ServeHTTP(rw, r)
+
+		duration := time.Since(start)
+
+		logger.LogRequest(r.Method, r.URL.Path, r.RemoteAddr, reqBody)
+		logger.LogResponse(rw.statusCode, rw.body.String(), duration.String())
 	})
+}
+
+var authHeaderRegex = regexp.MustCompile(`(?i)(authorization[\"'\s:]*)(Bearer\s+)?([^\"'\s,}]+)`)
+var apiKeyHeaderRegex = regexp.MustCompile(`(?i)(x-api-key[\"'\s:]*)([^\"'\s,}]+)`)
+
+func sanitizeRequestBody(body string) string {
+	if body == "" {
+		return ""
+	}
+	sanitized := authHeaderRegex.ReplaceAllString(body, "$1[REDACTED]")
+	sanitized = apiKeyHeaderRegex.ReplaceAllString(sanitized, "$1[REDACTED]")
+	return sanitized
 }

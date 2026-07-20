@@ -9,6 +9,10 @@ export default function EndpointPage() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
+  const baseUrl = `${window.location.protocol}//${window.location.host}`;
+  const gatewayUrl = `${baseUrl}/v1`;
+  const healthUrl = `${baseUrl}/api/health`;
+
   const fetchKeys = async () => {
     try {
       const res = await fetch('/api/keys');
@@ -93,34 +97,34 @@ export default function EndpointPage() {
           Ingress Connection Settings
         </h2>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginTop: '16px' }}>
-          <div>
-            <label className="form-label">API Gateway Base URL</label>
-            <div style={{ display: 'flex', gap: '10px' }}>
+            <div>
+              <label className="form-label">API Gateway Base URL</label>
+              <div style={{ display: 'flex', gap: '10px' }}>
+                <input 
+                  type="text" 
+                  readOnly 
+                  value={gatewayUrl} 
+                  className="input-field" 
+                  style={{ fontFamily: 'var(--font-mono)' }}
+                />
+                <button 
+                  onClick={() => copyToClipboard(gatewayUrl, 'base_url')}
+                  className="btn btn-secondary"
+                >
+                  {copiedKeyId === 'base_url' ? 'Copied' : 'Copy'}
+                </button>
+              </div>
+            </div>
+            <div>
+              <label className="form-label">Health Check URL</label>
               <input 
                 type="text" 
                 readOnly 
-                value="http://localhost:20128/v1" 
-                className="input-field" 
-                style={{ fontFamily: 'var(--font-mono)' }}
+                value={healthUrl} 
+                className="input-field"
+                style={{ fontFamily: 'var(--font-mono)', opacity: 0.7 }}
               />
-              <button 
-                onClick={() => copyToClipboard('http://localhost:20128/v1', 'base_url')}
-                className="btn btn-secondary"
-              >
-                {copiedKeyId === 'base_url' ? 'Copied' : 'Copy'}
-              </button>
             </div>
-          </div>
-          <div>
-            <label className="form-label">Health Check URL</label>
-            <input 
-              type="text" 
-              readOnly 
-              value="http://localhost:20128/api/health" 
-              className="input-field"
-              style={{ fontFamily: 'var(--font-mono)', opacity: 0.7 }}
-            />
-          </div>
         </div>
       </div>
 

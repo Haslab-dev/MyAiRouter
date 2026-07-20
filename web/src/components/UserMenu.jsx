@@ -1,8 +1,10 @@
 import { useState, useRef, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
+import { useTheme } from '../contexts/ThemeContext';
 
 function ChangePasswordModal({ onClose }) {
   const { changePassword } = useAuth();
+  const { theme } = useTheme();
   const [current, setCurrent] = useState('');
   const [next, setNext] = useState('');
   const [confirm, setConfirm] = useState('');
@@ -36,28 +38,28 @@ function ChangePasswordModal({ onClose }) {
       backdropFilter: 'blur(4px)',
     }}>
       <div style={{
-        background: '#121821',
-        border: '1px solid #222B36',
+        background: 'var(--bg-card)',
+        border: '1px solid var(--border-color)',
         borderRadius: '16px',
         padding: '28px',
         width: '100%', maxWidth: '400px',
         margin: '0 16px',
-        boxShadow: '0 20px 60px rgba(0,0,0,0.6)',
+        boxShadow: '0 20px 60px rgba(0,0,0,0.4)',
       }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '24px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <span className="material-symbols-outlined" style={{ fontSize: '20px', color: '#00C8FF' }}>lock_reset</span>
-            <h3 style={{ fontSize: '16px', fontWeight: 700, color: '#F3F6FA' }}>Change Password</h3>
+            <span className="material-symbols-outlined" style={{ fontSize: '20px', color: 'var(--color-primary)' }}>lock_reset</span>
+            <h3 style={{ fontSize: '16px', fontWeight: 700, color: 'var(--text-main)' }}>Change Password</h3>
           </div>
-          <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#9AA5B5', padding: 0 }}>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: 0 }}>
             <span className="material-symbols-outlined" style={{ fontSize: '20px' }}>close</span>
           </button>
         </div>
 
         {success ? (
           <div style={{ textAlign: 'center', padding: '16px 0' }}>
-            <span className="material-symbols-outlined" style={{ fontSize: '40px', color: '#2ECC71' }}>check_circle</span>
-            <p style={{ color: '#2ECC71', fontWeight: 600, marginTop: '8px' }}>Password updated!</p>
+            <span className="material-symbols-outlined" style={{ fontSize: '40px', color: 'var(--color-success)' }}>check_circle</span>
+            <p style={{ color: 'var(--color-success)', fontWeight: 600, marginTop: '8px' }}>Password updated!</p>
           </div>
         ) : (
           <form onSubmit={handleSubmit}>
@@ -69,16 +71,16 @@ function ChangePasswordModal({ onClose }) {
               <div key={id} style={{ marginBottom: '16px' }}>
                 <label style={{
                   display: 'block', fontSize: '11px', fontWeight: 600,
-                  color: '#9AA5B5', textTransform: 'uppercase', letterSpacing: '0.8px', marginBottom: '6px',
+                  color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.8px', marginBottom: '6px',
                 }}>{label}</label>
                 <input
                   id={id} type="password" value={val}
                   onChange={e => set(e.target.value)}
                   style={{
                     width: '100%', padding: '10px 14px',
-                    background: 'rgba(255,255,255,0.04)',
-                    border: '1px solid #222B36', borderRadius: '8px',
-                    color: '#F3F6FA', fontSize: '13px', fontFamily: 'Inter, sans-serif',
+                    background: 'var(--input-bg)',
+                    border: '1px solid var(--border-color)', borderRadius: '8px',
+                    color: 'var(--text-main)', fontSize: '13px', fontFamily: 'Inter, sans-serif',
                     outline: 'none', boxSizing: 'border-box',
                   }}
                 />
@@ -88,8 +90,8 @@ function ChangePasswordModal({ onClose }) {
             {error && (
               <div style={{
                 display: 'flex', alignItems: 'center', gap: '6px',
-                color: '#FF5A67', fontSize: '12px', marginBottom: '12px',
-                background: 'rgba(255,90,103,0.08)', padding: '8px 12px', borderRadius: '6px',
+                color: 'var(--color-danger)', fontSize: '12px', marginBottom: '12px',
+                background: 'rgba(220, 38, 38, 0.08)', padding: '8px 12px', borderRadius: '6px',
               }}>
                 <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>error</span>
                 {error}
@@ -99,7 +101,7 @@ function ChangePasswordModal({ onClose }) {
             <div style={{ display: 'flex', gap: '10px', marginTop: '4px' }}>
               <button type="submit" disabled={loading} style={{
                 flex: 1, padding: '10px',
-                background: 'linear-gradient(135deg, #00C8FF, #00a4d6)',
+                background: `linear-gradient(135deg, var(--color-primary), var(--color-primary-hover))`,
                 border: 'none', borderRadius: '8px',
                 color: '#fff', fontSize: '13px', fontWeight: 700,
                 cursor: loading ? 'not-allowed' : 'pointer',
@@ -109,9 +111,9 @@ function ChangePasswordModal({ onClose }) {
               </button>
               <button type="button" onClick={onClose} style={{
                 padding: '10px 16px',
-                background: 'rgba(255,255,255,0.04)',
-                border: '1px solid #222B36', borderRadius: '8px',
-                color: '#9AA5B5', fontSize: '13px', cursor: 'pointer',
+                background: 'var(--input-bg)',
+                border: '1px solid var(--border-color)', borderRadius: '8px',
+                color: 'var(--text-muted)', fontSize: '13px', cursor: 'pointer',
                 fontFamily: 'Inter, sans-serif',
               }}>
                 Cancel
@@ -126,11 +128,11 @@ function ChangePasswordModal({ onClose }) {
 
 export default function UserMenu() {
   const { status, logout } = useAuth();
+  const { theme } = useTheme();
   const [open, setOpen] = useState(false);
   const [showChangePassword, setShowChangePassword] = useState(false);
   const menuRef = useRef(null);
 
-  // Close menu when clicking outside
   useEffect(() => {
     const handler = (e) => {
       if (menuRef.current && !menuRef.current.contains(e.target)) {
@@ -146,13 +148,12 @@ export default function UserMenu() {
   return (
     <>
       <div ref={menuRef} style={{ position: 'relative' }}>
-        {/* Avatar button */}
         <button
           onClick={() => setOpen(v => !v)}
           style={{
             display: 'flex', alignItems: 'center', gap: '8px',
-            background: open ? 'rgba(0,200,255,0.08)' : 'transparent',
-            border: `1px solid ${open ? 'rgba(0,200,255,0.2)' : 'transparent'}`,
+            background: open ? 'var(--nav-active-bg)' : 'transparent',
+            border: `1px solid ${open ? 'var(--nav-active-border)' : 'transparent'}`,
             borderRadius: '8px',
             padding: '6px 10px',
             cursor: 'pointer',
@@ -161,57 +162,56 @@ export default function UserMenu() {
         >
           <div style={{
             width: '28px', height: '28px', borderRadius: '50%',
-            background: 'linear-gradient(135deg, #00C8FF33, #00C8FF11)',
-            border: '1px solid rgba(0,200,255,0.3)',
+            background: `linear-gradient(135deg, var(--color-primary), var(--color-primary-hover))`,
+            opacity: 0.2,
+            border: '1px solid var(--color-primary)',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
           }}>
-            <span className="material-symbols-outlined" style={{ fontSize: '16px', color: '#00C8FF' }}>person</span>
+            <span className="material-symbols-outlined" style={{ fontSize: '16px', color: 'var(--color-primary)' }}>person</span>
           </div>
-          <span style={{ fontSize: '12px', fontWeight: 500, color: '#F3F6FA' }}>Operator</span>
+          <span style={{ fontSize: '12px', fontWeight: 500, color: 'var(--text-main)' }}>Operator</span>
           <span className="material-symbols-outlined" style={{
-            fontSize: '16px', color: '#9AA5B5',
+            fontSize: '16px', color: 'var(--text-muted)',
             transform: open ? 'rotate(180deg)' : 'rotate(0deg)',
             transition: 'transform 0.2s',
           }}>expand_more</span>
         </button>
 
-        {/* Dropdown */}
         {open && (
           <div style={{
             position: 'absolute', top: 'calc(100% + 8px)', right: 0,
             width: '220px',
-            background: '#121821',
-            border: '1px solid #222B36',
+            background: 'var(--bg-card)',
+            border: '1px solid var(--border-color)',
             borderRadius: '12px',
-            boxShadow: '0 8px 32px rgba(0,0,0,0.5)',
+            boxShadow: '0 8px 32px rgba(0,0,0,0.3)',
             zIndex: 8000,
             overflow: 'hidden',
             animation: 'fadeInDown 0.15s ease',
           }}>
-            {/* User info header */}
             <div style={{
               padding: '16px 16px 12px',
-              borderBottom: '1px solid #222B36',
+              borderBottom: '1px solid var(--border-color)',
             }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                 <div style={{
                   width: '36px', height: '36px', borderRadius: '50%',
-                  background: 'linear-gradient(135deg, rgba(0,200,255,0.2), rgba(0,200,255,0.05))',
-                  border: '1px solid rgba(0,200,255,0.25)',
+                  background: `linear-gradient(135deg, var(--color-primary), var(--color-primary-hover))`,
+                  opacity: 0.2,
+                  border: '1px solid var(--color-primary)',
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
                 }}>
-                  <span className="material-symbols-outlined" style={{ fontSize: '20px', color: '#00C8FF' }}>person</span>
+                  <span className="material-symbols-outlined" style={{ fontSize: '20px', color: 'var(--color-primary)' }}>person</span>
                 </div>
                 <div>
-                  <div style={{ fontWeight: 700, fontSize: '13px', color: '#F3F6FA' }}>Operator</div>
-                  <div style={{ fontSize: '11px', color: '#4e5a6a', marginTop: '2px' }}>
+                  <div style={{ fontWeight: 700, fontSize: '13px', color: 'var(--text-main)' }}>Operator</div>
+                  <div style={{ fontSize: '11px', color: 'var(--text-subtle)', marginTop: '2px' }}>
                     {status.requireLogin ? '🔒 Auth Enabled' : '🔓 No Auth'}
                   </div>
                 </div>
               </div>
             </div>
 
-            {/* Menu items */}
             <div style={{ padding: '6px' }}>
               <button
                 onClick={() => { setOpen(false); setShowChangePassword(true); }}
@@ -220,19 +220,19 @@ export default function UserMenu() {
                   padding: '10px 10px',
                   background: 'transparent',
                   border: 'none', borderRadius: '8px',
-                  color: '#9AA5B5', fontSize: '13px', cursor: 'pointer',
+                  color: 'var(--text-muted)', fontSize: '13px', cursor: 'pointer',
                   textAlign: 'left',
                   transition: 'background 0.15s, color 0.15s',
                   fontFamily: 'Inter, sans-serif',
                 }}
-                onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.04)'; e.currentTarget.style.color = '#F3F6FA'; }}
-                onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#9AA5B5'; }}
+                onMouseEnter={e => { e.currentTarget.style.background = 'var(--nav-hover)'; e.currentTarget.style.color = 'var(--text-main)'; }}
+                onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'var(--text-muted)'; }}
               >
                 <span className="material-symbols-outlined" style={{ fontSize: '17px' }}>lock_reset</span>
                 Change Password
               </button>
 
-              <div style={{ height: '1px', background: '#222B36', margin: '4px 0' }} />
+              <div style={{ height: '1px', background: 'var(--border-color)', margin: '4px 0' }} />
 
               <button
                 onClick={async () => { setOpen(false); await logout(); }}
@@ -241,12 +241,12 @@ export default function UserMenu() {
                   padding: '10px 10px',
                   background: 'transparent',
                   border: 'none', borderRadius: '8px',
-                  color: '#FF5A67', fontSize: '13px', cursor: 'pointer',
+                  color: 'var(--color-danger)', fontSize: '13px', cursor: 'pointer',
                   textAlign: 'left',
                   transition: 'background 0.15s',
                   fontFamily: 'Inter, sans-serif',
                 }}
-                onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,90,103,0.08)'}
+                onMouseEnter={e => e.currentTarget.style.background = 'var(--glow-danger)'}
                 onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
               >
                 <span className="material-symbols-outlined" style={{ fontSize: '17px' }}>logout</span>

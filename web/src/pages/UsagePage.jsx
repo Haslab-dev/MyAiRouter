@@ -50,7 +50,27 @@ export default function UsagePage() {
     );
   }, [detailedLogs]);
 
-  const [settings, setSettings] = useState(null);
+  const CORE_PROVIDER_NAMES = {
+  'kilocode': 'Kilo Code',
+  'opencode-go': 'OpenCode Go',
+  'opencode-zen': 'OpenCode Zen',
+  'glm': 'GLM API',
+  'glm-coding': 'GLM Coding Plan',
+  'openai': 'OpenAI',
+  'anthropic': 'Anthropic',
+  'gemini': 'Google AI',
+  'deepseek': 'DeepSeek',
+  'azure': 'Azure OpenAI',
+};
+
+const getProviderDisplayName = (providerId, nodesList) => {
+  if (CORE_PROVIDER_NAMES[providerId]) return CORE_PROVIDER_NAMES[providerId];
+  const node = nodesList.find(n => n.id === providerId);
+  if (node?.name) return node.name;
+  return providerId;
+};
+
+const [settings, setSettings] = useState(null);
 
   const fetchData = useCallback(async (provider) => {
     try {
@@ -370,12 +390,12 @@ export default function UsagePage() {
               >
                 <option value="">All Providers</option>
                 {connections.filter(c => c.isActive).map(c => (
-                  <option key={c.id || c.provider} value={c.provider}>{c.name || c.provider}</option>
+                  <option key={c.id || c.provider} value={c.provider}>{getProviderDisplayName(c.provider, nodesList)}</option>
                 ))}
               </select>
             </div>
             <div style={{ fontSize: '11px', color: 'var(--text-subtle)' }}>
-              {selectedProvider ? `Showing: ${selectedProvider}` : 'Overall Summary'}
+              {selectedProvider ? `Showing: ${getProviderDisplayName(selectedProvider, nodesList)}` : 'Overall Summary'}
             </div>
           </div>
 
@@ -618,8 +638,8 @@ export default function UsagePage() {
                         justifyContent: 'center', 
                         width: '100%', 
                         height: '100%', 
-                        background: '#0c1017', 
-                        border: '2px solid var(--color-primary)', 
+                            background: 'var(--bg-card)', 
+                            border: '2px solid var(--color-primary)',
                         borderRadius: '8px', 
                         fontSize: '13px', 
                         fontWeight: 700, 
@@ -663,7 +683,7 @@ export default function UsagePage() {
                             justifyContent: 'center', 
                             width: '100%', 
                             height: '100%', 
-                            background: '#0c1017', 
+                            background: 'var(--bg-card)', 
                             border: active ? '1.5px solid var(--color-primary)' : '1.5px solid var(--border-color)', 
                             borderRadius: '6px', 
                             fontSize: '11px', 
@@ -721,8 +741,10 @@ export default function UsagePage() {
                           </div>
                         </div>
                         <div style={{ textAlign: 'right' }}>
-                          <div style={{ fontSize: '11px', color, fontFamily: 'var(--font-mono)' }}>
-                            {l.promptTokens.toLocaleString()}↑ {l.completionTokens.toLocaleString()}↓
+                          <div style={{ fontSize: '11px', fontFamily: 'var(--font-mono)' }}>
+                            <span style={{ color: 'var(--color-primary)' }}>{l.promptTokens.toLocaleString()}↑</span>
+                            <span style={{ color: 'var(--text-muted)', margin: '0 2px' }}>/</span>
+                            <span style={{ color: 'var(--color-success)' }}>{l.completionTokens.toLocaleString()}↓</span>
                           </div>
                           <div style={{ fontSize: '10px', color: 'var(--text-subtle)', marginTop: '2px' }}>just now</div>
                         </div>
@@ -779,7 +801,7 @@ export default function UsagePage() {
                               <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{label}</span>
                             </div>
                           </td>
-                          <td style={{ padding: '10px 8px', color: 'var(--text-subtle)' }}>{row.requests}</td>
+                          <td style={{ padding: '10px 8px', fontWeight: 700, color: 'var(--color-primary)' }}>{row.requests}</td>
                           <td style={{ padding: '10px 8px', fontWeight: 700, color: 'var(--color-primary)', textAlign: 'right' }}>${row.cost.toFixed(4)}</td>
                         </tr>
                       );
@@ -862,7 +884,9 @@ export default function UsagePage() {
                                 ${row.cost.toFixed(5)}
                               </td>
                               <td style={{ padding: '10px 8px', fontFamily: 'var(--font-mono)', textAlign: 'right', fontSize: '10px', color: 'var(--text-subtle)' }}>
-                                {row.promptTokens.toLocaleString()}↑ / {row.completionTokens.toLocaleString()}↓
+                                <span style={{ color: 'var(--color-primary)' }}>{row.promptTokens.toLocaleString()}↑</span>
+                                <span style={{ color: 'var(--text-muted)', margin: '0 2px' }}>/</span>
+                                <span style={{ color: 'var(--color-success)' }}>{row.completionTokens.toLocaleString()}↓</span>
                               </td>
                             </tr>
                           );
