@@ -143,7 +143,16 @@ const [settings, setSettings] = useState(null);
   const getDynamicNodes = () => {
     const cx = treeCenterX;
     const cy = treeCenterY;
-    const r = 140;
+    const nodeCount = Math.max(
+      nodesList.filter(n => isProviderActive(n.id)).length +
+      (isProviderActive('kilocode') ? 1 : 0) +
+      (isProviderActive('opencode-go') ? 1 : 0) +
+      (isProviderActive('opencode-zen') ? 1 : 0) +
+      (isProviderActive('glm') ? 1 : 0) +
+      (isProviderActive('glm-coding') ? 1 : 0),
+      1
+    );
+    const r = 80 + (nodeCount * 18);
     const activeNodes = [];
 
     // Core providers
@@ -581,7 +590,7 @@ const [settings, setSettings] = useState(null);
               ) : (
                 <svg 
                   style={{ width: '100%', height: '100%', pointerEvents: 'auto', display: 'block' }}
-                  viewBox="0 0 600 440"
+                  viewBox="0 0 700 500"
                 >
                   <style dangerouslySetInnerHTML={{__html: `
                     @keyframes transport-dash {
@@ -671,10 +680,10 @@ const [settings, setSettings] = useState(null);
                       return (
                         <foreignObject 
                           key={node.id}
-                          x={node.x - 70} 
-                          y={node.y - 20} 
-                          width="140" 
-                          height="40"
+                          x={node.x - 65} 
+                          y={node.y - 18} 
+                          width="130" 
+                          height="36"
                           style={{ overflow: 'visible' }}
                         >
                           <div style={{ 
@@ -686,7 +695,7 @@ const [settings, setSettings] = useState(null);
                             background: 'var(--bg-card)', 
                             border: active ? '1.5px solid var(--color-primary)' : '1.5px solid var(--border-color)', 
                             borderRadius: '6px', 
-                            fontSize: '11px', 
+                            fontSize: '10px', 
                             fontWeight: 600, 
                             color: 'var(--text-main)', 
                             boxShadow: active ? '0 0 12px rgba(0, 200, 255, 0.25)' : 'none',
@@ -694,12 +703,12 @@ const [settings, setSettings] = useState(null);
                             transition: 'all 0.3s ease',
                             fontFamily: 'var(--font-sans)',
                             boxSizing: 'border-box',
-                            padding: '0 8px'
+                            padding: '0 6px'
                           }}>
                             <span className="material-symbols-outlined" style={{ 
-                              fontSize: '15px', 
+                              fontSize: '13px', 
                               color: active ? 'var(--color-primary)' : 'var(--text-subtle)', 
-                              marginRight: '6px' 
+                              marginRight: '4px' 
                             }}>{node.icon}</span>
                             <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                               {node.name}

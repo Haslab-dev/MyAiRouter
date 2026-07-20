@@ -113,10 +113,23 @@ body::before {
   align-items: center;
 }
 
-.logo-section {
+.logo-section-top {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
+}
+
+.logo-text-wrapper {
+  display: flex;
+  flex-direction: row;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.logo-version {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-family: monospace;
 }
 
 .logo-icon {

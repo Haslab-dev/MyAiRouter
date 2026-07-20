@@ -117,7 +117,10 @@ const activeConns = conns.filter(c => c.isActive);
         <div className="top-bar-left">
           <div className="logo-section-top">
             <span className="material-symbols-outlined logo-icon-top">router</span>
-            <span className="logo-text-top">myAiRouter</span>
+            <div className="logo-text-wrapper">
+              <span className="logo-text-top">myAiRouter</span>
+              <span className="logo-version">v0.2.4</span>
+            </div>
           </div>
         </div>
 

@@ -46,7 +46,7 @@ func main() {
 			printHelp()
 			return
 		case "version", "--version", "-v":
-			fmt.Println("myairouter v0.2.3")
+			fmt.Println("myairouter v0.2.4")
 			return
 		}
 	}
