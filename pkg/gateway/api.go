@@ -65,6 +65,16 @@ func issueSession() string {
 	return hex.EncodeToString(sum[:])
 }
 
+func ValidateSessionCookie(cookieVal string) bool {
+	if cookieVal == "" {
+		return false
+	}
+	sessionsMu.RLock()
+	expiry, ok := sessions[cookieVal]
+	sessionsMu.RUnlock()
+	return ok && time.Now().Before(expiry)
+}
+
 func validateSession(r *http.Request) bool {
 	// Check if auth is required at all
 	settings, err := db.GetSettings()
@@ -75,10 +85,7 @@ func validateSession(r *http.Request) bool {
 	if err != nil {
 		return false
 	}
-	sessionsMu.RLock()
-	expiry, ok := sessions[cookie.Value]
-	sessionsMu.RUnlock()
-	return ok && time.Now().Before(expiry)
+	return ValidateSessionCookie(cookie.Value)
 }
 
 func RegisterAdminRoutes(mux *http.ServeMux) {

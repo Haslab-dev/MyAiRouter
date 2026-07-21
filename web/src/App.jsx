@@ -14,11 +14,13 @@ const SkillsPage = lazy(() => import('./pages/SkillsPage'));
 const QuotaPage = lazy(() => import('./pages/QuotaPage'));
 const ConsoleLogPage = lazy(() => import('./pages/ConsoleLogPage'));
 const TracesPage = lazy(() => import('./pages/TracesPage'));
+const ChatPage = lazy(() => import('./pages/ChatPage'));
 const LoginPage = lazy(() => import('./pages/LoginPage'));
 const OnboardingPage = lazy(() => import('./pages/OnboardingPage'));
 
 const NAV_ITEMS = [
   { to: '/usage', label: 'Overview', icon: 'dashboard' },
+  { to: '/chat', label: 'Chat', icon: 'forum' },
   { to: '/endpoint', label: 'Gateway', icon: 'explore' },
   { to: '/providers', label: 'Providers', icon: 'dns' },
   { to: '/combos', label: 'Routes', icon: 'alt_route' },
@@ -186,6 +188,7 @@ const activeConns = conns.filter(c => c.isActive);
               <Route path="/providers" element={<ProvidersPage />} />
               <Route path="/combos" element={<CombosPage />} />
               <Route path="/token-saver" element={<TokenSaverPage />} />
+              <Route path="/chat" element={<ChatPage />} />
               <Route path="/traces" element={<TracesPage />} />
               <Route path="/quota" element={<QuotaPage />} />
               <Route path="/skills" element={<SkillsPage />} />
