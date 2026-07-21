@@ -29,6 +29,22 @@ var (
 	sessionsMu sync.RWMutex
 )
 
+func init() {
+	go func() {
+		ticker := time.NewTicker(30 * time.Minute)
+		for range ticker.C {
+			now := time.Now()
+			sessionsMu.Lock()
+			for k, exp := range sessions {
+				if now.After(exp) {
+					delete(sessions, k)
+				}
+			}
+			sessionsMu.Unlock()
+		}
+	}()
+}
+
 func hashPassword(plain string) string {
 	sum := sha256.Sum256([]byte(plain))
 	return hex.EncodeToString(sum[:])
@@ -405,21 +421,30 @@ func handleUsageStats(w http.ResponseWriter, r *http.Request) {
 
 func handleUsageLogs(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	limitStr := r.URL.Query().Get("limit")
 	provider := r.URL.Query().Get("provider")
-	limit := 50
-	if limitStr != "" {
-		if parsed, err := strconv.Atoi(limitStr); err == nil {
-			limit = parsed
-		}
+
+	pageStr := r.URL.Query().Get("page")
+	perPageStr := r.URL.Query().Get("perPage")
+	page, _ := strconv.Atoi(pageStr)
+	perPage, _ := strconv.Atoi(perPageStr)
+	if page < 1 {
+		page = 1
+	}
+	if perPage < 1 {
+		perPage = 20
 	}
 
-	logs, err := db.GetRecentLogs(limit, provider)
+	logs, total, err := db.GetRecentLogsPaginated(page, perPage, provider)
 	if err != nil {
 		WriteErrorResponse(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	_ = json.NewEncoder(w).Encode(logs)
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"logs":    logs,
+		"total":   total,
+		"page":    page,
+		"perPage": perPage,
+	})
 }
 
 func handleUsageCharts(w http.ResponseWriter, r *http.Request) {
@@ -445,8 +470,8 @@ func handleUsageCharts(w http.ResponseWriter, r *http.Request) {
 	whereClause := "WHERE timestamp >= datetime('now', '-24 hours')"
 	args := []interface{}{}
 	if provider != "" {
-		whereClause += " AND provider = ?"
-		args = append(args, provider)
+		whereClause += " AND (LOWER(provider) = LOWER(?) OR LOWER(connectionId) = LOWER(?))"
+		args = append(args, provider, provider)
 	}
 
 	rows, err := db.DB.Query(`
@@ -683,7 +708,25 @@ func handleServerLogs(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusMethodNotAllowed)
 		return
 	}
-	_ = json.NewEncoder(w).Encode(map[string]interface{}{"logs": logger.GetLogs()})
+
+	pageStr := r.URL.Query().Get("page")
+	perPageStr := r.URL.Query().Get("perPage")
+	page, _ := strconv.Atoi(pageStr)
+	perPage, _ := strconv.Atoi(perPageStr)
+	if page < 1 {
+		page = 1
+	}
+	if perPage < 1 {
+		perPage = 20
+	}
+
+	logs, total := logger.GetLogsPaginated(page, perPage)
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"logs":    logs,
+		"total":   total,
+		"page":    page,
+		"perPage": perPage,
+	})
 }
 
 func handleUsageModels(w http.ResponseWriter, r *http.Request) {
@@ -980,20 +1023,28 @@ func handleTraces(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	limitStr := r.URL.Query().Get("limit")
-	limit := 100
-	if limitStr != "" {
-		if val, err := strconv.Atoi(limitStr); err == nil {
-			limit = val
-		}
+	pageStr := r.URL.Query().Get("page")
+	perPageStr := r.URL.Query().Get("perPage")
+	page, _ := strconv.Atoi(pageStr)
+	perPage, _ := strconv.Atoi(perPageStr)
+	if page < 1 {
+		page = 1
+	}
+	if perPage < 1 {
+		perPage = 20
 	}
 
-	traces, err := db.GetRecentTraces(limit)
+	traces, total, err := db.GetRecentTracesPaginated(page, perPage)
 	if err != nil {
 		WriteErrorResponse(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	_ = json.NewEncoder(w).Encode(traces)
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"traces":  traces,
+		"total":   total,
+		"page":    page,
+		"perPage": perPage,
+	})
 }
 
 func handleTraceDetail(w http.ResponseWriter, r *http.Request) {

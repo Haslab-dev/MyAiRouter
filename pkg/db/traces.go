@@ -48,6 +48,39 @@ func GetRecentTraces(limit int) ([]TraceEntry, error) {
 	return entries, nil
 }
 
+func GetRecentTracesPaginated(page, perPage int) ([]TraceEntry, int, error) {
+	var total int
+	err := DB.QueryRow(`SELECT COUNT(*) FROM requestDetails`).Scan(&total)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	offset := (page - 1) * perPage
+	if offset < 0 {
+		offset = 0
+	}
+
+	rows, err := DB.Query(
+		`SELECT id, timestamp, provider, model, connectionId, status, data 
+		FROM requestDetails ORDER BY timestamp DESC LIMIT ? OFFSET ?`,
+		perPage, offset,
+	)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer rows.Close()
+
+	var entries []TraceEntry
+	for rows.Next() {
+		var e TraceEntry
+		if err := rows.Scan(&e.ID, &e.Timestamp, &e.Provider, &e.Model, &e.ConnectionID, &e.Status, &e.Data); err != nil {
+			return nil, 0, err
+		}
+		entries = append(entries, e)
+	}
+	return entries, total, nil
+}
+
 func GetTraceByID(id string) (*TraceEntry, error) {
 	var e TraceEntry
 	err := DB.QueryRow(

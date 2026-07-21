@@ -376,8 +376,8 @@ func GetUsageStats(provider string) (*UsageStats, error) {
 	where := ""
 	args := []interface{}{}
 	if provider != "" {
-		where = " WHERE provider = ?"
-		args = append(args, provider)
+		where = " WHERE (LOWER(provider) = LOWER(?) OR LOWER(connectionId) = LOWER(?))"
+		args = append(args, provider, provider)
 	}
 	row := DB.QueryRow("SELECT COUNT(*), SUM(promptTokens), SUM(completionTokens), SUM(cost) FROM usageHistory"+where, args...)
 	var requests, prompt, completion sql.NullInt64
@@ -399,6 +399,11 @@ func GetUsageStats(provider string) (*UsageStats, error) {
 }
 
 func GetRecentLogs(limit int, provider string) ([]UsageEntry, error) {
+	entries, _, err := GetRecentLogsPaginated(1, limit, provider)
+	return entries, err
+}
+
+func GetRecentLogsPaginated(page, perPage int, provider string) ([]UsageEntry, int, error) {
 	keys, err := ListApiKeys()
 	keyNameMap := make(map[string]string)
 	if err == nil {
@@ -407,19 +412,35 @@ func GetRecentLogs(limit int, provider string) ([]UsageEntry, error) {
 		}
 	}
 
+	var total int
+	countQuery := `SELECT COUNT(*) FROM usageHistory`
+	countArgs := []interface{}{}
+	if provider != "" {
+		countQuery += " WHERE (LOWER(provider) = LOWER(?) OR LOWER(connectionId) = LOWER(?))"
+		countArgs = append(countArgs, provider, provider)
+	}
+	if err := DB.QueryRow(countQuery, countArgs...).Scan(&total); err != nil {
+		return nil, 0, err
+	}
+
+	offset := (page - 1) * perPage
+	if offset < 0 {
+		offset = 0
+	}
+
 	query := `SELECT id, timestamp, provider, model, connectionId, apiKey, endpoint, promptTokens, completionTokens, cachedTokens, cost, status, tokens, meta 
 		FROM usageHistory`
 	args := []interface{}{}
 	if provider != "" {
-		query += " WHERE provider = ?"
-		args = append(args, provider)
+		query += " WHERE (LOWER(provider) = LOWER(?) OR LOWER(connectionId) = LOWER(?))"
+		args = append(args, provider, provider)
 	}
-	query += " ORDER BY id DESC LIMIT ?"
-	args = append(args, limit)
+	query += " ORDER BY id DESC LIMIT ? OFFSET ?"
+	args = append(args, perPage, offset)
 
 	rows, err := DB.Query(query, args...)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	defer rows.Close()
 
@@ -428,7 +449,7 @@ func GetRecentLogs(limit int, provider string) ([]UsageEntry, error) {
 		var e UsageEntry
 		var tokensStr string
 		if err := rows.Scan(&e.ID, &e.Timestamp, &e.Provider, &e.Model, &e.ConnectionID, &e.APIKey, &e.Endpoint, &e.PromptTokens, &e.CompletionTokens, &e.CachedTokens, &e.Cost, &e.Status, &tokensStr, &e.Meta); err != nil {
-			return nil, err
+			return nil, 0, err
 		}
 		_ = json.Unmarshal([]byte(tokensStr), &e.Tokens)
 		if e.CachedTokens == 0 {
@@ -447,7 +468,7 @@ func GetRecentLogs(limit int, provider string) ([]UsageEntry, error) {
 		}
 		logs = append(logs, e)
 	}
-	return logs, nil
+	return logs, total, nil
 }
 
 func GetChartData(days int) ([]ChartBucket, error) {
@@ -509,8 +530,8 @@ func GetModelUsageSummary(provider string) ([]ModelUsageSummary, error) {
 		FROM usageHistory`
 	args := []interface{}{}
 	if provider != "" {
-		query += " WHERE provider = ?"
-		args = append(args, provider)
+		query += " WHERE (LOWER(provider) = LOWER(?) OR LOWER(connectionId) = LOWER(?))"
+		args = append(args, provider, provider)
 	}
 	query += " GROUP BY model, provider ORDER BY cost DESC"
 

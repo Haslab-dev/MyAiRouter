@@ -135,15 +135,17 @@ func sanitizeForDisplay(input string, maxLen int) string {
 }
 
 var (
-	mu      sync.RWMutex
-	logs    []LogEntry
-	maxLog  = 500
-	nextID  int64 = 1
+	mu            sync.RWMutex
+	logs          []LogEntry
+	maxLog        = 500
+	nextID        int64 = 1
+	pendingMap    = make(map[int64]int) // ID -> slice index helper if needed
 )
 
-func LogRequest(method, path, from, reqBody string) {
+func LogRequest(method, path, from, reqBody string) int64 {
+	id := getNextID()
 	entry := LogEntry{
-		ID:        getNextID(),
+		ID:        id,
 		Timestamp: time.Now().Format("2006-01-02 15:04:05.000"),
 		Method:    method,
 		Path:      path,
@@ -154,13 +156,20 @@ func LogRequest(method, path, from, reqBody string) {
 		entry.ReqBody = sanitizeForDisplay(reqBody, 500)
 	}
 	addEntry(entry)
+	return id
 }
 
 func LogResponse(status int, respBody string, duration string) {
 	mu.Lock()
 	defer mu.Unlock()
 
-	for i := len(logs) - 1; i >= 0; i-- {
+	// Limit backward search to at most 50 entries for high speed O(1) bound
+	searchLimit := len(logs) - 50
+	if searchLimit < 0 {
+		searchLimit = 0
+	}
+
+	for i := len(logs) - 1; i >= searchLimit; i-- {
 		if logs[i].Type == "request" && logs[i].Status == 0 {
 			logs[i].Status = status
 			logs[i].RespBody = sanitizeForDisplay(respBody, 500)
@@ -192,9 +201,6 @@ func extractErrorMessage(body string) string {
 			return msg
 		}
 		if detail, ok := data["error"].(map[string]interface{}); ok {
-			if msg, ok := detail["message"].(string); ok && msg != "" {
-				return msg
-			}
 			if msg, ok := detail["message"].(string); ok && msg != "" {
 				return msg
 			}
@@ -242,10 +248,12 @@ func getNextID() int64 {
 func addEntry(entry LogEntry) {
 	mu.Lock()
 	defer mu.Unlock()
-	logs = append(logs, entry)
-	if len(logs) > maxLog {
+	if len(logs) >= maxLog {
+		// Zero out head element to allow GC cleanup of strings/buffers
+		logs[0] = LogEntry{}
 		logs = logs[1:]
 	}
+	logs = append(logs, entry)
 }
 
 func GetLogs() []LogEntry {
@@ -254,6 +262,36 @@ func GetLogs() []LogEntry {
 	res := make([]LogEntry, len(logs))
 	copy(res, logs)
 	return res
+}
+
+func GetLogsPaginated(page, perPage int) ([]LogEntry, int) {
+	mu.RLock()
+	defer mu.RUnlock()
+
+	total := len(logs)
+	if total == 0 {
+		return []LogEntry{}, 0
+	}
+
+	offset := (page - 1) * perPage
+	if offset < 0 {
+		offset = 0
+	}
+	if offset >= total {
+		return []LogEntry{}, total
+	}
+
+	end := offset + perPage
+	if end > total {
+		end = total
+	}
+
+	// Return in reverse order (latest first)
+	res := make([]LogEntry, 0, end-offset)
+	for i := end - 1; i >= offset; i-- {
+		res = append(res, logs[i])
+	}
+	return res, total
 }
 
 func ClearLogs() {

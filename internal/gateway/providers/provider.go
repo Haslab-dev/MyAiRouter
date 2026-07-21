@@ -3,9 +3,22 @@ package providers
 import (
 	"context"
 	"io"
+	"net/http"
+	"time"
 
 	"myAiRouter/pkg/db"
 )
+
+var SharedTransport = &http.Transport{
+	MaxIdleConns:        1000,
+	MaxIdleConnsPerHost: 100,
+	IdleConnTimeout:     90 * time.Second,
+}
+
+var SharedHTTPClient = &http.Client{
+	Transport: SharedTransport,
+	Timeout:   120 * time.Second,
+}
 
 type ExecutionResult struct {
 	ResponseCode int

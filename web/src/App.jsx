@@ -1,20 +1,21 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, lazy, Suspense } from 'react';
 import { Routes, Route, NavLink, Navigate } from 'react-router-dom';
-import EndpointPage from './pages/EndpointPage';
-import ProvidersPage from './pages/ProvidersPage';
-import CombosPage from './pages/CombosPage';
-import UsagePage from './pages/UsagePage';
-import TokenSaverPage from './pages/TokenSaverPage';
-import SkillsPage from './pages/SkillsPage';
-import QuotaPage from './pages/QuotaPage';
-import ConsoleLogPage from './pages/ConsoleLogPage';
-import TracesPage from './pages/TracesPage';
-import LoginPage from './pages/LoginPage';
-import OnboardingPage from './pages/OnboardingPage';
 import UserMenu from './components/UserMenu';
 import Snackbar from './components/Snackbar';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { ThemeProvider, useTheme } from './contexts/ThemeContext';
+
+const EndpointPage = lazy(() => import('./pages/EndpointPage'));
+const ProvidersPage = lazy(() => import('./pages/ProvidersPage'));
+const CombosPage = lazy(() => import('./pages/CombosPage'));
+const UsagePage = lazy(() => import('./pages/UsagePage'));
+const TokenSaverPage = lazy(() => import('./pages/TokenSaverPage'));
+const SkillsPage = lazy(() => import('./pages/SkillsPage'));
+const QuotaPage = lazy(() => import('./pages/QuotaPage'));
+const ConsoleLogPage = lazy(() => import('./pages/ConsoleLogPage'));
+const TracesPage = lazy(() => import('./pages/TracesPage'));
+const LoginPage = lazy(() => import('./pages/LoginPage'));
+const OnboardingPage = lazy(() => import('./pages/OnboardingPage'));
 
 const NAV_ITEMS = [
   { to: '/usage', label: 'Overview', icon: 'dashboard' },
@@ -172,18 +173,25 @@ const activeConns = conns.filter(c => c.isActive);
         </aside>
 
         <main className="main-content">
-          <Routes>
-            <Route path="/" element={<Navigate to="/usage" replace />} />
-            <Route path="/usage" element={<UsagePage />} />
-            <Route path="/endpoint" element={<EndpointPage />} />
-            <Route path="/providers" element={<ProvidersPage />} />
-            <Route path="/combos" element={<CombosPage />} />
-            <Route path="/token-saver" element={<TokenSaverPage />} />
-            <Route path="/traces" element={<TracesPage />} />
-            <Route path="/quota" element={<QuotaPage />} />
-            <Route path="/skills" element={<SkillsPage />} />
-            <Route path="/console-log" element={<ConsoleLogPage />} />
-          </Routes>
+          <Suspense fallback={
+            <div style={{ padding: '24px', display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--text-muted)' }}>
+              <span className="material-symbols-outlined" style={{ animation: 'spin 1s linear infinite' }}>progress_activity</span>
+              Loading page module...
+            </div>
+          }>
+            <Routes>
+              <Route path="/" element={<Navigate to="/usage" replace />} />
+              <Route path="/usage" element={<UsagePage />} />
+              <Route path="/endpoint" element={<EndpointPage />} />
+              <Route path="/providers" element={<ProvidersPage />} />
+              <Route path="/combos" element={<CombosPage />} />
+              <Route path="/token-saver" element={<TokenSaverPage />} />
+              <Route path="/traces" element={<TracesPage />} />
+              <Route path="/quota" element={<QuotaPage />} />
+              <Route path="/skills" element={<SkillsPage />} />
+              <Route path="/console-log" element={<ConsoleLogPage />} />
+            </Routes>
+          </Suspense>
         </main>
       </div>
       <Snackbar />

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useSnackbar } from '../stores/snackbar';
 
 const CORE_PROVIDERS = [
@@ -85,7 +85,7 @@ export default function ProvidersPage() {
         fetch('/api/provider-nodes'),
         fetch('/api/models/custom'),
         fetch('/v1/models'),
-        fetch('/api/usage/logs?limit=500')
+        fetch('/api/usage/logs?perPage=500&page=1')
       ]);
       if (connRes.ok) {
         setConnections((await connRes.json()) || []);
@@ -99,7 +99,8 @@ export default function ProvidersPage() {
         setCustomModels(data.models || []);
       }
       if (logsRes.ok) {
-        setDetailedLogs((await logsRes.json()) || []);
+        const data = await logsRes.json();
+        setDetailedLogs(data.logs || []);
       }
       if (v1modelsRes.ok) {
         const v1data = await v1modelsRes.json();
@@ -125,48 +126,64 @@ export default function ProvidersPage() {
     fetchData();
   }, []);
 
-  const getProviderMetrics = (providerId) => {
-    const providerLogs = detailedLogs.filter(l =>
-      l.provider?.toLowerCase() === providerId.toLowerCase() ||
-      (connections.find(c => c.id === l.connectionId)?.provider?.toLowerCase() === providerId.toLowerCase())
-    );
-
-    if (providerLogs.length === 0) {
-      return {
-        requests: 0,
-        successRate: '100%',
-        avgLatency: '—',
-        status: 'Healthy'
-      };
-    }
-
-    const successLogs = providerLogs.filter(l => l.status === 'ok');
-    const successRate = ((successLogs.length / providerLogs.length) * 100).toFixed(2) + '%';
-
-    let totalLatency = 0;
-    let latencyCount = 0;
-    providerLogs.forEach(l => {
-      try {
-        const meta = JSON.parse(l.meta || '{}');
-        if (meta.duration_ms) {
-          totalLatency += meta.duration_ms;
-          latencyCount++;
-        }
-      } catch (e) { }
+  const providerMetricsMap = useMemo(() => {
+    const map = {};
+    const connMap = {};
+    connections.forEach(c => {
+      if (c.id && c.provider) {
+        connMap[c.id] = c.provider.toLowerCase();
+      }
     });
 
-    const avgLatency = latencyCount > 0 ? (totalLatency / latencyCount).toFixed(0) + 'ms' : '—';
-    const recentLogs = providerLogs.slice(0, 10);
-    const recentFailures = recentLogs.filter(l => l.status !== 'ok').length;
-    const status = recentLogs.length > 0 && (recentFailures / recentLogs.length) > 0.5 ? 'Degraded' : 'Healthy';
+    detailedLogs.forEach(l => {
+      let pId = (l.provider || '').toLowerCase();
+      if (!pId && l.connectionId && connMap[l.connectionId]) {
+        pId = connMap[l.connectionId];
+      }
+      if (!pId) return;
 
-    return {
-      requests: providerLogs.length,
-      successRate,
-      avgLatency,
-      status
+      if (!map[pId]) {
+        map[pId] = [];
+      }
+      map[pId].push(l);
+    });
+
+    const result = {};
+    Object.keys(map).forEach(pId => {
+      const logs = map[pId];
+      const successLogs = logs.filter(l => l.status === 'ok');
+      const successRate = ((successLogs.length / logs.length) * 100).toFixed(2) + '%';
+      let totalLatency = 0;
+      let latencyCount = 0;
+      logs.forEach(l => {
+        if (l.meta) {
+          try {
+            const meta = JSON.parse(l.meta);
+            if (meta.duration_ms) {
+              totalLatency += meta.duration_ms;
+              latencyCount++;
+            }
+          } catch (e) {}
+        }
+      });
+      const avgLatency = latencyCount > 0 ? (totalLatency / latencyCount).toFixed(0) + 'ms' : '—';
+      const recentLogs = logs.slice(0, 10);
+      const recentFailures = recentLogs.filter(l => l.status !== 'ok').length;
+      const status = recentLogs.length > 0 && (recentFailures / recentLogs.length) > 0.5 ? 'Degraded' : 'Healthy';
+      result[pId] = { requests: logs.length, successRate, avgLatency, status };
+    });
+    return result;
+  }, [detailedLogs, connections]);
+
+  const getProviderMetrics = useCallback((providerId) => {
+    const pId = (providerId || '').toLowerCase();
+    return providerMetricsMap[pId] || {
+      requests: 0,
+      successRate: '100%',
+      avgLatency: '—',
+      status: 'Healthy'
     };
-  };
+  }, [providerMetricsMap]);
 
   const fetchEnabledModels = async (providerId) => {
     try {

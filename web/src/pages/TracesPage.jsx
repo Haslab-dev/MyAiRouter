@@ -5,14 +5,18 @@ export default function TracesPage() {
   const [selectedTrace, setSelectedTrace] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
+  const perPage = 20;
 
-  const fetchTraces = async () => {
+  const fetchTraces = async (p = page) => {
     setIsLoading(true);
     try {
-      const res = await fetch('/api/traces?limit=100');
+      const res = await fetch(`/api/traces?page=${p}&perPage=${perPage}`);
       if (res.ok) {
         const data = await res.json();
-        setTraces(data || []);
+        setTraces(data.traces || []);
+        setTotal(data.total || 0);
       }
     } catch (err) {
       console.error('Error fetching traces:', err);
@@ -22,10 +26,13 @@ export default function TracesPage() {
   };
 
   useEffect(() => {
-    fetchTraces();
-    const interval = setInterval(fetchTraces, 10000);
-    return () => clearInterval(interval);
+    fetchTraces(1);
   }, []);
+
+  const handlePageChange = (newPage) => {
+    setPage(newPage);
+    fetchTraces(newPage);
+  };
 
   const selectTrace = async (id) => {
     try {
@@ -39,11 +46,13 @@ export default function TracesPage() {
     }
   };
 
-  const filteredTraces = traces.filter(t => 
-    t.model.toLowerCase().includes(searchQuery.toLowerCase()) || 
-    t.provider.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    t.id.toLowerCase().includes(searchQuery.toLowerCase())
+  const filteredTraces = traces.filter(t =>
+    t.model?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    t.provider?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    (t.id && t.id.toLowerCase().includes(searchQuery.toLowerCase()))
   );
+
+  const totalPages = Math.ceil(total / perPage);
 
   return (
     <div>
@@ -52,23 +61,23 @@ export default function TracesPage() {
           <h1 className="page-title">Request Traces</h1>
           <p className="page-description">High-fidelity execution traces tracking request lifecycle and latency timeline.</p>
         </div>
-        <button className="btn btn-secondary" onClick={fetchTraces}>
+        <button className="btn btn-secondary" onClick={() => fetchTraces(page)}>
           <span className="material-symbols-outlined" style={{ fontSize: '16px' }}>refresh</span>
           Refresh
         </button>
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: selectedTrace ? '350px 1fr' : '1fr', gap: '20px', transition: 'all 0.3s ease' }}>
-        
+
         {/* Left Column: Traces List */}
         <div className="card" style={{ padding: '16px', display: 'flex', flexDirection: 'column', height: 'calc(100vh - 160px)', overflowY: 'auto' }}>
           <div style={{ marginBottom: '16px' }}>
-            <input 
-              type="text" 
-              placeholder="Search by ID, provider, model..." 
+            <input
+              type="text"
+              placeholder="Search by ID, provider, model..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="input-field" 
+              className="input-field"
               style={{ fontSize: '12px', padding: '8px 12px' }}
             />
           </div>
@@ -94,8 +103,8 @@ export default function TracesPage() {
                 const cost = parsed.cost !== undefined ? `$${parsed.cost.toFixed(5)}` : '$0';
 
                 return (
-                  <div 
-                    key={t.id} 
+                  <div
+                    key={t.id}
                     onClick={() => selectTrace(t.id)}
                     style={{
                       padding: '12px',
@@ -109,7 +118,7 @@ export default function TracesPage() {
                   >
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
                       <span style={{ fontSize: '10px', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)' }}>
-                        {t.id.slice(0, 8)}...
+                        {t.id?.slice(0, 8)}...
                       </span>
                       <span className={`badge ${isError ? 'badge-danger' : 'badge-success'}`} style={{ fontSize: '9px', padding: '2px 6px' }}>
                         {t.status}
@@ -119,12 +128,67 @@ export default function TracesPage() {
                       {t.model}
                     </div>
                     <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: 'var(--text-muted)' }}>
-                      <span>{t.provider.toUpperCase()}</span>
+                      <span>{t.provider?.toUpperCase()}</span>
                       <span style={{ fontFamily: 'var(--font-mono)' }}>{latency} · {cost}</span>
                     </div>
                   </div>
                 );
               })}
+            </div>
+          )}
+
+          {/* Pagination */}
+          {totalPages > 0 && (
+            <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '4px', marginTop: '12px', paddingTop: '12px', borderTop: '1px solid var(--border-color)', flexShrink: 0 }}>
+              <button
+                onClick={() => handlePageChange(page - 1)}
+                disabled={page <= 1}
+                className="btn btn-secondary"
+                style={{ padding: '4px 8px', fontSize: '11px', opacity: page <= 1 ? 0.4 : 1 }}
+              >
+                ‹
+              </button>
+              {Array.from({ length: Math.min(totalPages, 5) }, (_, i) => {
+                let p;
+                if (totalPages <= 5) {
+                  p = i + 1;
+                } else if (page <= 3) {
+                  p = i + 1;
+                } else if (page >= totalPages - 2) {
+                  p = totalPages - 4 + i;
+                } else {
+                  p = page - 2 + i;
+                }
+                return (
+                  <button
+                    key={p}
+                    onClick={() => handlePageChange(p)}
+                    style={{
+                      padding: '4px 10px',
+                      fontSize: '11px',
+                      fontWeight: page === p ? 700 : 400,
+                      border: 'none',
+                      borderRadius: '4px',
+                      cursor: 'pointer',
+                      background: page === p ? 'var(--color-primary)' : 'transparent',
+                      color: page === p ? '#fff' : 'var(--text-muted)',
+                    }}
+                  >
+                    {p}
+                  </button>
+                );
+              })}
+              <button
+                onClick={() => handlePageChange(page + 1)}
+                disabled={page >= totalPages}
+                className="btn btn-secondary"
+                style={{ padding: '4px 8px', fontSize: '11px', opacity: page >= totalPages ? 0.4 : 1 }}
+              >
+                ›
+              </button>
+              <span style={{ fontSize: '10px', color: 'var(--text-muted)', marginLeft: '8px' }}>
+                {total} total
+              </span>
             </div>
           )}
         </div>
@@ -202,21 +266,21 @@ export default function TracesPage() {
 
               <div style={{ position: 'relative', paddingLeft: '24px' }}>
                 <div style={{ position: 'absolute', left: '7px', top: '8px', bottom: '8px', width: '2px', background: 'var(--border-color)' }}></div>
-                
+
                 {selectedTrace.steps?.map((step, idx) => {
                   const isErr = step.status === 'failed';
                   const isSuccess = step.status === 'success';
 
                   return (
                     <div key={idx} style={{ position: 'relative', marginBottom: '16px' }}>
-                      <div 
-                        style={{ 
-                          position: 'absolute', 
-                          left: '-23px', 
-                          top: '4px', 
-                          width: '12px', 
-                          height: '12px', 
-                          borderRadius: '50%', 
+                      <div
+                        style={{
+                          position: 'absolute',
+                          left: '-23px',
+                          top: '4px',
+                          width: '12px',
+                          height: '12px',
+                          borderRadius: '50%',
                           background: isErr ? 'var(--color-danger)' : isSuccess ? 'var(--color-success)' : 'var(--text-subtle)',
                           border: '3px solid var(--bg-card)',
                           boxShadow: isSuccess ? '0 0 8px rgba(46,204,113,0.4)' : 'none'

@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
 
 const AuthContext = createContext(null);
 
@@ -7,19 +7,15 @@ const ONBOARDING_KEY = 'myairouter_onboarding_done';
 /** Parse the nested error shape: { error: { message: "...", type: "..." } } */
 function parseApiError(data, fallback) {
   if (!data) return fallback;
-  // Handle { error: { message: "..." } }
   if (data.error?.message) return data.error.message;
-  // Handle { error: "string" }
   if (typeof data.error === 'string') return data.error;
-  // Handle { message: "string" }
   if (typeof data.message === 'string') return data.message;
   return fallback;
 }
 
 export function AuthProvider({ children }) {
-  const [status, setStatus] = useState(null); // null = loading
+  const [status, setStatus] = useState(null);
   const [onboardingDone, setOnboardingDone] = useState(false);
-  // status: { requireLogin: bool, authenticated: bool }
 
   const fetchStatus = useCallback(async () => {
     try {
@@ -38,12 +34,12 @@ export function AuthProvider({ children }) {
     setOnboardingDone(localStorage.getItem(ONBOARDING_KEY) === 'true');
   }, [fetchStatus]);
 
-  const completeOnboarding = () => {
+  const completeOnboarding = useCallback(() => {
     localStorage.setItem(ONBOARDING_KEY, 'true');
     setOnboardingDone(true);
-  };
+  }, []);
 
-  const login = async (password) => {
+  const login = useCallback(async (password) => {
     const res = await fetch('/api/auth/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -54,14 +50,14 @@ export function AuthProvider({ children }) {
       throw new Error(parseApiError(d, 'Invalid password'));
     }
     await fetchStatus();
-  };
+  }, [fetchStatus]);
 
-  const logout = async () => {
+  const logout = useCallback(async () => {
     await fetch('/api/auth/logout', { method: 'POST' });
     await fetchStatus();
-  };
+  }, [fetchStatus]);
 
-  const changePassword = async (currentPassword, newPassword) => {
+  const changePassword = useCallback(async (currentPassword, newPassword) => {
     const res = await fetch('/api/auth/change-password', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -71,10 +67,20 @@ export function AuthProvider({ children }) {
       const d = await res.json().catch(() => ({}));
       throw new Error(parseApiError(d, 'Failed to change password'));
     }
-  };
+  }, []);
+
+  const value = useMemo(() => ({
+    status,
+    login,
+    logout,
+    changePassword,
+    refetch: fetchStatus,
+    onboardingDone,
+    completeOnboarding,
+  }), [status, login, logout, changePassword, fetchStatus, onboardingDone, completeOnboarding]);
 
   return (
-    <AuthContext.Provider value={{ status, login, logout, changePassword, refetch: fetchStatus, onboardingDone, completeOnboarding }}>
+    <AuthContext.Provider value={value}>
       {children}
     </AuthContext.Provider>
   );

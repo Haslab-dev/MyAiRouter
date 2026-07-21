@@ -136,8 +136,15 @@ func startServer() {
 		host = "0.0.0.0"
 	}
 	addr := host + ":" + port
+	srv := &http.Server{
+		Addr:              addr,
+		Handler:           handler,
+		ReadHeaderTimeout: 10 * time.Second,
+		IdleTimeout:       120 * time.Second,
+	}
+
 	logger.LogMessage(fmt.Sprintf("myAiRouter listening on %s", addr))
-	if err := http.ListenAndServe(addr, handler); err != nil {
+	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		logger.LogError(fmt.Sprintf("Server failed to start: %v", err))
 		os.Exit(1)
 	}
@@ -154,8 +161,17 @@ func (rw *responseWriter) WriteHeader(code int) {
 	rw.ResponseWriter.WriteHeader(code)
 }
 
+const maxLogBodyCap = 1024
+
 func (rw *responseWriter) Write(b []byte) (int, error) {
-	rw.body.Write(b)
+	if rw.body.Len() < maxLogBodyCap {
+		spaceLeft := maxLogBodyCap - rw.body.Len()
+		if len(b) <= spaceLeft {
+			rw.body.Write(b)
+		} else {
+			rw.body.Write(b[:spaceLeft])
+		}
+	}
 	return rw.ResponseWriter.Write(b)
 }
 
@@ -167,17 +183,6 @@ func (rw *responseWriter) Flush() {
 
 func (rw *responseWriter) Unwrap() http.ResponseWriter {
 	return rw.ResponseWriter
-}
-
-type bodyReader struct {
-	io.ReadCloser
-	body *bytes.Buffer
-}
-
-func (br *bodyReader) Read(b []byte) (int, error) {
-	n, err := br.ReadCloser.Read(b)
-	br.body.Write(b[:n])
-	return n, err
 }
 
 func corsAndLogMiddleware(next http.Handler) http.Handler {
@@ -196,15 +201,18 @@ func corsAndLogMiddleware(next http.Handler) http.Handler {
 		reqBody := ""
 		if r.Body != nil && r.Method != http.MethodGet {
 			var buf bytes.Buffer
-			io.Copy(&buf, r.Body)
+			lr := io.LimitReader(r.Body, 2048)
+			restBuf, _ := io.ReadAll(r.Body)
+			io.Copy(&buf, lr)
 			reqBody = sanitizeRequestBody(buf.String())
-			r.Body = io.NopCloser(bytes.NewBuffer(buf.Bytes()))
+			// Restore r.Body
+			r.Body = io.NopCloser(io.MultiReader(bytes.NewReader(buf.Bytes()), bytes.NewReader(restBuf)))
 		}
 
 		rw := &responseWriter{
 			ResponseWriter: w,
 			statusCode:     http.StatusOK,
-			body:           bytes.NewBuffer(nil),
+			body:           bytes.NewBuffer(make([]byte, 0, 512)),
 		}
 
 		next.ServeHTTP(rw, r)

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 
 export default function UsagePage() {
   const [stats, setStats] = useState({
@@ -92,12 +92,13 @@ const [settings, setSettings] = useState(null);
         setSettings(await settingsRes.json());
       }
 
-      const logsUrl = provider ? `/api/usage/logs?limit=100&provider=${encodeURIComponent(provider)}` : '/api/usage/logs?limit=100';
+      const logsUrl = provider ? `/api/usage/logs?perPage=100&page=1&provider=${encodeURIComponent(provider)}` : '/api/usage/logs?perPage=100&page=1';
       const logsRes = await fetch(logsUrl);
       if (logsRes.ok) {
-        const data = (await logsRes.json()) || [];
-        setLogs(data.slice(0, 8));
-        setDetailedLogs(data);
+        const data = await logsRes.json();
+        const entries = data.logs || [];
+        setLogs(entries.slice(0, 8));
+        setDetailedLogs(entries);
       }
 
       const chartUrl = provider ? `/api/usage/charts?provider=${encodeURIComponent(provider)}` : '/api/usage/charts';
@@ -132,13 +133,37 @@ const [settings, setSettings] = useState(null);
 
   useEffect(() => {
     fetchData(selectedProvider);
-    const interval = setInterval(() => fetchData(selectedProvider), 15000);
+    const interval = setInterval(() => {
+      if (!document.hidden) {
+        fetchData(selectedProvider);
+      }
+    }, 15000);
     return () => clearInterval(interval);
   }, [selectedProvider, fetchData]);
 
   const isProviderActive = (providerId) => {
     return connections.some(c => c.provider === providerId && c.isActive);
   };
+
+  const providerOptions = useMemo(() => {
+    const map = new Map();
+    connections.forEach(c => {
+      if (c.provider) {
+        map.set(c.provider, getProviderDisplayName(c.provider, nodesList));
+      }
+    });
+    nodesList.forEach(n => {
+      if (n.id && !map.has(n.id)) {
+        map.set(n.id, n.name || getProviderDisplayName(n.id, nodesList));
+      }
+    });
+    detailedLogs.forEach(l => {
+      if (l.provider && !map.has(l.provider)) {
+        map.set(l.provider, getProviderDisplayName(l.provider, nodesList));
+      }
+    });
+    return Array.from(map.entries()).map(([value, label]) => ({ value, label }));
+  }, [connections, nodesList, detailedLogs]);
 
   const getDynamicNodes = () => {
     const cx = treeCenterX;
@@ -398,8 +423,8 @@ const [settings, setSettings] = useState(null);
                 }}
               >
                 <option value="">All Providers</option>
-                {connections.filter(c => c.isActive).map(c => (
-                  <option key={c.id || c.provider} value={c.provider}>{getProviderDisplayName(c.provider, nodesList)}</option>
+                {providerOptions.map(opt => (
+                  <option key={opt.value} value={opt.value}>{opt.label}</option>
                 ))}
               </select>
             </div>

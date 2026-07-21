@@ -14,6 +14,15 @@ import (
 	"myAiRouter/pkg/db"
 )
 
+var sharedHTTPClient = &http.Client{
+	Transport: &http.Transport{
+		MaxIdleConns:        1000,
+		MaxIdleConnsPerHost: 100,
+		IdleConnTimeout:     90 * time.Second,
+	},
+	Timeout: 120 * time.Second,
+}
+
 type ExecutionResult struct {
 	ResponseCode int
 	Body         []byte
@@ -81,8 +90,7 @@ func executeOpenAI(ctx context.Context, conn *db.ProviderConnection, apiKey stri
 		}
 	}
 
-	client := &http.Client{Timeout: 60 * time.Second}
-	resp, err := client.Do(req)
+	resp, err := sharedHTTPClient.Do(req)
 	if err != nil {
 		return &ExecutionResult{Err: err}
 	}
@@ -126,8 +134,7 @@ func executeAnthropic(ctx context.Context, conn *db.ProviderConnection, apiKey s
 	req.Header.Set("x-api-key", apiKey)
 	req.Header.Set("anthropic-version", "2023-06-01")
 
-	client := &http.Client{Timeout: 60 * time.Second}
-	resp, err := client.Do(req)
+	resp, err := sharedHTTPClient.Do(req)
 	if err != nil {
 		return &ExecutionResult{Err: err}
 	}
@@ -186,8 +193,7 @@ func executeGemini(ctx context.Context, conn *db.ProviderConnection, apiKey stri
 	}
 	req.Header.Set("Content-Type", "application/json")
 
-	client := &http.Client{Timeout: 60 * time.Second}
-	resp, err := client.Do(req)
+	resp, err := sharedHTTPClient.Do(req)
 	if err != nil {
 		return &ExecutionResult{Err: err}
 	}

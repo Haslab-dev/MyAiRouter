@@ -8,7 +8,6 @@ import (
 	"io"
 	"net/http"
 	"strings"
-	"time"
 
 	"myAiRouter/pkg/db"
 )
@@ -79,8 +78,7 @@ func (p *OpenAIProvider) Execute(ctx context.Context, conn *db.ProviderConnectio
 		}
 	}
 
-	client := &http.Client{Timeout: 60 * time.Second}
-	resp, err := client.Do(req)
+	resp, err := SharedHTTPClient.Do(req)
 	if err != nil {
 		return &ExecutionResult{Err: err}
 	}

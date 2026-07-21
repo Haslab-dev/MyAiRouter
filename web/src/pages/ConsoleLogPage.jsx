@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, memo } from 'react';
 
 const MAX_LENGTH = 150;
 
@@ -16,7 +16,7 @@ const formatTimestamp = (ts) => {
   return ts;
 };
 
-function LogEntry({ entry }) {
+const LogEntry = memo(function LogEntry({ entry }) {
   const [expanded, setExpanded] = useState(false);
   const isRequest = entry.type === 'request';
   const isError = entry.type === 'error' || entry.status >= 400;
@@ -45,14 +45,27 @@ function LogEntry({ entry }) {
   }
 
   if (isError) {
+    const statusCode = entry.status || 'ERR';
     return (
       <div style={{
         padding: '8px 12px',
         borderBottom: '1px solid var(--border-color)',
-        background: 'rgba(220, 38, 38, 0.05)',
+        background: 'rgba(220, 38, 38, 0.08)',
+        borderLeft: '3px solid var(--color-danger)',
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
           <span style={{ color: 'var(--text-subtle)', fontSize: '10px' }}>{formatTimestamp(entry.timestamp)}</span>
+          <span style={{
+            background: 'var(--color-danger)',
+            color: '#fff',
+            fontSize: '10px',
+            fontWeight: 700,
+            padding: '1px 6px',
+            borderRadius: '3px',
+            fontFamily: 'var(--font-mono)',
+          }}>
+            {statusCode}
+          </span>
           <span style={{ color: 'var(--color-danger)', fontSize: '11px', fontWeight: 600 }}>ERROR</span>
         </div>
         <div style={{ color: 'var(--color-danger)', fontSize: '12px', fontFamily: 'var(--font-mono)' }}>
@@ -144,21 +157,23 @@ function LogEntry({ entry }) {
       </div>
     </div>
   );
-}
+});
 
 export default function ConsoleLogPage() {
   const [logs, setLogs] = useState([]);
   const [isPaused, setIsPaused] = useState(false);
   const [filter, setFilter] = useState('all');
-  const terminalEndRef = useRef(null);
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
+  const perPage = 20;
 
-  const fetchLogs = async () => {
-    if (isPaused) return;
+  const fetchLogs = async (p = page) => {
     try {
-      const res = await fetch('/api/logs');
+      const res = await fetch(`/api/logs?page=${p}&perPage=${perPage}`);
       if (res.ok) {
         const data = await res.json();
         setLogs(data.logs || []);
+        setTotal(data.total || 0);
       }
     } catch (err) {
       console.error('Error fetching server logs:', err);
@@ -166,21 +181,27 @@ export default function ConsoleLogPage() {
   };
 
   useEffect(() => {
-    fetchLogs();
-    const interval = setInterval(fetchLogs, 2000);
+    if (isPaused) return;
+    fetchLogs(page);
+    const interval = setInterval(() => {
+      if (!isPaused && !document.hidden) {
+        fetchLogs(page === 1 ? 1 : page);
+      }
+    }, 2000);
     return () => clearInterval(interval);
-  }, [isPaused]);
+  }, [isPaused, page]);
 
-  useEffect(() => {
-    if (!isPaused && terminalEndRef.current) {
-      terminalEndRef.current.scrollIntoView({ behavior: 'smooth' });
-    }
-  }, [logs, isPaused]);
+  const handlePageChange = (newPage) => {
+    setPage(newPage);
+    fetchLogs(newPage);
+  };
 
   const handleClearLogs = async () => {
     try {
       await fetch('/api/logs', { method: 'DELETE' });
       setLogs([]);
+      setTotal(0);
+      setPage(1);
     } catch (err) {
       console.error('Error clearing logs:', err);
     }
@@ -204,6 +225,8 @@ export default function ConsoleLogPage() {
     return true;
   });
 
+  const totalPages = Math.ceil(total / perPage);
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 120px)' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexShrink: 0 }}>
@@ -212,7 +235,7 @@ export default function ConsoleLogPage() {
             <span className="material-symbols-outlined text-primary" style={{ fontSize: '28px' }}>insights</span>
             Traffic Logs
           </h1>
-          <p className="page-description">{logs.length} entries captured</p>
+          <p className="page-description">{total} entries total</p>
         </div>
 
         <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
@@ -287,8 +310,62 @@ export default function ConsoleLogPage() {
             ))}
           </div>
         )}
-        <div ref={terminalEndRef} />
       </div>
+
+      {/* Pagination */}
+      {totalPages > 0 && (
+        <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '4px', marginTop: '8px', flexShrink: 0 }}>
+          <button
+            onClick={() => handlePageChange(page - 1)}
+            disabled={page <= 1}
+            className="btn btn-secondary"
+            style={{ padding: '4px 8px', fontSize: '11px', opacity: page <= 1 ? 0.4 : 1 }}
+          >
+            ‹
+          </button>
+          {Array.from({ length: Math.min(totalPages, 5) }, (_, i) => {
+            let p;
+            if (totalPages <= 5) {
+              p = i + 1;
+            } else if (page <= 3) {
+              p = i + 1;
+            } else if (page >= totalPages - 2) {
+              p = totalPages - 4 + i;
+            } else {
+              p = page - 2 + i;
+            }
+            return (
+              <button
+                key={p}
+                onClick={() => handlePageChange(p)}
+                style={{
+                  padding: '4px 10px',
+                  fontSize: '11px',
+                  fontWeight: page === p ? 700 : 400,
+                  border: 'none',
+                  borderRadius: '4px',
+                  cursor: 'pointer',
+                  background: page === p ? 'var(--color-primary)' : 'transparent',
+                  color: page === p ? '#fff' : 'var(--text-muted)',
+                }}
+              >
+                {p}
+              </button>
+            );
+          })}
+          <button
+            onClick={() => handlePageChange(page + 1)}
+            disabled={page >= totalPages}
+            className="btn btn-secondary"
+            style={{ padding: '4px 8px', fontSize: '11px', opacity: page >= totalPages ? 0.4 : 1 }}
+          >
+            ›
+          </button>
+          <span style={{ fontSize: '10px', color: 'var(--text-muted)', marginLeft: '8px' }}>
+            page {page}/{totalPages}
+          </span>
+        </div>
+      )}
     </div>
   );
 }
