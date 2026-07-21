@@ -106,10 +106,14 @@ func Observability(ctx *context.GatewayContext, next HandlerFunc) error {
 
 	if settings != nil && settings.TraceStorageMode != "disabled" {
 		if settings.TraceStorageMode == "store_both" {
-			traceData["originalMessages"] = originalMessages
-			traceData["optimizedMessages"] = ctx.RequestBody["messages"]
+			traceData["originalMessages"] = truncateMessagesForTrace(originalMessages)
+			if optMsgs, ok := ctx.RequestBody["messages"].([]interface{}); ok {
+				traceData["optimizedMessages"] = truncateMessagesForTrace(optMsgs)
+			}
 		} else if settings.TraceStorageMode == "store_compressed" {
-			traceData["optimizedMessages"] = ctx.RequestBody["messages"]
+			if optMsgs, ok := ctx.RequestBody["messages"].([]interface{}); ok {
+				traceData["optimizedMessages"] = truncateMessagesForTrace(optMsgs)
+			}
 		}
 	}
 
@@ -117,4 +121,36 @@ func Observability(ctx *context.GatewayContext, next HandlerFunc) error {
 	_ = db.SaveRequestTrace(ctx.RequestID, ctx.Provider, ctx.Model, connID, statusStr, string(traceJSON))
 
 	return err
+}
+
+func truncateMessagesForTrace(msgs []interface{}) []interface{} {
+	if len(msgs) == 0 {
+		return nil
+	}
+	result := make([]interface{}, 0, len(msgs))
+	for _, m := range msgs {
+		msgMap, ok := m.(map[string]interface{})
+		if !ok {
+			result = append(result, m)
+			continue
+		}
+		cloned := make(map[string]interface{}, len(msgMap))
+		for k, v := range msgMap {
+			if k == "content" {
+				if str, ok := v.(string); ok {
+					if len(str) > 500 {
+						cloned[k] = str[:500] + "...[TRUNCATED]"
+					} else {
+						cloned[k] = str
+					}
+				} else {
+					cloned[k] = v
+				}
+			} else {
+				cloned[k] = v
+			}
+		}
+		result = append(result, cloned)
+	}
+	return result
 }

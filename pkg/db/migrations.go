@@ -32,6 +32,21 @@ func RunMigrations() error {
 	if err := deduplicateProviderNodes(); err != nil {
 		return fmt.Errorf("dedup provider nodes: %w", err)
 	}
+
+	if err := purgeLegacyTraces(); err != nil {
+		log.Printf("[migration] warning purging legacy requestDetails: %v", err)
+	}
+	return nil
+}
+
+func purgeLegacyTraces() error {
+	// Purge existing heavy trace entries from requestDetails to free RAM and database storage
+	res, err := DB.Exec("DELETE FROM requestDetails;")
+	if err == nil {
+		if rows, _ := res.RowsAffected(); rows > 0 {
+			log.Printf("[migration] purged %d legacy heavy trace entries for lightweight tracer upgrade", rows)
+		}
+	}
 	return nil
 }
 

@@ -2,6 +2,7 @@ package db
 
 import (
 	"database/sql"
+	"encoding/json"
 	"time"
 )
 
@@ -43,6 +44,7 @@ func GetRecentTraces(limit int) ([]TraceEntry, error) {
 		if err := rows.Scan(&e.ID, &e.Timestamp, &e.Provider, &e.Model, &e.ConnectionID, &e.Status, &e.Data); err != nil {
 			return nil, err
 		}
+		e.Data = sanitizeTraceDataForList(e.Data)
 		entries = append(entries, e)
 	}
 	return entries, nil
@@ -76,9 +78,28 @@ func GetRecentTracesPaginated(page, perPage int) ([]TraceEntry, int, error) {
 		if err := rows.Scan(&e.ID, &e.Timestamp, &e.Provider, &e.Model, &e.ConnectionID, &e.Status, &e.Data); err != nil {
 			return nil, 0, err
 		}
+		e.Data = sanitizeTraceDataForList(e.Data)
 		entries = append(entries, e)
 	}
 	return entries, total, nil
+}
+
+func sanitizeTraceDataForList(dataJSON string) string {
+	if dataJSON == "" {
+		return ""
+	}
+	var data map[string]interface{}
+	if err := json.Unmarshal([]byte(dataJSON), &data); err != nil {
+		return dataJSON
+	}
+	// Strip heavy original and optimized message arrays for the list view
+	delete(data, "originalMessages")
+	delete(data, "optimizedMessages")
+	cleaned, err := json.Marshal(data)
+	if err != nil {
+		return dataJSON
+	}
+	return string(cleaned)
 }
 
 func GetTraceByID(id string) (*TraceEntry, error) {
