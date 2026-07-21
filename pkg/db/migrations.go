@@ -40,12 +40,20 @@ func RunMigrations() error {
 }
 
 func purgeLegacyTraces() error {
-	// Purge existing heavy trace entries from requestDetails to free RAM and database storage
+	var count int
+	err := DB.QueryRow("SELECT COUNT(*) FROM kv WHERE scope = 'migration' AND key = 'purge_legacy_traces_v1'").Scan(&count)
+	if err == nil && count > 0 {
+		// Migration has already run once on this database; skip to preserve trace data
+		return nil
+	}
+
+	// One-time purge of legacy heavy trace format to upgrade database to lightweight trace schema
 	res, err := DB.Exec("DELETE FROM requestDetails;")
 	if err == nil {
 		if rows, _ := res.RowsAffected(); rows > 0 {
 			log.Printf("[migration] purged %d legacy heavy trace entries for lightweight tracer upgrade", rows)
 		}
+		_, _ = DB.Exec("INSERT OR REPLACE INTO kv (scope, key, value) VALUES ('migration', 'purge_legacy_traces_v1', 'done');")
 	}
 	return nil
 }

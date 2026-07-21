@@ -60,8 +60,8 @@ func GetSettings() (*Settings, error) {
 			{Name: "markdown", Enabled: true, Config: nil},
 		}
 	}
-	if settings.TraceStorageMode == "" {
-		settings.TraceStorageMode = "store_both" // Default is permissive for benchmark replays
+	if settings.TraceStorageMode == "" || settings.TraceStorageMode == "store_both" {
+		settings.TraceStorageMode = "summary"
 	}
 
 	return &settings, nil

@@ -258,6 +258,31 @@ export default function TracesPage() {
               </div>
             )}
 
+            {/* Prompt Preview Snippet */}
+            {selectedTrace.preview && (selectedTrace.preview.system || selectedTrace.preview.user) && (
+              <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)', padding: '16px', marginBottom: '24px' }}>
+                <h4 style={{ fontSize: '13px', fontWeight: '700', marginBottom: '12px', color: 'var(--color-primary)' }}>
+                  Prompt Preview (Truncated 512 Chars)
+                </h4>
+                {selectedTrace.preview.system && (
+                  <div style={{ marginBottom: '12px' }}>
+                    <span style={{ fontSize: '10px', fontWeight: '600', color: 'var(--text-muted)', textTransform: 'uppercase' }}>System Prompt</span>
+                    <pre style={{ fontSize: '11px', background: 'rgba(0,0,0,0.2)', padding: '8px 12px', borderRadius: '4px', marginTop: '4px', whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
+                      {selectedTrace.preview.system}
+                    </pre>
+                  </div>
+                )}
+                {selectedTrace.preview.user && (
+                  <div>
+                    <span style={{ fontSize: '10px', fontWeight: '600', color: 'var(--text-muted)', textTransform: 'uppercase' }}>User Prompt</span>
+                    <pre style={{ fontSize: '11px', background: 'rgba(0,0,0,0.2)', padding: '8px 12px', borderRadius: '4px', marginTop: '4px', whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
+                      {selectedTrace.preview.user}
+                    </pre>
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* Step-by-Step Trace Timeline */}
             <div style={{ marginBottom: '30px' }}>
               <h3 style={{ fontSize: '14px', fontWeight: '600', marginBottom: '16px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>

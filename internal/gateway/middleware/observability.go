@@ -8,18 +8,13 @@ import (
 	"myAiRouter/pkg/db"
 )
 
-func Observability(ctx *context.GatewayContext, next HandlerFunc) error {
-	var originalMessages []interface{}
-	settings, dbErr := db.GetSettings()
-	if dbErr == nil && settings != nil && settings.TraceStorageMode != "disabled" && settings.TraceStorageMode != "metadata_only" {
-		if msgs, ok := ctx.RequestBody["messages"].([]interface{}); ok {
-			// Deep clone messages
-			msgBytes, _ := json.Marshal(msgs)
-			_ = json.Unmarshal(msgBytes, &originalMessages)
-		}
-	}
+type TracePreview struct {
+	System string `json:"system,omitempty"`
+	User   string `json:"user,omitempty"`
+}
 
-	// Execute the downstream pipeline first to capture outcomes and metrics
+func Observability(ctx *context.GatewayContext, next HandlerFunc) error {
+	// Execute downstream pipeline first to capture outcomes and metrics
 	err := next(ctx)
 
 	// Complete duration metrics
@@ -85,7 +80,16 @@ func Observability(ctx *context.GatewayContext, next HandlerFunc) error {
 		Meta:             string(metaJSON),
 	})
 
-	// 2. Record detailed telemetry JSON to requestDetails
+	// Check trace storage settings (default is summary / preview mode)
+	settings, _ := db.GetSettings()
+	if settings != nil && settings.TraceStorageMode == "disabled" {
+		return err
+	}
+
+	// Zero-allocation preview extraction (512 chars max for system/user prompts)
+	preview := extractMessagePreview(ctx.RequestBody, 512)
+
+	// 2. Record lean telemetry JSON to requestDetails
 	traceData := map[string]interface{}{
 		"requestId":        ctx.RequestID,
 		"timestamp":        time.Now().UTC().Format(time.RFC3339),
@@ -102,18 +106,13 @@ func Observability(ctx *context.GatewayContext, next HandlerFunc) error {
 		"cachedTokens":     ctx.CachedTokens,
 		"steps":            steps,
 		"errors":           ctx.Errors,
+		"preview":          preview,
 	}
 
-	if settings != nil && settings.TraceStorageMode != "disabled" {
-		if settings.TraceStorageMode == "store_both" {
-			traceData["originalMessages"] = truncateMessagesForTrace(originalMessages)
-			if optMsgs, ok := ctx.RequestBody["messages"].([]interface{}); ok {
-				traceData["optimizedMessages"] = truncateMessagesForTrace(optMsgs)
-			}
-		} else if settings.TraceStorageMode == "store_compressed" {
-			if optMsgs, ok := ctx.RequestBody["messages"].([]interface{}); ok {
-				traceData["optimizedMessages"] = truncateMessagesForTrace(optMsgs)
-			}
+	// Opt-in debug mode: include truncated message arrays only if traceStorageMode is explicitly "full"
+	if settings != nil && settings.TraceStorageMode == "full" {
+		if msgs, ok := ctx.RequestBody["messages"].([]interface{}); ok {
+			traceData["optimizedMessages"] = truncateMessagesForTrace(msgs)
 		}
 	}
 
@@ -121,6 +120,49 @@ func Observability(ctx *context.GatewayContext, next HandlerFunc) error {
 	_ = db.SaveRequestTrace(ctx.RequestID, ctx.Provider, ctx.Model, connID, statusStr, string(traceJSON))
 
 	return err
+}
+
+func extractMessagePreview(body map[string]interface{}, maxLen int) TracePreview {
+	var preview TracePreview
+	if body == nil {
+		return preview
+	}
+	msgs, ok := body["messages"].([]interface{})
+	if !ok || len(msgs) == 0 {
+		return preview
+	}
+
+	for _, m := range msgs {
+		msgMap, ok := m.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		role, _ := msgMap["role"].(string)
+		content, _ := msgMap["content"].(string)
+		if content == "" {
+			continue
+		}
+
+		if (role == "system" || role == "developer") && preview.System == "" {
+			if len(content) > maxLen {
+				preview.System = content[:maxLen] + "...[TRUNCATED]"
+			} else {
+				preview.System = content
+			}
+		} else if role == "user" && preview.User == "" {
+			if len(content) > maxLen {
+				preview.User = content[:maxLen] + "...[TRUNCATED]"
+			} else {
+				preview.User = content
+			}
+		}
+
+		if preview.System != "" && preview.User != "" {
+			break
+		}
+	}
+
+	return preview
 }
 
 func truncateMessagesForTrace(msgs []interface{}) []interface{} {
