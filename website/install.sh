@@ -20,9 +20,9 @@ case "$ARCH" in
 esac
 
 case "$OS" in
-  darwin|linux) ;;
+  linux) ;;
   *)
-    echo "Unsupported OS: $OS"
+    echo "Unsupported OS: $OS (only Linux is currently supported for automatic binary releases)"
     exit 1
     ;;
 esac
@@ -42,7 +42,17 @@ curl -fL "$BASE_URL/$ARCHIVE" -o "/tmp/$ARCHIVE"
 echo "Verifying checksum..."
 curl -fL "$BASE_URL/checksums.txt" -o "/tmp/checksums.txt"
 EXPECTED=$(grep "$ARCHIVE" "/tmp/checksums.txt" | awk '{print $1}')
-ACTUAL=$(sha256sum "/tmp/$ARCHIVE" | awk '{print $1}')
+
+if command -v sha256sum >/dev/null 2>&1; then
+  ACTUAL=$(sha256sum "/tmp/$ARCHIVE" | awk '{print $1}')
+elif command -v shasum >/dev/null 2>&1; then
+  ACTUAL=$(shasum -a 256 "/tmp/$ARCHIVE" | awk '{print $1}')
+elif command -v openssl >/dev/null 2>&1; then
+  ACTUAL=$(openssl dgst -sha256 "/tmp/$ARCHIVE" | awk '{print $2}')
+else
+  echo "Error: no SHA256 checksum tool available (sha256sum, shasum, openssl)"
+  exit 1
+fi
 
 if [ "$EXPECTED" != "$ACTUAL" ]; then
   echo "Checksum mismatch!"
@@ -51,11 +61,23 @@ if [ "$EXPECTED" != "$ACTUAL" ]; then
   exit 1
 fi
 
-echo "Installing to /usr/local/bin/myairouter..."
+INSTALL_DIR="/usr/local/bin"
+SUDO=""
+
+if [ ! -w "$INSTALL_DIR" ]; then
+  if command -v sudo >/dev/null 2>&1; then
+    SUDO="sudo"
+  else
+    INSTALL_DIR="$HOME/.local/bin"
+    mkdir -p "$INSTALL_DIR"
+  fi
+fi
+
+echo "Installing to $INSTALL_DIR/myairouter..."
 tar -xzf "/tmp/$ARCHIVE" -C /tmp
-sudo mv "/tmp/myairouter-${OS}-${ARCH}" /usr/local/bin/myairouter 2>/dev/null || sudo mv "/tmp/myairouter-${OS}-${ARCH}.exe" /usr/local/bin/myairouter
-chmod +x /usr/local/bin/myairouter
+$SUDO mv "/tmp/myairouter-${OS}-${ARCH}" "$INSTALL_DIR/myairouter"
+$SUDO chmod +x "$INSTALL_DIR/myairouter"
 
 rm -f "/tmp/$ARCHIVE" "/tmp/checksums.txt"
 
-echo "Installed myairouter $VERSION"
+echo "Successfully installed myairouter $VERSION to $INSTALL_DIR/myairouter"

@@ -16,8 +16,8 @@ import (
 
 var sharedHTTPClient = &http.Client{
 	Transport: &http.Transport{
-		MaxIdleConns:        1000,
-		MaxIdleConnsPerHost: 100,
+		MaxIdleConns:        50,
+		MaxIdleConnsPerHost: 10,
 		IdleConnTimeout:     90 * time.Second,
 	},
 	Timeout: 120 * time.Second,

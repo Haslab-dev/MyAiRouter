@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime/debug"
 	"strings"
 	"time"
 
@@ -70,6 +71,21 @@ Usage:
 }
 
 func startServer() {
+	// Set Go runtime soft memory limit to 128 MB if not explicitly configured via GOMEMLIMIT
+	if os.Getenv("GOMEMLIMIT") == "" {
+		debug.SetMemoryLimit(128 * 1024 * 1024)
+	}
+
+	// Periodic background memory scavenger
+	go func() {
+		ticker := time.NewTicker(5 * time.Minute)
+		for range ticker.C {
+			if db.DB != nil {
+				_, _ = db.DB.Exec("PRAGMA shrink_memory;")
+			}
+			debug.FreeOSMemory()
+		}
+	}()
 
 	logger.LogMessage("Starting myAiRouter...")
 
@@ -200,13 +216,12 @@ func corsAndLogMiddleware(next http.Handler) http.Handler {
 
 		reqBody := ""
 		if r.Body != nil && r.Method != http.MethodGet {
-			var buf bytes.Buffer
 			lr := io.LimitReader(r.Body, 2048)
-			restBuf, _ := io.ReadAll(r.Body)
-			io.Copy(&buf, lr)
-			reqBody = sanitizeRequestBody(buf.String())
-			// Restore r.Body
-			r.Body = io.NopCloser(io.MultiReader(bytes.NewReader(buf.Bytes()), bytes.NewReader(restBuf)))
+			peekBuf, _ := io.ReadAll(lr)
+			if len(peekBuf) > 0 {
+				reqBody = sanitizeRequestBody(string(peekBuf))
+				r.Body = io.NopCloser(io.MultiReader(bytes.NewReader(peekBuf), r.Body))
+			}
 		}
 
 		rw := &responseWriter{

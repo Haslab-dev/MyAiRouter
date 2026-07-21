@@ -32,14 +32,15 @@ func InitDB() error {
 	db.SetMaxOpenConns(1)
 	db.SetMaxIdleConns(1)
 
-	// Optimize SQLite performance
+	// Optimize SQLite performance & RAM footprint
 	pragmas := []string{
 		"PRAGMA journal_mode = WAL;",
 		"PRAGMA synchronous = NORMAL;",
-		"PRAGMA temp_store = MEMORY;",
+		"PRAGMA temp_store = DEFAULT;",
 		"PRAGMA busy_timeout = 10000;",
 		"PRAGMA foreign_keys = ON;",
-		"PRAGMA cache_size = -64000;",
+		"PRAGMA cache_size = -4000;", // 4MB page cache instead of 64MB (-64000)
+		"PRAGMA mmap_size = 0;",     // Disable mmap allocations in c2go
 	}
 	for _, pragma := range pragmas {
 		if _, err := db.Exec(pragma); err != nil {
