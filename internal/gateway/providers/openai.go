@@ -42,6 +42,10 @@ func (p *OpenAIProvider) Execute(ctx context.Context, conn *db.ProviderConnectio
 			baseUrl = "https://open.bigmodel.cn/api/paas/v4"
 		case "glm-coding":
 			baseUrl = "https://open.bigmodel.cn/api/coding/paas/v4"
+		case "opencode-zen", "opencode":
+			baseUrl = "https://opencode.ai/zen/v1"
+		case "opencode-go":
+			baseUrl = "https://opencode.ai/zen/go/v1"
 		default:
 			baseUrl = "https://api.openai.com/v1"
 		}

@@ -127,9 +127,58 @@ const [settings, setSettings] = useState(null);
         setNodesList(data.nodes || []);
       }
     } catch (err) {
-      console.error('Error fetching analytics stats:', err);
+      console.error('Error fetching usage data:', err);
     }
   }, []);
+
+  const fileInputRef = useRef(null);
+
+  const handleExportMetrics = async () => {
+    try {
+      const res = await fetch('/api/usage/export');
+      if (!res.ok) throw new Error('Export failed');
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `metrics_overview_${new Date().toISOString().slice(0, 10)}.json`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+    } catch (err) {
+      console.error('Export error:', err);
+      alert('Failed to export metrics.');
+    }
+  };
+
+  const handleImportMetrics = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    try {
+      const text = await file.text();
+      const overview = JSON.parse(text);
+
+      const res = await fetch('/api/usage/import', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(overview),
+      });
+
+      if (res.ok) {
+        alert('Metrics overview imported and totals synced successfully!');
+        fetchData(selectedProvider);
+      } else {
+        alert('Failed to import metrics overview.');
+      }
+    } catch (err) {
+      console.error('Import error:', err);
+      alert('Invalid JSON metrics overview file.');
+    } finally {
+      e.target.value = '';
+    }
+  };
 
   useEffect(() => {
     fetchData(selectedProvider);
@@ -357,9 +406,34 @@ const [settings, setSettings] = useState(null);
           <p className="page-description">Monitor your API usage, token consumption, and request logs</p>
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 12px', background: 'rgba(46, 204, 113, 0.08)', border: '1px solid rgba(46, 204, 113, 0.18)', borderRadius: 'var(--radius-md)', fontSize: '12px', color: 'var(--color-success)', fontWeight: '600' }}>
-          <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>circle</span>
-          System Active
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <input
+            type="file"
+            ref={fileInputRef}
+            onChange={handleImportMetrics}
+            accept=".json"
+            style={{ display: 'none' }}
+          />
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            className="btn btn-secondary"
+            style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', padding: '6px 12px' }}
+          >
+            <span className="material-symbols-outlined" style={{ fontSize: '16px' }}>file_upload</span>
+            Import Metrics
+          </button>
+          <button
+            onClick={handleExportMetrics}
+            className="btn btn-secondary"
+            style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', padding: '6px 12px' }}
+          >
+            <span className="material-symbols-outlined" style={{ fontSize: '16px' }}>download</span>
+            Export Metrics
+          </button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 12px', background: 'rgba(46, 204, 113, 0.08)', border: '1px solid rgba(46, 204, 113, 0.18)', borderRadius: 'var(--radius-md)', fontSize: '12px', color: 'var(--color-success)', fontWeight: '600' }}>
+            <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>circle</span>
+            System Active
+          </div>
         </div>
       </div>
 

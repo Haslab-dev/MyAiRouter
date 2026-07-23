@@ -14,8 +14,6 @@ import (
 )
 
 func Provider(ctx *context.GatewayContext, next HandlerFunc) error {
-	ctx.AddStep("Provider Executor", "started", fmt.Sprintf("Forwarding request payload to provider %s", ctx.Provider))
-
 	p := providers.Get(ctx.Provider)
 	if p == nil {
 		// Fallback to default OpenAI-compatible handler

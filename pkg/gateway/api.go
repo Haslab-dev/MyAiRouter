@@ -103,9 +103,12 @@ func RegisterAdminRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/usage/charts", handleUsageCharts)
 	mux.HandleFunc("/api/usage/models", handleUsageModels)
 	mux.HandleFunc("/api/usage/provider-summary", handleProviderUsageSummary)
+	mux.HandleFunc("/api/usage/export", handleUsageExport)
+	mux.HandleFunc("/api/usage/import", handleUsageImport)
 	mux.HandleFunc("/api/models/disabled", handleModelsDisabled)
 	mux.HandleFunc("/api/models/enabled", handleModelsEnabled)
 	mux.HandleFunc("/api/models/custom", handleModelsCustom)
+	mux.HandleFunc("/api/models/thinking", handleModelsThinking)
 	mux.HandleFunc("/api/logs", handleServerLogs)
 	mux.HandleFunc("/api/health", handleHealth)
 	mux.HandleFunc("/api/traces", handleTraces)
@@ -1468,3 +1471,79 @@ func handleOptimizerBenchmark(w http.ResponseWriter, r *http.Request) {
 
 	_ = json.NewEncoder(w).Encode(results)
 }
+
+func handleUsageExport(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	if r.Method != http.MethodGet {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+
+	overview, err := db.GetMetricsOverview()
+	if err != nil {
+		WriteErrorResponse(w, http.StatusInternalServerError, "Exporting metrics overview: "+err.Error())
+		return
+	}
+
+	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=metrics_overview_%s.json", time.Now().Format("20060102_150405")))
+	_ = json.NewEncoder(w).Encode(overview)
+}
+
+func handleUsageImport(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+
+	var overview db.MetricsOverview
+	if err := json.NewDecoder(r.Body).Decode(&overview); err != nil {
+		WriteErrorResponse(w, http.StatusBadRequest, "Invalid metrics JSON payload: "+err.Error())
+		return
+	}
+
+	if err := db.ImportMetricsOverview(&overview); err != nil {
+		WriteErrorResponse(w, http.StatusInternalServerError, "Importing metrics overview: "+err.Error())
+		return
+	}
+
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
+		"message": "Metrics overview imported and synced successfully",
+	})
+}
+
+func handleModelsThinking(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	if r.Method == http.MethodGet {
+		provider := r.URL.Query().Get("providerAlias")
+		m, err := db.GetThinkingModels(provider)
+		if err != nil {
+			WriteErrorResponse(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"thinkingMap": m})
+		return
+	}
+
+	if r.Method == http.MethodPost {
+		var req struct {
+			ProviderAlias string `json:"providerAlias"`
+			ModelID       string `json:"modelId"`
+			Enabled       bool   `json:"enabled"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			WriteErrorResponse(w, http.StatusBadRequest, "Invalid JSON")
+			return
+		}
+		if err := db.SetThinkingModel(req.ProviderAlias, req.ModelID, req.Enabled); err != nil {
+			WriteErrorResponse(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"success": true})
+		return
+	}
+
+	w.WriteHeader(http.StatusMethodNotAllowed)
+}
+

@@ -10,7 +10,6 @@ import (
 )
 
 func Auth(ctx *context.GatewayContext, next HandlerFunc) error {
-	ctx.AddStep("Auth", "started", "Authenticating request")
 	settings, err := db.GetSettings()
 	if err != nil || !settings.RequireLogin {
 		ctx.UserID = "guest"

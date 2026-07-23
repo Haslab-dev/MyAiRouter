@@ -3,16 +3,19 @@ ifneq (,$(wildcard .env))
     export
 endif
 
-.PHONY: build-client build run dev dev-server dev-client clean patch-version minor-version major-version set-version
+.PHONY: build-client build install run dev dev-server dev-client clean patch-version minor-version major-version set-version
 
 build-client:
 	cd web && npm run build
 
 build: build-client
-	go build -o myAiRouter .
+	go build -o myairouter .
+
+install: build
+	@./website/install.sh --local
 
 run: build
-	./myAiRouter
+	./myairouter
 
 dev-server:
 	go run .

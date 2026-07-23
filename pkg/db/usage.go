@@ -591,3 +591,112 @@ func GetProviderUsageSummary() ([]ProviderUsageSummary, error) {
 	}
 	return summaries, nil
 }
+
+type MetricsOverview struct {
+	Version         string                 `json:"version"`
+	ExportedAt      string                 `json:"exportedAt"`
+	TotalStats      *UsageStats            `json:"totalStats"`
+	ProviderSummary []ProviderUsageSummary `json:"providerSummary"`
+	ModelSummary    []ModelUsageSummary    `json:"modelSummary"`
+}
+
+func GetMetricsOverview() (*MetricsOverview, error) {
+	stats, err := GetUsageStats("")
+	if err != nil {
+		return nil, err
+	}
+	provs, err := GetProviderUsageSummary()
+	if err != nil {
+		return nil, err
+	}
+	models, err := GetModelUsageSummary("")
+	if err != nil {
+		return nil, err
+	}
+
+	return &MetricsOverview{
+		Version:         "1.0",
+		ExportedAt:      time.Now().UTC().Format(time.RFC3339),
+		TotalStats:      stats,
+		ProviderSummary: provs,
+		ModelSummary:    models,
+	}, nil
+}
+
+func ImportMetricsOverview(overview *MetricsOverview) error {
+	if overview == nil || (len(overview.ModelSummary) == 0 && len(overview.ProviderSummary) == 0) {
+		return nil
+	}
+
+	nowStr := time.Now().UTC().Format(time.RFC3339)
+	tx, err := DB.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	stmt, err := tx.Prepare(`
+		INSERT INTO usageHistory (
+			timestamp, provider, model, connectionId, apiKey, endpoint,
+			promptTokens, completionTokens, cachedTokens, cost, status, meta
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ok', '{}')
+	`)
+	if err != nil {
+		return err
+	}
+	defer stmt.Close()
+
+	if len(overview.ModelSummary) > 0 {
+		for _, m := range overview.ModelSummary {
+			if m.Requests <= 0 && m.PromptTokens == 0 && m.CompletionTokens == 0 {
+				continue
+			}
+			prov := m.Provider
+			if prov == "" {
+				prov = "imported"
+			}
+			modelName := m.Model
+			if modelName == "" {
+				modelName = "unknown"
+			}
+			_, err := stmt.Exec(
+				nowStr,
+				prov,
+				modelName,
+				"imported_sync",
+				"sync",
+				"/v1/synced_overview",
+				m.PromptTokens,
+				m.CompletionTokens,
+				m.CachedTokens,
+				m.Cost,
+			)
+			if err != nil {
+				return err
+			}
+		}
+	} else if len(overview.ProviderSummary) > 0 {
+		for _, p := range overview.ProviderSummary {
+			if p.Requests <= 0 && p.PromptTokens == 0 && p.CompletionTokens == 0 {
+				continue
+			}
+			_, err := stmt.Exec(
+				nowStr,
+				p.Provider,
+				"imported_summary",
+				"imported_sync",
+				"sync",
+				"/v1/synced_overview",
+				p.PromptTokens,
+				p.CompletionTokens,
+				p.CachedTokens,
+				p.Cost,
+			)
+			if err != nil {
+				return err
+			}
+		}
+	}
+
+	return tx.Commit()
+}

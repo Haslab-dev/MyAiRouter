@@ -17,6 +17,8 @@ export default function ProvidersPage() {
   const [providerModels, setProviderModels] = useState({});
   const [modelPrefix, setModelPrefix] = useState('');
   const [detailedLogs, setDetailedLogs] = useState([]);
+  const [providerSearchQuery, setProviderSearchQuery] = useState('');
+  const [modelSearchQuery, setModelSearchQuery] = useState('');
 
   // Detail view state
   const [viewingDetailProvider, setViewingDetailProvider] = useState(null);
@@ -163,7 +165,7 @@ export default function ProvidersPage() {
               totalLatency += meta.duration_ms;
               latencyCount++;
             }
-          } catch (e) {}
+          } catch (e) { }
         }
       });
       const avgLatency = latencyCount > 0 ? (totalLatency / latencyCount).toFixed(0) + 'ms' : '—';
@@ -219,9 +221,49 @@ export default function ProvidersPage() {
     }
   };
 
+  const [thinkingMap, setThinkingMap] = useState({});
+
+  const fetchThinkingModels = async (providerId) => {
+    try {
+      const res = await fetch(`/api/models/thinking?providerAlias=${encodeURIComponent(providerId)}`);
+      if (res.ok) {
+        const data = await res.json();
+        setThinkingMap(data.thinkingMap || {});
+      }
+    } catch (err) {
+      console.error('Error loading thinking models:', err);
+    }
+  };
+
+  const handleToggleThinkingMode = async (modelId) => {
+    const providerAlias = viewingDetailProvider?.id;
+    if (!providerAlias) return;
+
+    const nextState = !thinkingMap[modelId];
+    const newMap = { ...thinkingMap, [modelId]: nextState };
+    setThinkingMap(newMap);
+
+    try {
+      const res = await fetch('/api/models/thinking', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ providerAlias, modelId, enabled: nextState })
+      });
+      if (res.ok) {
+        notify(`Thinking mode ${nextState ? 'enabled' : 'disabled'} for ${modelId}`, 'success');
+      } else {
+        notify('Failed to save thinking mode setting.', 'error');
+      }
+    } catch (err) {
+      console.error(err);
+      notify('Error saving thinking mode setting.', 'error');
+    }
+  };
+
   useEffect(() => {
     if (viewingDetailProvider) {
       fetchEnabledModels(viewingDetailProvider.id);
+      fetchThinkingModels(viewingDetailProvider.id);
       setTestResult(null);
       const conn = connections.find(c => c.provider === viewingDetailProvider.id);
       setModelPrefix((conn?.data?.modelPrefix) || '');
@@ -340,8 +382,8 @@ export default function ProvidersPage() {
     if (!credKey.trim() || !selectedStandard) return;
 
     const defaultUrls = {
-      'opencode-go': 'https://api.opencode.cn/v1',
-      'opencode-zen': 'https://api.opencode.cn/v1',
+      'opencode-go': 'https://opencode.ai/zen/go/v1',
+      'opencode-zen': 'https://opencode.ai/zen/v1',
       'glm': 'https://open.bigmodel.cn/api/paas/v4',
       'glm-coding': 'https://open.bigmodel.cn/api/coding/paas/v4',
     };
@@ -507,6 +549,26 @@ export default function ProvidersPage() {
     }
   };
 
+  const handleRemoveProviderById = async (providerId, e) => {
+    if (e) e.stopPropagation();
+    if (!confirm(`Are you sure you want to remove connection for ${providerId}?`)) return;
+    try {
+      const res = await fetch(`/api/providers/${providerId}`, { method: 'DELETE' });
+      if (res.ok) {
+        if (viewingDetailProvider && viewingDetailProvider.id === providerId) {
+          setViewingDetailProvider(null);
+        }
+        await fetchData();
+        notify(`Provider ${providerId} connection removed successfully.`, 'info');
+      } else {
+        notify('Failed to remove provider connection.', 'error');
+      }
+    } catch (err) {
+      console.error(err);
+      notify('Error removing provider connection.', 'error');
+    }
+  };
+
   // Add custom model manually via text input ID
   const handleAddCustomModel = async (e) => {
     e.preventDefault();
@@ -610,6 +672,31 @@ export default function ProvidersPage() {
     activeConn = connections.find(c => c.provider === providerId);
     metrics = getProviderMetrics(providerId);
   }
+
+  const filteredCombinedModels = useMemo(() => {
+    if (!modelSearchQuery.trim()) return combinedModels;
+    const q = modelSearchQuery.toLowerCase();
+    return combinedModels.filter(m =>
+      (m.id && m.id.toLowerCase().includes(q)) ||
+      (m.name && m.name.toLowerCase().includes(q))
+    );
+  }, [combinedModels, modelSearchQuery]);
+
+  const filteredCoreProviders = useMemo(() => {
+    if (!providerSearchQuery.trim()) return CORE_PROVIDERS;
+    const q = providerSearchQuery.toLowerCase();
+    return CORE_PROVIDERS.filter(p =>
+      p.name.toLowerCase().includes(q) || p.id.toLowerCase().includes(q) || (p.desc && p.desc.toLowerCase().includes(q))
+    );
+  }, [providerSearchQuery]);
+
+  const filteredNodes = useMemo(() => {
+    if (!providerSearchQuery.trim()) return nodes;
+    const q = providerSearchQuery.toLowerCase();
+    return nodes.filter(n =>
+      n.name.toLowerCase().includes(q) || n.id.toLowerCase().includes(q) || (n.type && n.type.toLowerCase().includes(q))
+    );
+  }, [nodes, providerSearchQuery]);
 
   return (
     <div>
@@ -734,9 +821,17 @@ export default function ProvidersPage() {
           <div className="card" style={{ padding: '20px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
               <h3 style={{ fontSize: '15px', fontWeight: 600, color: 'var(--text-main)', margin: 0 }}>Available Models</h3>
-              <select className="input-field" style={{ width: '130px', height: '28px', fontSize: '12px' }}>
-                <option>Thinking: Auto</option>
-              </select>
+              <div style={{ position: 'relative' }}>
+                <span className="material-symbols-outlined" style={{ position: 'absolute', left: '8px', top: '7px', fontSize: '16px', color: 'var(--text-subtle)' }}>search</span>
+                <input
+                  type="text"
+                  placeholder="Filter models..."
+                  value={modelSearchQuery}
+                  onChange={(e) => setModelSearchQuery(e.target.value)}
+                  className="input-field"
+                  style={{ width: '180px', height: '30px', fontSize: '12px', paddingLeft: '28px' }}
+                />
+              </div>
             </div>
             <p style={{ fontSize: '12px', color: 'var(--text-subtle)', margin: '0 0 16px' }}>
               Add OpenAI-compatible models manually or import them from the /models endpoint.
@@ -776,9 +871,10 @@ export default function ProvidersPage() {
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '12px' }}>
-              {combinedModels.map((m) => {
+              {filteredCombinedModels.map((m) => {
                 const checked = isModelEnabled(m.id);
                 const isCustomModel = customs.some(cm => cm.id === m.id);
+                const isThinkingOn = thinkingMap[m.id] === true; // Default OFF unless explicitly enabled
 
                 return (
                   <div
@@ -817,10 +913,37 @@ export default function ProvidersPage() {
                     </label>
 
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleToggleThinkingMode(m.id);
+                        }}
+                        title={isThinkingOn ? "Click to disable Thinking Mode" : "Click to enable Thinking Mode"}
+                        style={{
+                          padding: '3px 8px',
+                          fontSize: '10px',
+                          fontWeight: '600',
+                          borderRadius: '12px',
+                          border: isThinkingOn ? '1px solid #a855f7' : '1px solid var(--border-color)',
+                          background: isThinkingOn ? 'rgba(168, 85, 247, 0.15)' : 'rgba(255,255,255,0.02)',
+                          color: isThinkingOn ? '#c084fc' : 'var(--text-subtle)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '4px',
+                          cursor: 'pointer',
+                          transition: 'all 0.15s ease'
+                        }}
+                      >
+                        <span className="material-symbols-outlined" style={{ fontSize: '12px' }}>psychology</span>
+                        {isThinkingOn ? 'Thinking ON' : 'Thinking OFF'}
+                      </button>
+
                       {isCustomModel && (
                         <button
                           onClick={() => handleDeleteCustomModel(m.id)}
                           style={{ background: 'transparent', border: 'none', color: 'var(--color-danger)', cursor: 'pointer', padding: 0 }}
+                          title="Delete custom model"
                         >
                           <span className="material-symbols-outlined" style={{ fontSize: '16px' }}>delete</span>
                         </button>
@@ -850,6 +973,8 @@ export default function ProvidersPage() {
                 <input
                   type="text"
                   placeholder="Search providers..."
+                  value={providerSearchQuery}
+                  onChange={(e) => setProviderSearchQuery(e.target.value)}
                   className="input-field"
                   style={{ width: '220px', paddingLeft: '36px', height: '36px', fontSize: '13px' }}
                 />
@@ -861,7 +986,7 @@ export default function ProvidersPage() {
           <div className="card" style={{ background: 'transparent', border: 'none', padding: '0', marginBottom: '32px' }}>
             <h2 style={{ fontSize: '18px', fontWeight: 600, color: 'var(--text-main)', marginBottom: '16px' }}>Core AI Providers</h2>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px' }}>
-              {CORE_PROVIDERS.map((provider) => {
+              {filteredCoreProviders.map((provider) => {
                 const connectedCount = getProviderConnectionsCount(provider.id);
                 const isConnected = connectedCount > 0;
                 const metrics = getProviderMetrics(provider.id);
@@ -926,6 +1051,18 @@ export default function ProvidersPage() {
                         </div>
                       </div>
                     </div>
+
+                    {isConnected && (
+                      <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '6px' }}>
+                        <button
+                          onClick={(e) => handleRemoveProviderById(provider.id, e)}
+                          className="btn"
+                          style={{ padding: '2px 8px', fontSize: '10px', color: 'var(--color-danger)', border: '1px solid rgba(255,90,103,0.2)', background: 'rgba(255,90,103,0.05)' }}
+                        >
+                          Disconnect Provider
+                        </button>
+                      </div>
+                    )}
                   </div>
                 );
               })}
@@ -961,12 +1098,12 @@ export default function ProvidersPage() {
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px' }}>
-              {nodes.length === 0 ? (
+              {filteredNodes.length === 0 ? (
                 <div style={{ gridColumn: '1 / -1', textAlign: 'center', padding: '32px', border: '1px dashed var(--border-color)', borderRadius: '12px', color: 'var(--text-subtle)' }}>
-                  No custom compatible nodes created yet. Click one of the buttons above to register Sumopod or Databyte endpoints.
+                  No custom compatible nodes found matching your query.
                 </div>
               ) : (
-                nodes.map((node) => {
+                filteredNodes.map((node) => {
                   const connectedCount = getProviderConnectionsCount(node.id);
                   const isConnected = connectedCount > 0;
                   const metrics = getProviderMetrics(node.id);
@@ -1028,15 +1165,24 @@ export default function ProvidersPage() {
                         </div>
                       </div>
 
-                      {/* Delete button */}
-                      <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '4px' }}>
+                      {/* Action buttons */}
+                      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '6px' }}>
+                        {isConnected && (
+                          <button
+                            onClick={(e) => handleRemoveProviderById(node.id, e)}
+                            className="btn"
+                            style={{ padding: '2px 8px', fontSize: '10px', color: 'var(--color-danger)', border: '1px solid rgba(255,90,103,0.2)', background: 'rgba(255,90,103,0.05)' }}
+                          >
+                            Disconnect
+                          </button>
+                        )}
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
                             handleDeleteNode(node.id);
                           }}
                           className="btn"
-                          style={{ padding: '2px 8px', fontSize: '10px', color: 'var(--color-danger)', border: '1px solid rgba(255,90,103,0.15)', background: 'transparent' }}
+                          style={{ padding: '2px 8px', fontSize: '10px', color: 'var(--text-subtle)', border: '1px solid var(--border-color)', background: 'transparent' }}
                         >
                           Delete Node
                         </button>

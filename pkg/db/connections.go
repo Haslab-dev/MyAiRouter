@@ -155,7 +155,7 @@ func UpdateConnection(id string, updates map[string]interface{}) (*ProviderConne
 }
 
 func DeleteConnection(id string) error {
-	_, err := DB.Exec("DELETE FROM providerConnections WHERE id = ?", id)
+	_, err := DB.Exec("DELETE FROM providerConnections WHERE id = ? OR provider = ?", id, id)
 	return err
 }
 

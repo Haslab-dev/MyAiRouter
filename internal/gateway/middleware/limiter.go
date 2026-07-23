@@ -19,8 +19,6 @@ var (
 )
 
 func RateLimit(ctx *context.GatewayContext, next HandlerFunc) error {
-	ctx.AddStep("Rate Limit", "started", "Checking request rate limit")
-
 	limitersMu.Lock()
 	lim, exists := limiters[ctx.UserID]
 	if !exists {

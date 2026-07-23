@@ -10,8 +10,6 @@ import (
 )
 
 func ModelResolver(ctx *context.GatewayContext, next HandlerFunc) error {
-	ctx.AddStep("Model Resolver", "started", "Resolving model alias or combo")
-
 	body := ctx.RequestBody
 	modelStr, _ := body["model"].(string)
 	if modelStr == "" {

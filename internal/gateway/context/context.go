@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"math"
 	"net/http"
 	"time"
 
@@ -16,6 +17,9 @@ type TraceStep struct {
 	DurationMs int64     `json:"durationMs"`
 	Status     string    `json:"status"`
 	Details    string    `json:"details"`
+	Error      string    `json:"error,omitempty"`
+	RPS        float64   `json:"rps"`
+	TPS        float64   `json:"tps"`
 }
 
 type GatewayContext struct {
@@ -31,32 +35,35 @@ type GatewayContext struct {
 	Cost             float64
 	Latency          time.Duration
 	TTFB             time.Duration
+	RPS              float64
+	TPS              float64
 	Metadata         map[string]any
 
 	// Middleware Pipeline Tracking
-	Steps            []TraceStep
-	StartTime        time.Time
-	LastStepTime     time.Time
+	Steps        []TraceStep
+	StartTime    time.Time
+	LastStepTime time.Time
 
 	// HTTP / Upstream properties
-	ResponseWriter   http.ResponseWriter
-	Request          *http.Request
-	RequestBody      map[string]interface{}
-	ResponseCode     int
-	ResponseBody     []byte
-	IsStream         bool
-	Stream           io.ReadCloser
+	ResponseWriter http.ResponseWriter
+	Request        *http.Request
+	RequestBody    map[string]interface{}
+	ResponseCode   int
+	ResponseBody   []byte
+	IsStream       bool
+	Stream         io.ReadCloser
 
 	// Connection details
-	Connection       *db.ProviderConnection
+	Connection *db.ProviderConnection
 
 	// Fallback/Retry state
-	RetryCount       int
-	FallbackCount    int
-	Errors           []string
+	RetryCount    int
+	FallbackCount int
+	Errors        []string
 }
 
 func NewGatewayContext(w http.ResponseWriter, r *http.Request) *GatewayContext {
+	db.RecordRequestMetric()
 	now := time.Now()
 	return &GatewayContext{
 		Context:        r.Context(),
@@ -70,14 +77,34 @@ func NewGatewayContext(w http.ResponseWriter, r *http.Request) *GatewayContext {
 }
 
 func (c *GatewayContext) AddStep(name string, status string, details string) {
+	c.AddStepWithError(name, status, details, "")
+}
+
+func (c *GatewayContext) AddStepWithError(name string, status string, details string, errStr string) {
 	now := time.Now()
 	dur := now.Sub(c.LastStepTime)
+	durSec := dur.Seconds()
+	if durSec <= 0 {
+		durSec = 0.001
+	}
+
+	totalTokens := c.PromptTokens + c.CompletionTokens
+	tps := 0.0
+	if totalTokens > 0 {
+		tps = float64(totalTokens) / durSec
+	}
+
+	rps := db.GetCurrentRPS()
+
 	c.Steps = append(c.Steps, TraceStep{
 		Name:       name,
 		Timestamp:  now,
 		DurationMs: dur.Milliseconds(),
 		Status:     status,
 		Details:    details,
+		Error:      errStr,
+		RPS:        math.Round(rps*100) / 100,
+		TPS:        math.Round(tps*10) / 10,
 	})
 	c.LastStepTime = now
 }

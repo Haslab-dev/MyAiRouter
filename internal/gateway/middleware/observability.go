@@ -2,11 +2,12 @@ package middleware
 
 import (
 	"encoding/json"
-"strings"
-"time"
+	"math"
+	"strings"
+	"time"
 
-"myAiRouter/internal/gateway/context"
-"myAiRouter/pkg/db"
+	"myAiRouter/internal/gateway/context"
+	"myAiRouter/pkg/db"
 )
 
 type TracePreview struct {
@@ -20,11 +21,17 @@ err := next(ctx)
 
 // Complete duration metrics
 ctx.Latency = time.Since(ctx.StartTime)
+ctx.RPS = math.Round(db.GetCurrentRPS()*100) / 100
+latSec := ctx.Latency.Seconds()
+if latSec <= 0 {
+	latSec = 0.001
+}
+ctx.TPS = math.Round((float64(ctx.PromptTokens+ctx.CompletionTokens)/latSec)*10) / 10
 ctx.AddStep("Observability Engine", "success", "Recording pipeline details")
 
 statusStr := "ok"
 if ctx.ResponseCode >= 400 || err != nil {
-statusStr = "error"
+	statusStr = "error"
 }
 
 // Calculate upstream API cost
@@ -32,59 +39,67 @@ ctx.Cost = db.CalculateCost(ctx.Provider, ctx.Model, ctx.PromptTokens, ctx.Compl
 
 // Extract pipeline steps with structured details
 type stepLog struct {
-Name       string `json:"name"`
-DurationMs int64  `json:"durationMs"`
-Status     string `json:"status"`
-Details    string `json:"details"`
+	Name       string  `json:"name"`
+	DurationMs int64   `json:"durationMs"`
+	Status     string  `json:"status"`
+	Details    string  `json:"details"`
+	Error      string  `json:"error,omitempty"`
+	RPS        float64 `json:"rps"`
+	TPS        float64 `json:"tps"`
 }
 steps := make([]stepLog, 0, len(ctx.Steps))
 for _, s := range ctx.Steps {
-steps = append(steps, stepLog{
-Name:       s.Name,
-DurationMs: s.DurationMs,
-Status:     s.Status,
-Details:    s.Details,
-})
+	steps = append(steps, stepLog{
+		Name:       s.Name,
+		DurationMs: s.DurationMs,
+		Status:     s.Status,
+		Details:    s.Details,
+		Error:      s.Error,
+		RPS:        s.RPS,
+		TPS:        s.TPS,
+	})
 }
 
 // Aggregate metrics for standard usage tracking
 metaMap := map[string]interface{}{
-"duration_ms": ctx.Latency.Milliseconds(),
-"ttfb_ms":     ctx.TTFB.Milliseconds(),
-"retry_count": ctx.RetryCount,
-"fallback":    ctx.FallbackCount,
-"cache_hit":   ctx.Metadata["cacheHit"] == true,
+	"duration_ms": ctx.Latency.Milliseconds(),
+	"ttfb_ms":     ctx.TTFB.Milliseconds(),
+	"retry_count": ctx.RetryCount,
+	"fallback":    ctx.FallbackCount,
+	"cache_hit":   ctx.Metadata["cacheHit"] == true,
+	"rps":         ctx.RPS,
+	"tps":         ctx.TPS,
 }
 metaJSON, _ := json.Marshal(metaMap)
 
 connID := ""
 if ctx.Connection != nil {
-connID = ctx.Connection.ID
+	connID = ctx.Connection.ID
 }
 
 // 1. Record in standard usage table (for charts and KPI sums)
 _ = db.SaveRequestUsage(&db.UsageEntry{
-Provider:         ctx.Provider,
-Model:            ctx.Model,
-ConnectionID:     connID,
-APIKey:           ctx.UserID,
-Endpoint:         "/v1/chat/completions",
-PromptTokens:     ctx.PromptTokens,
-CompletionTokens: ctx.CompletionTokens,
-CachedTokens:     ctx.CachedTokens,
-Status:           statusStr,
-Tokens: db.TokenUsage{
-PromptTokens:     ctx.PromptTokens,
-CompletionTokens: ctx.CompletionTokens,
-CachedTokens:     ctx.CachedTokens,
-},
-Meta:             string(metaJSON),
+	Provider:         ctx.Provider,
+	Model:            ctx.Model,
+	ConnectionID:     connID,
+	APIKey:           ctx.UserID,
+	Endpoint:         "/v1/chat/completions",
+	PromptTokens:     ctx.PromptTokens,
+	CompletionTokens: ctx.CompletionTokens,
+	CachedTokens:     ctx.CachedTokens,
+	Status:           statusStr,
+	Tokens: db.TokenUsage{
+		PromptTokens:     ctx.PromptTokens,
+		CompletionTokens: ctx.CompletionTokens,
+		CachedTokens:     ctx.CachedTokens,
+	},
+	Meta:             string(metaJSON),
 })
 
 // Check trace storage settings
 settings, _ := db.GetSettings()
 if settings != nil && (settings.TraceStorageMode == "disabled" || settings.TraceStorageMode == "off") {
-return err
+	return err
 }
 
 // Zero-allocation preview extraction (512 chars max for system/user prompts)
@@ -92,22 +107,24 @@ preview := extractMessagePreview(ctx.RequestBody, 512)
 
 // 2. Record lean telemetry JSON to requestDetails
 traceData := map[string]interface{}{
-"requestId":        ctx.RequestID,
-"timestamp":        time.Now().UTC().Format(time.RFC3339),
-"provider":         ctx.Provider,
-"model":            ctx.Model,
-"originalModel":    ctx.OriginalModel,
-"connectionId":     connID,
-"status":           statusStr,
-"latencyMs":        ctx.Latency.Milliseconds(),
-"ttfbMs":           ctx.TTFB.Milliseconds(),
-"cost":             ctx.Cost,
-"promptTokens":     ctx.PromptTokens,
-"completionTokens": ctx.CompletionTokens,
-"cachedTokens":     ctx.CachedTokens,
-"steps":            steps,
-"errors":           ctx.Errors,
-"preview":          preview,
+	"requestId":        ctx.RequestID,
+	"timestamp":        time.Now().UTC().Format(time.RFC3339),
+	"provider":         ctx.Provider,
+	"model":            ctx.Model,
+	"originalModel":    ctx.OriginalModel,
+	"connectionId":     connID,
+	"status":           statusStr,
+	"latencyMs":        ctx.Latency.Milliseconds(),
+	"ttfbMs":           ctx.TTFB.Milliseconds(),
+	"cost":             ctx.Cost,
+	"promptTokens":     ctx.PromptTokens,
+	"completionTokens": ctx.CompletionTokens,
+	"cachedTokens":     ctx.CachedTokens,
+	"rps":              ctx.RPS,
+	"tps":              ctx.TPS,
+	"steps":            steps,
+	"errors":           ctx.Errors,
+	"preview":          preview,
 }
 
 // Attach a single messages array (no duplication of original vs optimized) if preview or full mode is active

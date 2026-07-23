@@ -75,11 +75,16 @@ On startup, `myAiRouter` will:
 
 ---
 
-## 4. Build from Source
+## 4. Build & Install from Source
 
 ```bash
+make install
+```
+Or manually:
+```bash
 cd web && npm install && npm run build && cd ..
-go build -o myAiRouter .
+go build -o myairouter .
+./website/install.sh
 ```
 
 ---

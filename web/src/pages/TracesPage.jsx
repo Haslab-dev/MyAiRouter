@@ -211,35 +211,41 @@ export default function TracesPage() {
             </div>
 
             {/* KPI Metrics */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '12px', marginBottom: '24px' }}>
-              <div style={{ background: 'rgba(255,255,255,0.01)', border: '1px solid var(--border-color)', padding: '12px', borderRadius: 'var(--radius-md)' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: '10px', marginBottom: '24px' }}>
+              <div style={{ background: 'rgba(255,255,255,0.01)', border: '1px solid var(--border-color)', padding: '10px', borderRadius: 'var(--radius-md)' }}>
                 <div style={{ fontSize: '9px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: '600' }}>Status</div>
-                <div style={{ fontSize: '15px', fontWeight: '700', marginTop: '4px', color: selectedTrace.status === 'ok' ? 'var(--color-success)' : 'var(--color-danger)' }}>
+                <div style={{ fontSize: '14px', fontWeight: '700', marginTop: '4px', color: selectedTrace.status === 'ok' ? 'var(--color-success)' : 'var(--color-danger)' }}>
                   {selectedTrace.status === 'ok' ? 'Success' : 'Error'}
                 </div>
               </div>
-              <div style={{ background: 'rgba(255,255,255,0.01)', border: '1px solid var(--border-color)', padding: '12px', borderRadius: 'var(--radius-md)' }}>
-                <div style={{ fontSize: '9px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: '600' }}>Latency</div>
-                <div style={{ fontSize: '15px', fontWeight: '700', marginTop: '4px', fontFamily: 'var(--font-mono)' }}>
-                  {selectedTrace.latencyMs}ms
+              <div style={{ background: 'rgba(255,255,255,0.01)', border: '1px solid var(--border-color)', padding: '10px', borderRadius: 'var(--radius-md)' }}>
+                <div style={{ fontSize: '9px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: '600' }}>Latency / TTFB</div>
+                <div style={{ fontSize: '13px', fontWeight: '700', marginTop: '4px', fontFamily: 'var(--font-mono)' }}>
+                  {selectedTrace.latencyMs}ms / {selectedTrace.ttfbMs || 0}ms
                 </div>
               </div>
-              <div style={{ background: 'rgba(255,255,255,0.01)', border: '1px solid var(--border-color)', padding: '12px', borderRadius: 'var(--radius-md)' }}>
-                <div style={{ fontSize: '9px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: '600' }}>TTFB</div>
-                <div style={{ fontSize: '15px', fontWeight: '700', marginTop: '4px', fontFamily: 'var(--font-mono)' }}>
-                  {selectedTrace.ttfbMs || 0}ms
-                </div>
-              </div>
-              <div style={{ background: 'rgba(255,255,255,0.01)', border: '1px solid var(--border-color)', padding: '12px', borderRadius: 'var(--radius-md)' }}>
+              <div style={{ background: 'rgba(255,255,255,0.01)', border: '1px solid var(--border-color)', padding: '10px', borderRadius: 'var(--radius-md)' }}>
                 <div style={{ fontSize: '9px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: '600' }}>Cost</div>
-                <div style={{ fontSize: '15px', fontWeight: '700', marginTop: '4px', fontFamily: 'var(--font-mono)' }}>
+                <div style={{ fontSize: '14px', fontWeight: '700', marginTop: '4px', fontFamily: 'var(--font-mono)' }}>
                   ${selectedTrace.cost?.toFixed(5)}
                 </div>
               </div>
-              <div style={{ background: 'rgba(255,255,255,0.01)', border: '1px solid var(--border-color)', padding: '12px', borderRadius: 'var(--radius-md)' }}>
-                <div style={{ fontSize: '9px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: '600' }}>Tokens (P/C/Cached)</div>
+              <div style={{ background: 'rgba(255,255,255,0.01)', border: '1px solid var(--border-color)', padding: '10px', borderRadius: 'var(--radius-md)' }}>
+                <div style={{ fontSize: '9px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: '600' }}>Tokens (P/C)</div>
                 <div style={{ fontSize: '12px', fontWeight: '700', marginTop: '6px', fontFamily: 'var(--font-mono)' }}>
-                  {selectedTrace.promptTokens} / {selectedTrace.completionTokens} / {selectedTrace.cachedTokens || 0}
+                  {selectedTrace.promptTokens} / {selectedTrace.completionTokens}
+                </div>
+              </div>
+              <div style={{ background: 'rgba(255,255,255,0.01)', border: '1px solid var(--border-color)', padding: '10px', borderRadius: 'var(--radius-md)' }}>
+                <div style={{ fontSize: '9px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: '600' }}>Rate (RPS)</div>
+                <div style={{ fontSize: '14px', fontWeight: '700', marginTop: '4px', fontFamily: 'var(--font-mono)', color: 'var(--color-primary)' }}>
+                  {selectedTrace.rps !== undefined ? `${selectedTrace.rps} req/s` : '—'}
+                </div>
+              </div>
+              <div style={{ background: 'rgba(255,255,255,0.01)', border: '1px solid var(--border-color)', padding: '10px', borderRadius: 'var(--radius-md)' }}>
+                <div style={{ fontSize: '9px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: '600' }}>Speed (TPS)</div>
+                <div style={{ fontSize: '14px', fontWeight: '700', marginTop: '4px', fontFamily: 'var(--font-mono)', color: '#a855f7' }}>
+                  {selectedTrace.tps !== undefined ? `${selectedTrace.tps} tok/s` : '—'}
                 </div>
               </div>
             </div>
@@ -293,8 +299,8 @@ export default function TracesPage() {
                 <div style={{ position: 'absolute', left: '7px', top: '8px', bottom: '8px', width: '2px', background: 'var(--border-color)' }}></div>
 
                 {selectedTrace.steps?.map((step, idx) => {
-                  const isErr = step.status === 'failed';
-                  const isSuccess = step.status === 'success';
+                  const isErr = step.status === 'failed' || step.status === 'error';
+                  const isSuccess = step.status === 'success' || step.status === 'ok';
 
                   return (
                     <div key={idx} style={{ position: 'relative', marginBottom: '16px' }}>
@@ -313,11 +319,26 @@ export default function TracesPage() {
                       ></div>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                         <div>
-                          <div style={{ fontSize: '13px', fontWeight: '600' }}>{step.name}</div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <span style={{ fontSize: '13px', fontWeight: '600' }}>{step.name}</span>
+                            <span className={`badge ${isErr ? 'badge-danger' : 'badge-success'}`} style={{ fontSize: '9px', padding: '1px 6px' }}>
+                              {step.status}
+                            </span>
+                          </div>
                           <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px' }}>{step.details}</div>
+                          {step.error && (
+                            <div style={{ fontSize: '11px', color: 'var(--color-danger)', marginTop: '2px', fontFamily: 'var(--font-mono)' }}>
+                              Error: {step.error}
+                            </div>
+                          )}
                         </div>
-                        <div style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', color: 'var(--text-subtle)' }}>
-                          +{step.durationMs}ms
+                        <div style={{ textAlign: 'right', fontSize: '11px', fontFamily: 'var(--font-mono)', color: 'var(--text-subtle)' }}>
+                          <div>+{step.durationMs}ms</div>
+                          {(step.rps !== undefined || step.tps !== undefined) && (
+                            <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '2px' }}>
+                              {step.rps ? `${step.rps} rps` : ''} {step.rps && step.tps ? '·' : ''} {step.tps ? `${step.tps} tps` : ''}
+                            </div>
+                          )}
                         </div>
                       </div>
                     </div>

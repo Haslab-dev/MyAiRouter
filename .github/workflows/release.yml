@@ -42,11 +42,19 @@ jobs:
       - name: Build Linux arm64
         run: GOOS=linux GOARCH=arm64 go build -o build/myairouter-linux-arm64 .
 
+      - name: Build macOS amd64
+        run: GOOS=darwin GOARCH=amd64 go build -o build/myairouter-darwin-amd64 .
+
+      - name: Build macOS arm64
+        run: GOOS=darwin GOARCH=arm64 go build -o build/myairouter-darwin-arm64 .
+
       - name: Compress
         run: |
           cd build
           tar czf myairouter-linux-amd64.tar.gz myairouter-linux-amd64
           tar czf myairouter-linux-arm64.tar.gz myairouter-linux-arm64
+          tar czf myairouter-darwin-amd64.tar.gz myairouter-darwin-amd64
+          tar czf myairouter-darwin-arm64.tar.gz myairouter-darwin-arm64
 
       - name: Generate checksums
         run: cd build && sha256sum *.tar.gz > checksums.txt

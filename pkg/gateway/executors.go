@@ -63,6 +63,10 @@ func executeOpenAI(ctx context.Context, conn *db.ProviderConnection, apiKey stri
 			baseUrl = "https://openrouter.ai/api/v1"
 		case "deepseek":
 			baseUrl = "https://api.deepseek.com/v1"
+		case "opencode-zen", "opencode":
+			baseUrl = "https://opencode.ai/zen/v1"
+		case "opencode-go":
+			baseUrl = "https://opencode.ai/zen/go/v1"
 		default:
 			baseUrl = "https://api.openai.com/v1"
 		}

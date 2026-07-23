@@ -15,8 +15,6 @@ type ConnectionModel struct {
 }
 
 func Routing(ctx *context.GatewayContext, next HandlerFunc) error {
-	ctx.AddStep("Routing", "started", "Routing request to eligible provider nodes")
-
 	modelsToTry, _ := ctx.Metadata["modelsToTry"].([]string)
 	var targets []ConnectionModel
 

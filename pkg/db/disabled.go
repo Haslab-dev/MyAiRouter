@@ -116,3 +116,39 @@ func SetEnabledModels(provider string, ids []string) error {
 	)
 	return err
 }
+
+const ThinkingModelsScope = "thinkingModels"
+
+func GetThinkingModels(provider string) (map[string]bool, error) {
+	var val string
+	err := DB.QueryRow(
+		"SELECT value FROM kv WHERE scope = ? AND key = ?",
+		ThinkingModelsScope, provider,
+	).Scan(&val)
+	if err != nil {
+		return make(map[string]bool), nil
+	}
+	var res map[string]bool
+	if err := json.Unmarshal([]byte(val), &res); err != nil {
+		return make(map[string]bool), nil
+	}
+	return res, nil
+}
+
+func SetThinkingModel(provider string, modelId string, enabled bool) error {
+	m, _ := GetThinkingModels(provider)
+	if m == nil {
+		m = make(map[string]bool)
+	}
+	m[modelId] = enabled
+	valBytes, err := json.Marshal(m)
+	if err != nil {
+		return err
+	}
+	_, err = DB.Exec(
+		`INSERT INTO kv(scope, key, value) VALUES(?, ?, ?) 
+		 ON CONFLICT(scope, key) DO UPDATE SET value = excluded.value`,
+		ThinkingModelsScope, provider, string(valBytes),
+	)
+	return err
+}

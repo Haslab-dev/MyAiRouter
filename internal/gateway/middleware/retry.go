@@ -9,8 +9,6 @@ import (
 )
 
 func Retry(ctx *context.GatewayContext, next HandlerFunc) error {
-	ctx.AddStep("Retry/Fallback Engine", "started", "Starting execution attempt sequence")
-
 	targets, ok := ctx.Metadata["routingTargets"].([]ConnectionModel)
 	if !ok || len(targets) == 0 {
 		ctx.WriteError(http.StatusServiceUnavailable, "Routing targets not resolved")
@@ -32,8 +30,6 @@ func Retry(ctx *context.GatewayContext, next HandlerFunc) error {
 		// Refresh body with clean clone for this attempt
 		ctx.RequestBody = cloneMap(originalBody)
 		ctx.RequestBody["model"] = target.ModelName
-
-		ctx.AddStep("Retry/Fallback Engine", "started", fmt.Sprintf("Attempt %d/%d: provider=%s model=%s conn=%s", i+1, len(targets), target.Provider, target.ModelName, target.Connection.Name))
 
 		// Execute downstream middlewares for this node (PromptRewrite, Compression, Cache, Provider, etc.)
 		err := next(ctx)
