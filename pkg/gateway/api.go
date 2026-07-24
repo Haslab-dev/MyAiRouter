@@ -109,6 +109,7 @@ func RegisterAdminRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/models/enabled", handleModelsEnabled)
 	mux.HandleFunc("/api/models/custom", handleModelsCustom)
 	mux.HandleFunc("/api/models/thinking", handleModelsThinking)
+	mux.HandleFunc("/api/models/pricing", handleModelPricing)
 	mux.HandleFunc("/api/logs", handleServerLogs)
 	mux.HandleFunc("/api/health", handleHealth)
 	mux.HandleFunc("/api/traces", handleTraces)
@@ -421,7 +422,8 @@ func handleCombos(w http.ResponseWriter, r *http.Request) {
 func handleUsageStats(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	provider := r.URL.Query().Get("provider")
-	stats, err := db.GetUsageStats(provider)
+	period := r.URL.Query().Get("period")
+	stats, err := db.GetUsageStats(provider, period)
 	if err != nil {
 		WriteErrorResponse(w, http.StatusInternalServerError, err.Error())
 		return
@@ -432,6 +434,7 @@ func handleUsageStats(w http.ResponseWriter, r *http.Request) {
 func handleUsageLogs(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	provider := r.URL.Query().Get("provider")
+	period := r.URL.Query().Get("period")
 
 	pageStr := r.URL.Query().Get("page")
 	perPageStr := r.URL.Query().Get("perPage")
@@ -444,7 +447,7 @@ func handleUsageLogs(w http.ResponseWriter, r *http.Request) {
 		perPage = 20
 	}
 
-	logs, total, err := db.GetRecentLogsPaginated(page, perPage, provider)
+	logs, total, err := db.GetRecentLogsPaginated(page, perPage, provider, period)
 	if err != nil {
 		WriteErrorResponse(w, http.StatusInternalServerError, err.Error())
 		return
@@ -461,6 +464,7 @@ func handleUsageCharts(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
 	provider := r.URL.Query().Get("provider")
+	period := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("period")))
 
 	type ChartPoint struct {
 		Label  string  `json:"label"`
@@ -468,6 +472,91 @@ func handleUsageCharts(w http.ResponseWriter, r *http.Request) {
 		Cost   float64 `json:"cost"`
 	}
 
+	whereClause, args := db.BuildUsageWhere(provider, period)
+
+	if period == "week" || period == "7d" {
+		now := time.Now().UTC()
+		points := make([]ChartPoint, 7)
+		labelMap := make(map[string]int)
+		for i := 0; i < 7; i++ {
+			d := now.AddDate(0, 0, -(6 - i))
+			dateStr := d.Format("2006-01-02")
+			points[i] = ChartPoint{
+				Label:  d.Format("Jan 02"),
+				Tokens: 0,
+				Cost:   0,
+			}
+			labelMap[dateStr] = i
+		}
+
+		rows, err := db.DB.Query(`
+			SELECT 
+				STRFTIME('%Y-%m-%d', timestamp) as date_part,
+				SUM(promptTokens + completionTokens) as total_tokens,
+				SUM(cost) as total_cost
+			FROM usageHistory
+			`+whereClause+`
+			GROUP BY date_part
+		`, args...)
+		if err == nil {
+			defer rows.Close()
+			for rows.Next() {
+				var dateStr string
+				var tokens int
+				var cost float64
+				if err := rows.Scan(&dateStr, &tokens, &cost); err == nil {
+					if idx, ok := labelMap[dateStr]; ok {
+						points[idx].Tokens = tokens
+						points[idx].Cost = math.Round(cost*10000) / 10000
+					}
+				}
+			}
+		}
+		_ = json.NewEncoder(w).Encode(points)
+		return
+	} else if period == "month" || period == "30d" || period == "1m" {
+		now := time.Now().UTC()
+		points := make([]ChartPoint, 30)
+		labelMap := make(map[string]int)
+		for i := 0; i < 30; i++ {
+			d := now.AddDate(0, 0, -(29 - i))
+			dateStr := d.Format("2006-01-02")
+			points[i] = ChartPoint{
+				Label:  d.Format("01/02"),
+				Tokens: 0,
+				Cost:   0,
+			}
+			labelMap[dateStr] = i
+		}
+
+		rows, err := db.DB.Query(`
+			SELECT 
+				STRFTIME('%Y-%m-%d', timestamp) as date_part,
+				SUM(promptTokens + completionTokens) as total_tokens,
+				SUM(cost) as total_cost
+			FROM usageHistory
+			`+whereClause+`
+			GROUP BY date_part
+		`, args...)
+		if err == nil {
+			defer rows.Close()
+			for rows.Next() {
+				var dateStr string
+				var tokens int
+				var cost float64
+				if err := rows.Scan(&dateStr, &tokens, &cost); err == nil {
+					if idx, ok := labelMap[dateStr]; ok {
+						points[idx].Tokens = tokens
+						points[idx].Cost = math.Round(cost*10000) / 10000
+					}
+				}
+			}
+		}
+		_ = json.NewEncoder(w).Encode(points)
+		return
+	}
+
+	// Default: 24 hours (day)
 	points := make([]ChartPoint, 24)
 	for i := 0; i < 24; i++ {
 		points[i] = ChartPoint{
@@ -475,13 +564,6 @@ func handleUsageCharts(w http.ResponseWriter, r *http.Request) {
 			Tokens: 0,
 			Cost:   0,
 		}
-	}
-
-	whereClause := "WHERE timestamp >= datetime('now', '-24 hours')"
-	args := []interface{}{}
-	if provider != "" {
-		whereClause += " AND (LOWER(provider) = LOWER(?) OR LOWER(connectionId) = LOWER(?))"
-		args = append(args, provider, provider)
 	}
 
 	rows, err := db.DB.Query(`
@@ -746,12 +828,86 @@ func handleUsageModels(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	provider := r.URL.Query().Get("provider")
-	summaries, err := db.GetModelUsageSummary(provider)
+	period := r.URL.Query().Get("period")
+	summaries, err := db.GetModelUsageSummary(provider, period)
 	if err != nil {
 		WriteErrorResponse(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	_ = json.NewEncoder(w).Encode(summaries)
+}
+
+func handleModelPricing(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	if r.Method == http.MethodGet {
+		provider := r.URL.Query().Get("providerAlias")
+		if provider == "" {
+			provider = r.URL.Query().Get("provider")
+		}
+		overrides, err := db.GetPricingOverrides(provider)
+		if err != nil {
+			WriteErrorResponse(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"overrides": overrides,
+		})
+		return
+	}
+
+	if r.Method == http.MethodPost {
+		var req struct {
+			ProviderAlias string  `json:"providerAlias"`
+			Provider      string  `json:"provider"`
+			Model         string  `json:"model"`
+			Input         float64 `json:"input"`
+			Output        float64 `json:"output"`
+			Cached        float64 `json:"cached"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			WriteErrorResponse(w, http.StatusBadRequest, "invalid request body")
+			return
+		}
+		p := req.ProviderAlias
+		if p == "" {
+			p = req.Provider
+		}
+		if req.Model == "" {
+			WriteErrorResponse(w, http.StatusBadRequest, "model is required")
+			return
+		}
+		rate := db.ModelRate{
+			Input:  req.Input,
+			Output: req.Output,
+			Cached: req.Cached,
+		}
+		if err := db.SetPricingOverride(p, req.Model, rate); err != nil {
+			WriteErrorResponse(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"success": true})
+		return
+	}
+
+	if r.Method == http.MethodDelete {
+		provider := r.URL.Query().Get("providerAlias")
+		if provider == "" {
+			provider = r.URL.Query().Get("provider")
+		}
+		model := r.URL.Query().Get("model")
+		if model == "" {
+			WriteErrorResponse(w, http.StatusBadRequest, "model is required")
+			return
+		}
+		if err := db.DeletePricingOverride(provider, model); err != nil {
+			WriteErrorResponse(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"success": true})
+		return
+	}
+
+	w.WriteHeader(http.StatusMethodNotAllowed)
 }
 
 func handleProviderUsageSummary(w http.ResponseWriter, r *http.Request) {

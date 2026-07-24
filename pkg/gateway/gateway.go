@@ -289,6 +289,9 @@ func HandleListModels(w http.ResponseWriter, r *http.Request) {
 		"kilocode":   {"gpt-4o", "claude-sonnet-4-20250514", "gemini-2.5-pro", "deepseek-chat"},
 		"glm":        {"glm-5.2", "glm-5.1", "glm-5", "glm-4.7", "glm-4.6v", "glm-4.6", "glm-4.5-flash"},
 		"glm-coding": {"glm-5.2", "glm-5.1", "glm-5", "glm-4.7", "glm-4.6v", "glm-4.6", "glm-4.5-flash"},
+		"nvidia":     {"meta/llama-3.3-70b-instruct", "deepseek-ai/deepseek-r1", "nvidia/llama-3.1-nemotron-70b-instruct"},
+		"groq":       {"llama-3.3-70b-versatile", "llama-3.1-8b-instant", "mixtral-8x7b-32768", "deepseek-r1-distill-llama-70b"},
+		"openrouter": {"auto", "anthropic/claude-3.5-sonnet", "openai/gpt-4o", "deepseek/deepseek-r1"},
 	}
 
 	seenProviders := make(map[string]bool)

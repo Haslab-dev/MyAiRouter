@@ -244,6 +244,11 @@ func matchPattern(pattern, model string) bool {
 }
 
 func GetPricing(provider, model string) ModelRate {
+	// 0. Check KV pricing override first
+	if rate, ok := GetPricingOverride(provider, model); ok {
+		return rate
+	}
+
 	baseModel := model
 	if idx := strings.LastIndex(model, "/"); idx != -1 {
 		baseModel = model[idx+1:]
@@ -371,14 +376,35 @@ func updateDailySummary(dateKey string, entry *UsageEntry) error {
 	return err
 }
 
-func GetUsageStats(provider string) (*UsageStats, error) {
-	var stats UsageStats
-	where := ""
-	args := []interface{}{}
+func BuildUsageWhere(provider, period string) (string, []interface{}) {
+	var clauses []string
+	var args []interface{}
+
 	if provider != "" {
-		where = " WHERE (LOWER(provider) = LOWER(?) OR LOWER(connectionId) = LOWER(?))"
-		args = append(args, provider, provider)
+		clauses = append(clauses, "(LOWER(provider) = LOWER(?) OR LOWER(connectionId) = LOWER(?) OR LOWER(model) LIKE LOWER(?))")
+		args = append(args, provider, provider, provider+"/%")
 	}
+
+	switch strings.ToLower(strings.TrimSpace(period)) {
+	case "day", "1d", "24h":
+		clauses = append(clauses, "timestamp >= datetime('now', '-1 day')")
+	case "week", "7d":
+		clauses = append(clauses, "timestamp >= datetime('now', '-7 days')")
+	case "month", "30d", "1m":
+		clauses = append(clauses, "timestamp >= datetime('now', '-30 days')")
+	}
+
+	where := ""
+	if len(clauses) > 0 {
+		where = " WHERE " + strings.Join(clauses, " AND ")
+	}
+	return where, args
+}
+
+func GetUsageStats(provider string, period string) (*UsageStats, error) {
+	var stats UsageStats
+	where, args := BuildUsageWhere(provider, period)
+
 	row := DB.QueryRow("SELECT COUNT(*), SUM(promptTokens), SUM(completionTokens), SUM(cost) FROM usageHistory"+where, args...)
 	var requests, prompt, completion sql.NullInt64
 	var cost sql.NullFloat64
@@ -398,12 +424,12 @@ func GetUsageStats(provider string) (*UsageStats, error) {
 	return &stats, nil
 }
 
-func GetRecentLogs(limit int, provider string) ([]UsageEntry, error) {
-	entries, _, err := GetRecentLogsPaginated(1, limit, provider)
+func GetRecentLogs(limit int, provider string, period string) ([]UsageEntry, error) {
+	entries, _, err := GetRecentLogsPaginated(1, limit, provider, period)
 	return entries, err
 }
 
-func GetRecentLogsPaginated(page, perPage int, provider string) ([]UsageEntry, int, error) {
+func GetRecentLogsPaginated(page, perPage int, provider string, period string) ([]UsageEntry, int, error) {
 	keys, err := ListApiKeys()
 	keyNameMap := make(map[string]string)
 	if err == nil {
@@ -412,14 +438,11 @@ func GetRecentLogsPaginated(page, perPage int, provider string) ([]UsageEntry, i
 		}
 	}
 
+	where, args := BuildUsageWhere(provider, period)
+
 	var total int
-	countQuery := `SELECT COUNT(*) FROM usageHistory`
-	countArgs := []interface{}{}
-	if provider != "" {
-		countQuery += " WHERE (LOWER(provider) = LOWER(?) OR LOWER(connectionId) = LOWER(?))"
-		countArgs = append(countArgs, provider, provider)
-	}
-	if err := DB.QueryRow(countQuery, countArgs...).Scan(&total); err != nil {
+	countQuery := `SELECT COUNT(*) FROM usageHistory` + where
+	if err := DB.QueryRow(countQuery, args...).Scan(&total); err != nil {
 		return nil, 0, err
 	}
 
@@ -429,16 +452,10 @@ func GetRecentLogsPaginated(page, perPage int, provider string) ([]UsageEntry, i
 	}
 
 	query := `SELECT id, timestamp, provider, model, connectionId, apiKey, endpoint, promptTokens, completionTokens, cachedTokens, cost, status, tokens, meta 
-		FROM usageHistory`
-	args := []interface{}{}
-	if provider != "" {
-		query += " WHERE (LOWER(provider) = LOWER(?) OR LOWER(connectionId) = LOWER(?))"
-		args = append(args, provider, provider)
-	}
-	query += " ORDER BY id DESC LIMIT ? OFFSET ?"
-	args = append(args, perPage, offset)
+		FROM usageHistory` + where + " ORDER BY id DESC LIMIT ? OFFSET ?"
+	queryArgs := append(args, perPage, offset)
 
-	rows, err := DB.Query(query, args...)
+	rows, err := DB.Query(query, queryArgs...)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -516,7 +533,8 @@ type ModelUsageSummary struct {
 	Cost             float64 `json:"cost"`
 }
 
-func GetModelUsageSummary(provider string) ([]ModelUsageSummary, error) {
+func GetModelUsageSummary(provider string, period string) ([]ModelUsageSummary, error) {
+	where, args := BuildUsageWhere(provider, period)
 	query := `
 		SELECT 
 			model, 
@@ -527,13 +545,7 @@ func GetModelUsageSummary(provider string) ([]ModelUsageSummary, error) {
 			SUM(completionTokens) as completionTokens,
 			COALESCE(SUM(cachedTokens), 0) as cachedTokens,
 			SUM(cost) as cost
-		FROM usageHistory`
-	args := []interface{}{}
-	if provider != "" {
-		query += " WHERE (LOWER(provider) = LOWER(?) OR LOWER(connectionId) = LOWER(?))"
-		args = append(args, provider, provider)
-	}
-	query += " GROUP BY model, provider ORDER BY cost DESC"
+		FROM usageHistory` + where + " GROUP BY model, provider ORDER BY cost DESC"
 
 	rows, err := DB.Query(query, args...)
 	if err != nil {
@@ -601,7 +613,7 @@ type MetricsOverview struct {
 }
 
 func GetMetricsOverview() (*MetricsOverview, error) {
-	stats, err := GetUsageStats("")
+	stats, err := GetUsageStats("", "")
 	if err != nil {
 		return nil, err
 	}
@@ -609,7 +621,7 @@ func GetMetricsOverview() (*MetricsOverview, error) {
 	if err != nil {
 		return nil, err
 	}
-	models, err := GetModelUsageSummary("")
+	models, err := GetModelUsageSummary("", "")
 	if err != nil {
 		return nil, err
 	}

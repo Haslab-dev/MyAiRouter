@@ -24,6 +24,7 @@ export default function UsagePage() {
   const [connections, setConnections] = useState([]);
   const [nodesList, setNodesList] = useState([]);
   const [selectedProvider, setSelectedProvider] = useState('');
+  const [selectedPeriod, setSelectedPeriod] = useState('day');
 
   // Tree zoom state (no pan)
   const [treeScale, setTreeScale] = useState(1);
@@ -61,6 +62,9 @@ export default function UsagePage() {
   'gemini': 'Google AI',
   'deepseek': 'DeepSeek',
   'azure': 'Azure OpenAI',
+  'nvidia': 'NVIDIA NIM',
+  'groq': 'Groq',
+  'openrouter': 'OpenRouter',
 };
 
 const getProviderDisplayName = (providerId, nodesList) => {
@@ -72,9 +76,18 @@ const getProviderDisplayName = (providerId, nodesList) => {
 
 const [settings, setSettings] = useState(null);
 
-  const fetchData = useCallback(async (provider) => {
+  const fetchData = useCallback(async (provider, period) => {
     try {
-      const statsUrl = provider ? `/api/usage/stats?provider=${encodeURIComponent(provider)}` : '/api/usage/stats';
+      const p = provider !== undefined ? provider : selectedProvider;
+      const t = period !== undefined ? period : selectedPeriod;
+
+      const params = new URLSearchParams();
+      if (p) params.append('provider', p);
+      if (t) params.append('period', t);
+
+      const queryStr = params.toString() ? `?${params.toString()}` : '';
+
+      const statsUrl = `/api/usage/stats${queryStr}`;
       const statsRes = await fetch(statsUrl);
       if (statsRes.ok) {
         const data = await statsRes.json();
@@ -92,7 +105,10 @@ const [settings, setSettings] = useState(null);
         setSettings(await settingsRes.json());
       }
 
-      const logsUrl = provider ? `/api/usage/logs?perPage=100&page=1&provider=${encodeURIComponent(provider)}` : '/api/usage/logs?perPage=100&page=1';
+      const logsParams = new URLSearchParams(params);
+      logsParams.append('perPage', '100');
+      logsParams.append('page', '1');
+      const logsUrl = `/api/usage/logs?${logsParams.toString()}`;
       const logsRes = await fetch(logsUrl);
       if (logsRes.ok) {
         const data = await logsRes.json();
@@ -101,14 +117,14 @@ const [settings, setSettings] = useState(null);
         setDetailedLogs(entries);
       }
 
-      const chartUrl = provider ? `/api/usage/charts?provider=${encodeURIComponent(provider)}` : '/api/usage/charts';
+      const chartUrl = `/api/usage/charts${queryStr}`;
       const chartRes = await fetch(chartUrl);
       if (chartRes.ok) {
         const data = await chartRes.json();
         setChartData(data || []);
       }
 
-      const modelUrl = provider ? `/api/usage/models?provider=${encodeURIComponent(provider)}` : '/api/usage/models';
+      const modelUrl = `/api/usage/models${queryStr}`;
       const modelRes = await fetch(modelUrl);
       if (modelRes.ok) {
         const data = await modelRes.json();
@@ -129,7 +145,7 @@ const [settings, setSettings] = useState(null);
     } catch (err) {
       console.error('Error fetching usage data:', err);
     }
-  }, []);
+  }, [selectedProvider, selectedPeriod]);
 
   const fileInputRef = useRef(null);
 
@@ -168,7 +184,7 @@ const [settings, setSettings] = useState(null);
 
       if (res.ok) {
         alert('Metrics overview imported and totals synced successfully!');
-        fetchData(selectedProvider);
+        fetchData(selectedProvider, selectedPeriod);
       } else {
         alert('Failed to import metrics overview.');
       }
@@ -181,14 +197,14 @@ const [settings, setSettings] = useState(null);
   };
 
   useEffect(() => {
-    fetchData(selectedProvider);
+    fetchData(selectedProvider, selectedPeriod);
     const interval = setInterval(() => {
       if (!document.hidden) {
-        fetchData(selectedProvider);
+        fetchData(selectedProvider, selectedPeriod);
       }
     }, 15000);
     return () => clearInterval(interval);
-  }, [selectedProvider, fetchData]);
+  }, [selectedProvider, selectedPeriod, fetchData]);
 
   const isProviderActive = (providerId) => {
     return connections.some(c => c.provider === providerId && c.isActive);
@@ -223,7 +239,11 @@ const [settings, setSettings] = useState(null);
       (isProviderActive('opencode-go') ? 1 : 0) +
       (isProviderActive('opencode-zen') ? 1 : 0) +
       (isProviderActive('glm') ? 1 : 0) +
-      (isProviderActive('glm-coding') ? 1 : 0),
+      (isProviderActive('glm-coding') ? 1 : 0) +
+      (isProviderActive('nvidia') ? 1 : 0) +
+      (isProviderActive('groq') ? 1 : 0) +
+      (isProviderActive('openrouter') ? 1 : 0) +
+      (isProviderActive('deepseek') ? 1 : 0),
       1
     );
     const r = 80 + (nodeCount * 18);
@@ -235,6 +255,10 @@ const [settings, setSettings] = useState(null);
     if (isProviderActive('opencode-zen')) activeNodes.push({ id: 'opencode-zen', name: 'OpenCode Zen', icon: 'psychology' });
     if (isProviderActive('glm')) activeNodes.push({ id: 'glm', name: 'GLM API', icon: 'chat' });
     if (isProviderActive('glm-coding')) activeNodes.push({ id: 'glm-coding', name: 'GLM Coding', icon: 'code' });
+    if (isProviderActive('nvidia')) activeNodes.push({ id: 'nvidia', name: 'NVIDIA NIM', icon: 'memory' });
+    if (isProviderActive('groq')) activeNodes.push({ id: 'groq', name: 'Groq', icon: 'bolt' });
+    if (isProviderActive('openrouter')) activeNodes.push({ id: 'openrouter', name: 'OpenRouter', icon: 'hub' });
+    if (isProviderActive('deepseek')) activeNodes.push({ id: 'deepseek', name: 'DeepSeek', icon: 'auto_awesome' });
 
     // Dynamic database connections
     nodesList.forEach((n) => {
@@ -479,31 +503,72 @@ const [settings, setSettings] = useState(null);
 
       {activeTab === 'overview' ? (
         <>
-          {/* Summary bar with provider filter */}
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-subtle)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Filter by Provider</span>
-              <select
-                value={selectedProvider}
-                onChange={e => { setSelectedProvider(e.target.value); setCurrentPage(1); }}
-                style={{
-                  background: 'var(--bg-sidebar)',
-                  color: 'var(--text-main)',
-                  border: '1px solid var(--border-color)',
-                  borderRadius: '6px',
-                  padding: '6px 12px',
-                  fontSize: '12px',
-                  cursor: 'pointer'
-                }}
-              >
-                <option value="">All Providers</option>
-                {providerOptions.map(opt => (
-                  <option key={opt.value} value={opt.value}>{opt.label}</option>
-                ))}
-              </select>
+          {/* Summary bar with provider filter & date filter */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '12px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-subtle)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Filter by Provider</span>
+                <select
+                  value={selectedProvider}
+                  onChange={e => {
+                    const newProv = e.target.value;
+                    setSelectedProvider(newProv);
+                    setCurrentPage(1);
+                    fetchData(newProv, selectedPeriod);
+                  }}
+                  style={{
+                    background: 'var(--bg-sidebar)',
+                    color: 'var(--text-main)',
+                    border: '1px solid var(--border-color)',
+                    borderRadius: '6px',
+                    padding: '6px 12px',
+                    fontSize: '12px',
+                    cursor: 'pointer'
+                  }}
+                >
+                  <option value="">All Providers</option>
+                  {providerOptions.map(opt => (
+                    <option key={opt.value} value={opt.value}>{opt.label}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-subtle)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Time Period</span>
+                <div style={{ display: 'flex', background: 'var(--bg-sidebar)', borderRadius: '6px', border: '1px solid var(--border-color)', padding: '2px' }}>
+                  {[
+                    { id: 'day', label: 'Day' },
+                    { id: 'week', label: 'Week' },
+                    { id: 'month', label: 'Month' },
+                  ].map((p) => (
+                    <button
+                      key={p.id}
+                      onClick={() => {
+                        setSelectedPeriod(p.id);
+                        setCurrentPage(1);
+                        fetchData(selectedProvider, p.id);
+                      }}
+                      style={{
+                        padding: '4px 12px',
+                        fontSize: '12px',
+                        fontWeight: selectedPeriod === p.id ? '700' : '500',
+                        borderRadius: '4px',
+                        border: 'none',
+                        background: selectedPeriod === p.id ? 'var(--color-primary)' : 'transparent',
+                        color: selectedPeriod === p.id ? '#fff' : 'var(--text-muted)',
+                        cursor: 'pointer',
+                        transition: 'all 0.15s ease'
+                      }}
+                    >
+                      {p.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
             </div>
+
             <div style={{ fontSize: '11px', color: 'var(--text-subtle)' }}>
-              {selectedProvider ? `Showing: ${getProviderDisplayName(selectedProvider, nodesList)}` : 'Overall Summary'}
+              {selectedProvider ? `Showing: ${getProviderDisplayName(selectedProvider, nodesList)} (${selectedPeriod.toUpperCase()})` : `Overall Summary (${selectedPeriod.toUpperCase()})`}
             </div>
           </div>
 

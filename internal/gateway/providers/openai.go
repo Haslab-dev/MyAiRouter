@@ -34,6 +34,8 @@ func (p *OpenAIProvider) Execute(ctx context.Context, conn *db.ProviderConnectio
 		switch conn.Provider {
 		case "groq":
 			baseUrl = "https://api.groq.com/openai/v1"
+		case "nvidia":
+			baseUrl = "https://integrate.api.nvidia.com/v1"
 		case "openrouter":
 			baseUrl = "https://openrouter.ai/api/v1"
 		case "deepseek":

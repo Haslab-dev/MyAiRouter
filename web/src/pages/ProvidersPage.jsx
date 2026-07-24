@@ -7,6 +7,10 @@ const CORE_PROVIDERS = [
   { id: 'opencode-zen', name: 'OpenCode Zen', type: 'apikey', icon: 'psychology', color: '#06b6d4', desc: 'Custom code generation engine' },
   { id: 'glm', name: 'GLM API', type: 'apikey', icon: 'chat', color: '#8b5cf6', desc: 'General LLM access keys' },
   { id: 'glm-coding', name: 'GLM Coding Plan', type: 'apikey', icon: 'code', color: '#10b981', desc: 'Targeted coding intelligence' },
+  { id: 'nvidia', name: 'NVIDIA NIM', type: 'apikey', icon: 'memory', color: '#76b900', desc: 'NVIDIA API Catalog & NIM endpoints' },
+  { id: 'groq', name: 'Groq', type: 'apikey', icon: 'bolt', color: '#f97316', desc: 'LPU inference engine for fast LLMs' },
+  { id: 'openrouter', name: 'OpenRouter', type: 'apikey', icon: 'hub', color: '#6366f1', desc: 'Unified API for top AI models' },
+  { id: 'deepseek', name: 'DeepSeek', type: 'apikey', icon: 'auto_awesome', color: '#3b82f6', desc: 'DeepSeek AI reasoning & chat models' },
 ];
 
 export default function ProvidersPage() {
@@ -222,6 +226,86 @@ export default function ProvidersPage() {
   };
 
   const [thinkingMap, setThinkingMap] = useState({});
+  const [pricingOverrides, setPricingOverrides] = useState({});
+  const [pricingModalModel, setPricingModalModel] = useState(null);
+  const [priceInput, setPriceInput] = useState('');
+  const [priceOutput, setPriceOutput] = useState('');
+  const [priceCached, setPriceCached] = useState('');
+
+  const fetchPricingOverrides = async (providerId) => {
+    try {
+      const res = await fetch(`/api/models/pricing?providerAlias=${encodeURIComponent(providerId)}`);
+      if (res.ok) {
+        const data = await res.json();
+        setPricingOverrides(data.overrides || {});
+      }
+    } catch (err) {
+      console.error('Error loading pricing overrides:', err);
+    }
+  };
+
+  const handleOpenPricingModal = (model) => {
+    setPricingModalModel(model);
+    const existing = pricingOverrides[model.id] || pricingOverrides[`${viewingDetailProvider?.id}/${model.id}`];
+    if (existing) {
+      setPriceInput(existing.Input !== undefined ? existing.Input : (existing.input || ''));
+      setPriceOutput(existing.Output !== undefined ? existing.Output : (existing.output || ''));
+      setPriceCached(existing.Cached !== undefined ? existing.Cached : (existing.cached || ''));
+    } else {
+      setPriceInput('');
+      setPriceOutput('');
+      setPriceCached('');
+    }
+  };
+
+  const handleSavePricingOverride = async (e) => {
+    e.preventDefault();
+    if (!pricingModalModel || !viewingDetailProvider) return;
+
+    try {
+      const res = await fetch('/api/models/pricing', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          providerAlias: viewingDetailProvider.id,
+          model: pricingModalModel.id,
+          input: parseFloat(priceInput) || 0,
+          output: parseFloat(priceOutput) || 0,
+          cached: parseFloat(priceCached) || 0,
+        })
+      });
+      if (res.ok) {
+        notify(`Pricing override saved for ${pricingModalModel.id}`, 'success');
+        fetchPricingOverrides(viewingDetailProvider.id);
+        setPricingModalModel(null);
+      } else {
+        notify('Failed to save pricing override.', 'error');
+      }
+    } catch (err) {
+      console.error(err);
+      notify('Error saving pricing override.', 'error');
+    }
+  };
+
+  const handleResetPricingOverride = async () => {
+    if (!pricingModalModel || !viewingDetailProvider) return;
+
+    try {
+      const res = await fetch(`/api/models/pricing?providerAlias=${encodeURIComponent(viewingDetailProvider.id)}&model=${encodeURIComponent(pricingModalModel.id)}`, {
+        method: 'DELETE',
+      });
+      if (res.ok) {
+        notify(`Pricing override reset to default for ${pricingModalModel.id}`, 'success');
+        fetchPricingOverrides(viewingDetailProvider.id);
+        setPricingModalModel(null);
+      } else {
+        notify('Failed to reset pricing override.', 'error');
+      }
+    } catch (err) {
+      console.error(err);
+      notify('Error resetting pricing override.', 'error');
+    }
+  };
 
   const fetchThinkingModels = async (providerId) => {
     try {
@@ -264,6 +348,7 @@ export default function ProvidersPage() {
     if (viewingDetailProvider) {
       fetchEnabledModels(viewingDetailProvider.id);
       fetchThinkingModels(viewingDetailProvider.id);
+      fetchPricingOverrides(viewingDetailProvider.id);
       setTestResult(null);
       const conn = connections.find(c => c.provider === viewingDetailProvider.id);
       setModelPrefix((conn?.data?.modelPrefix) || '');
@@ -386,6 +471,10 @@ export default function ProvidersPage() {
       'opencode-zen': 'https://opencode.ai/zen/v1',
       'glm': 'https://open.bigmodel.cn/api/paas/v4',
       'glm-coding': 'https://open.bigmodel.cn/api/coding/paas/v4',
+      'nvidia': 'https://integrate.api.nvidia.com/v1',
+      'groq': 'https://api.groq.com/openai/v1',
+      'openrouter': 'https://openrouter.ai/api/v1',
+      'deepseek': 'https://api.deepseek.com/v1',
     };
 
     const headersMap = {};
@@ -874,80 +963,116 @@ export default function ProvidersPage() {
               {filteredCombinedModels.map((m) => {
                 const checked = isModelEnabled(m.id);
                 const isCustomModel = customs.some(cm => cm.id === m.id);
-                const isThinkingOn = thinkingMap[m.id] === true; // Default OFF unless explicitly enabled
+                const isThinkingOn = thinkingMap[m.id] === true;
+                const override = pricingOverrides[m.id] || pricingOverrides[`${providerId}/${m.id}`];
 
                 return (
                   <div
                     key={m.id}
                     style={{
                       display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
+                      flexDirection: 'column',
+                      gap: '8px',
                       padding: '12px',
                       borderRadius: '8px',
                       border: `1px solid ${checked ? 'var(--color-primary)' : 'var(--border-color)'}`,
                       background: checked ? 'rgba(0,200,255,0.06)' : 'var(--bg-sidebar)',
-                      opacity: 1
                     }}
                   >
-                    <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', flex: 1, userSelect: 'none' }}>
-                      <input
-                        type="checkbox"
-                        checked={checked}
-                        onChange={() => {
-                          const next = enabledModelIds === null
-                            ? combinedModels.map(x => x.id).filter(id => id !== m.id)
-                            : checked
-                              ? enabledModelIds.filter(id => id !== m.id)
-                              : [...enabledModelIds, m.id];
-                          handleSetEnabledModels(next);
-                        }}
-                        style={{ accentColor: 'var(--color-primary)', width: '18px', height: '18px', cursor: 'pointer' }}
-                      />
-                      <div>
-                        <div style={{ fontWeight: 600, fontSize: '13px' }}>{m.name}</div>
-                        <div style={{ fontSize: '11px', color: 'var(--text-subtle)', fontFamily: 'var(--font-mono)' }}>
-                          {modelPrefix || providerId}/{m.id}
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', flex: 1, userSelect: 'none' }}>
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => {
+                            const next = enabledModelIds === null
+                              ? combinedModels.map(x => x.id).filter(id => id !== m.id)
+                              : checked
+                                ? enabledModelIds.filter(id => id !== m.id)
+                                : [...enabledModelIds, m.id];
+                            handleSetEnabledModels(next);
+                          }}
+                          style={{ accentColor: 'var(--color-primary)', width: '18px', height: '18px', cursor: 'pointer' }}
+                        />
+                        <div>
+                          <div style={{ fontWeight: 600, fontSize: '13px' }}>{m.name}</div>
+                          <div style={{ fontSize: '11px', color: 'var(--text-subtle)', fontFamily: 'var(--font-mono)' }}>
+                            {modelPrefix || providerId}/{m.id}
+                          </div>
                         </div>
+                      </label>
+
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        {isCustomModel && (
+                          <button
+                            onClick={() => handleDeleteCustomModel(m.id)}
+                            style={{ background: 'transparent', border: 'none', color: 'var(--color-danger)', cursor: 'pointer', padding: 0 }}
+                            title="Delete custom model"
+                          >
+                            <span className="material-symbols-outlined" style={{ fontSize: '16px' }}>delete</span>
+                          </button>
+                        )}
                       </div>
-                    </label>
+                    </div>
 
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleToggleThinkingMode(m.id);
-                        }}
-                        title={isThinkingOn ? "Click to disable Thinking Mode" : "Click to enable Thinking Mode"}
-                        style={{
-                          padding: '3px 8px',
-                          fontSize: '10px',
-                          fontWeight: '600',
-                          borderRadius: '12px',
-                          border: isThinkingOn ? '1px solid #a855f7' : '1px solid var(--border-color)',
-                          background: isThinkingOn ? 'rgba(168, 85, 247, 0.15)' : 'rgba(255,255,255,0.02)',
-                          color: isThinkingOn ? '#c084fc' : 'var(--text-subtle)',
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '4px',
-                          cursor: 'pointer',
-                          transition: 'all 0.15s ease'
-                        }}
-                      >
-                        <span className="material-symbols-outlined" style={{ fontSize: '12px' }}>psychology</span>
-                        {isThinkingOn ? 'Thinking ON' : 'Thinking OFF'}
-                      </button>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: '6px', marginTop: '2px' }}>
+                      <div style={{ fontSize: '10px', color: 'var(--text-subtle)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        {override ? (
+                          <span style={{ background: 'rgba(234, 179, 8, 0.15)', color: '#eab308', border: '1px solid rgba(234, 179, 8, 0.3)', padding: '1px 6px', borderRadius: '4px', fontWeight: 600 }}>
+                            In ${override.Input !== undefined ? override.Input : override.input}/Out ${override.Output !== undefined ? override.Output : override.output}/Cache ${override.Cached !== undefined ? override.Cached : override.cached}
+                          </span>
+                        ) : (
+                          <span style={{ color: 'var(--text-muted)' }}>Default Rates</span>
+                        )}
+                      </div>
 
-                      {isCustomModel && (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                         <button
-                          onClick={() => handleDeleteCustomModel(m.id)}
-                          style={{ background: 'transparent', border: 'none', color: 'var(--color-danger)', cursor: 'pointer', padding: 0 }}
-                          title="Delete custom model"
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleToggleThinkingMode(m.id);
+                          }}
+                          title={isThinkingOn ? "Click to disable Thinking Mode" : "Click to enable Thinking Mode"}
+                          style={{
+                            padding: '2px 6px',
+                            fontSize: '10px',
+                            fontWeight: '600',
+                            borderRadius: '10px',
+                            border: isThinkingOn ? '1px solid #a855f7' : '1px solid var(--border-color)',
+                            background: isThinkingOn ? 'rgba(168, 85, 247, 0.15)' : 'rgba(255,255,255,0.02)',
+                            color: isThinkingOn ? '#c084fc' : 'var(--text-subtle)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '3px',
+                            cursor: 'pointer',
+                          }}
                         >
-                          <span className="material-symbols-outlined" style={{ fontSize: '16px' }}>delete</span>
+                          <span className="material-symbols-outlined" style={{ fontSize: '11px' }}>psychology</span>
+                          {isThinkingOn ? 'Thinking' : 'Thinking OFF'}
                         </button>
-                      )}
+
+                        <button
+                          type="button"
+                          onClick={() => handleOpenPricingModal(m)}
+                          style={{
+                            padding: '2px 6px',
+                            fontSize: '10px',
+                            fontWeight: '600',
+                            borderRadius: '10px',
+                            border: override ? '1px solid #eab308' : '1px solid var(--border-color)',
+                            background: override ? 'rgba(234, 179, 8, 0.15)' : 'rgba(255,255,255,0.02)',
+                            color: override ? '#eab308' : 'var(--text-subtle)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '3px',
+                            cursor: 'pointer',
+                          }}
+                        >
+                          <span className="material-symbols-outlined" style={{ fontSize: '11px' }}>attach_money</span>
+                          {override ? 'Custom Price' : 'Override Pricing'}
+                        </button>
+                      </div>
                     </div>
                   </div>
                 );
@@ -1499,6 +1624,117 @@ export default function ProvidersPage() {
                 {oauthStatus === 'success' ? 'Done' : 'Cancel'}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Pricing Override Modal */}
+      {pricingModalModel && (
+        <div style={{
+          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+          background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(4px)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000
+        }}>
+          <div className="card" style={{ width: '440px', maxWidth: '90vw', margin: 0, padding: '24px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+              <h3 style={{ fontSize: '16px', fontWeight: 700, margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span className="material-symbols-outlined text-primary">attach_money</span>
+                Override Pricing
+              </h3>
+              <button
+                onClick={() => setPricingModalModel(null)}
+                style={{ background: 'transparent', border: 'none', color: 'var(--text-subtle)', cursor: 'pointer' }}
+              >
+                <span className="material-symbols-outlined">close</span>
+              </button>
+            </div>
+
+            <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '16px' }}>
+              Set custom token rates ($ / 1,000,000 tokens) for <strong>{pricingModalModel.id}</strong>.
+            </p>
+
+            <form onSubmit={handleSavePricingOverride}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', marginBottom: '20px' }}>
+                <div>
+                  <label className="form-label" style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                    Input Tokens Price ($ / 1M tokens)
+                  </label>
+                  <input
+                    type="number"
+                    step="0.0001"
+                    min="0"
+                    placeholder="e.g. 2.50"
+                    value={priceInput}
+                    onChange={e => setPriceInput(e.target.value)}
+                    className="input-field"
+                    style={{ fontSize: '13px' }}
+                  />
+                </div>
+
+                <div>
+                  <label className="form-label" style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                    Output Tokens Price ($ / 1M tokens)
+                  </label>
+                  <input
+                    type="number"
+                    step="0.0001"
+                    min="0"
+                    placeholder="e.g. 10.00"
+                    value={priceOutput}
+                    onChange={e => setPriceOutput(e.target.value)}
+                    className="input-field"
+                    style={{ fontSize: '13px' }}
+                  />
+                </div>
+
+                <div>
+                  <label className="form-label" style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                    Cached Tokens Price ($ / 1M tokens)
+                  </label>
+                  <input
+                    type="number"
+                    step="0.0001"
+                    min="0"
+                    placeholder="e.g. 1.25"
+                    value={priceCached}
+                    onChange={e => setPriceCached(e.target.value)}
+                    className="input-field"
+                    style={{ fontSize: '13px' }}
+                  />
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                {(pricingOverrides[pricingModalModel.id] || pricingOverrides[`${viewingDetailProvider?.id}/${pricingModalModel.id}`]) ? (
+                  <button
+                    type="button"
+                    onClick={handleResetPricingOverride}
+                    className="btn"
+                    style={{ fontSize: '12px', color: 'var(--color-danger)', border: '1px solid rgba(239,68,68,0.3)', background: 'transparent' }}
+                  >
+                    Reset Default
+                  </button>
+                ) : <div />}
+
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <button
+                    type="button"
+                    onClick={() => setPricingModalModel(null)}
+                    className="btn btn-secondary"
+                    style={{ fontSize: '12px' }}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="btn btn-primary"
+                    style={{ fontSize: '12px' }}
+                  >
+                    Save Override
+                  </button>
+                </div>
+              </div>
+            </form>
           </div>
         </div>
       )}

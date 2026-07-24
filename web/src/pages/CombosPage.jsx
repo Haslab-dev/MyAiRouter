@@ -37,6 +37,10 @@ export default function CombosPage() {
       'opencode-zen': ['glm-5.2', 'kimi-k2.7-code', 'deepseek-v4-pro', 'qwen3.7-max'],
       glm: ['glm-4', 'glm-4v', 'glm-3-turbo'],
       'glm-coding': ['codegeex-4'],
+      nvidia: ['meta/llama-3.3-70b-instruct', 'deepseek-ai/deepseek-r1', 'nvidia/llama-3.1-nemotron-70b-instruct'],
+      groq: ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'mixtral-8x7b-32768', 'deepseek-r1-distill-llama-70b'],
+      openrouter: ['auto', 'anthropic/claude-3.5-sonnet', 'openai/gpt-4o', 'deepseek/deepseek-r1'],
+      deepseek: ['deepseek-chat', 'deepseek-reasoner'],
     };
 
     conns.forEach(c => {
