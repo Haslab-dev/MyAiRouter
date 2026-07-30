@@ -142,8 +142,6 @@ func createTables() error {
 			data TEXT NOT NULL
 		);`,
 
-		`DROP TABLE IF EXISTS requestDetails;`,
-
 		// New flat traces table — typed columns & structured JSON fields
 		`CREATE TABLE IF NOT EXISTS traces (
 			id TEXT PRIMARY KEY,

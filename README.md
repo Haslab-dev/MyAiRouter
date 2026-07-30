@@ -1,8 +1,8 @@
 # myAiRouter - Setup & Run Tutorial
 
-*Inspired by 9router, the reason I made this is because I wanted to make the gateway faster with Golang.*
+*Inspired by 9router, built with Go for maximum performance and ultra-low footprint.*
 
-This tutorial guides you through compiling, running, and configuring your newly ported **myAiRouter** gateway and dashboard.
+This tutorial guides you through compiling, running, and configuring your **myAiRouter** gateway and dashboard.
 
 ---
 
@@ -36,9 +36,9 @@ cd ..
 ### Step B: Compile the Go Binary
 Compile the Go entry code to produce a standalone executable binary named `myAiRouter`:
 ```bash
-go build -o myAiRouter main.go
+go build -o myAiRouter .
 ```
-*This packages the Go web server, the SQLite database migrations, the local skill markdowns, and the compiled Vite frontend assets into a single binary (`myAiRouter`).*
+*This packages the Go web server, the SQLite database migrations, local agent skills, and embedded Vite assets into a single binary.*
 
 ---
 
@@ -48,18 +48,21 @@ go build -o myAiRouter main.go
 curl -fsSL https://haslab-dev.github.io/MyAiRouter/website/install.sh | bash
 ```
 
-Installs to `/usr/local/bin/myairouter`.
+Installs to `$HOME/.local/bin/myairouter` (or `/usr/local/bin/myairouter`).
 
 ---
 
-## 3. Run
+## 3. Run & Process Control
 
 ```bash
-myairouter            # foreground
-myairouter start -d   # background (daemon)
-myairouter stop       # stop daemon
-myairouter restart    # restart daemon
+myairouter            # start server (foreground)
+myairouter start      # start server (foreground)
+myairouter start -d   # start server (background daemon)
+myairouter status     # show server status, running PIDs & listening ports
+myairouter stop       # stop all running server processes (auto-sweeps duplicates)
+myairouter restart    # restart background daemon
 myairouter bg         # background alias
+myairouter version    # print version
 ```
 
 By default, the server runs on port `20128`. Set `PORT` to change:
@@ -69,9 +72,10 @@ PORT=8080 myairouter
 
 On startup, `myAiRouter` will:
 1. Initialize a SQLite database at `~/.myairouter/db.sqlite`.
-2. Apply migrations and seed default configuration settings.
-3. Start the API gateway at `http://localhost:20128/v1/`.
-4. Host the space-dark dashboard at `http://localhost:20128/`.
+2. Apply database migrations and seed default configuration settings.
+3. Automatically sweep and terminate any duplicate process instances.
+4. Start the API gateway at `http://localhost:20128/v1/`.
+5. Host the space-dark dashboard at `http://localhost:20128/`.
 
 ---
 
@@ -89,7 +93,18 @@ go build -o myairouter .
 
 ---
 
-## 5. Version Management
+## 5. Request Traces & Routing Analytics
+
+The **Request Traces** dashboard (`http://localhost:20128/traces`) displays routing-focused analytics organized into four distinct sections:
+
+1. **Summary**: High-level execution metrics (Latency, TTFB, Input/Output/Cached Tokens, Cost, Prompt Compression %, Cache Hit, Streaming, Attempts count, Fallback & Retry counts).
+2. **Route Graph**: Visual node tree for Fallback, Race, Parallel, and Smart routing strategies showing per-node execution status (✔ Success, ↷ Skipped, ✖ Failed).
+3. **Pipeline**: Clean 6 routing-focused steps (`Resolve Model`, `Prompt Rewrite`, `Optimizer`, `Cache`, `Route`, `Provider`). Noisy internal middleware logs (Auth, Rate Limit, Guardrails) are hidden.
+4. **Request / Response Preview**: Request metadata (`system`, `user`, `messages`, `chars`, `tokens`) and Response metadata (`preview`, `finish_reason`).
+
+---
+
+## 6. Version Management
 
 ```bash
 make patch-version          # bump patch (0.1.0 → 0.1.1)
@@ -102,35 +117,28 @@ Updates both `main.go` (backend) and `web/package.json` (client).
 
 ---
 
-## 6. Configure a Provider Account
+## 7. Configure a Provider Account
 
 1. Open your web browser and navigate to the dashboard at: **`http://localhost:20128/`**.
 2. Go to the **Providers** section using the sidebar navigation.
 3. Click **Add Connection** in the top right.
-4. Select your provider (e.g. *OpenAI*, *Anthropic (Claude)*, or *Google Gemini*).
-5. Enter a display name, paste your API Key, and set a priority (lower priority values are tried first).
+4. Select your provider (e.g. *OpenAI*, *Anthropic (Claude)*, *Google Gemini*, *DeepSeek*, *NVIDIA*, *Groq*, etc.).
+5. Enter a display name, paste your API Key, and set a priority.
 6. Click **Save Connection**.
-7. Click **Test** next to the newly created connection to verify connectivity and validate your credentials against the provider's upstream models.
+7. Click **Test** next to the newly created connection to verify connectivity.
 
 ---
 
-## 6. Authenticate and Route Requests
+## 8. Authenticate and Route Requests
 
-By default, API gateway authentication is disabled. You can configure and query completions directly:
+By default, API gateway authentication is disabled. You can query completions directly:
 
-### Step A: Generate an API Key (Optional)
-If you wish to require authorization:
-1. Navigate to **Endpoint & Keys** on the dashboard.
-2. Under **Developer API Keys**, enter a name (e.g. `VS Code Client`) and click **Create Key**.
-3. Copy the generated key (starts with `sk-`).
-
-### Step B: Send a Completion Request
-Query the completions endpoint using `curl` (replace `YOUR_API_KEY` with your generated key if login is enabled, or leave the header empty if login is disabled):
+### Send a Completion Request
+Query the completions endpoint using `curl`:
 
 ```bash
 curl -N http://localhost:20128/v1/chat/completions \
   -H "Content-Type: application/json" \
-  -H "Authorization: Bearer sk-..." \
   -d '{
     "model": "openai/gpt-4o-mini",
     "messages": [
@@ -140,11 +148,9 @@ curl -N http://localhost:20128/v1/chat/completions \
   }'
 ```
 
-*Note: Streamed SSE chunks will automatically translate into OpenAI-compatible structures, even when routing to Anthropic or Gemini upstreams.*
-
 ---
 
-## 7. Offline Agent Skills Setup
+## 9. Offline Agent Skills Setup
 
 Your gateway hosts local instructions that autonomous agents (such as Cline, Roo Code, or Claude Code) can load.
 * Entry point skill: `http://localhost:20128/skills/myairouter/SKILL.md`

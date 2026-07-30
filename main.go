@@ -36,6 +36,9 @@ func main() {
 		case "background", "bg":
 			startBackground()
 			return
+		case "status":
+			showStatus()
+			return
 		case "stop":
 			stopProcess()
 			return
@@ -51,6 +54,7 @@ func main() {
 			return
 		}
 	}
+	stopExistingDuplicates()
 	startServer()
 }
 
@@ -62,7 +66,8 @@ Usage:
   myairouter            start server (foreground)
   myairouter start      start server (foreground)
   myairouter start -d   start server (background daemon)
-  myairouter stop       stop daemon
+  myairouter status     show server status & running processes
+  myairouter stop       stop all running daemon processes
   myairouter restart    restart daemon
   myairouter bg         start server (background alias)
   myairouter version    print version

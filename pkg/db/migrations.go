@@ -33,14 +33,6 @@ func RunMigrations() error {
 		return fmt.Errorf("dedup provider nodes: %w", err)
 	}
 
-	if err := migrateToFlatSchema(); err != nil {
-		log.Printf("[migration] warning migrating requestDetails to flat schema: %v", err)
-	}
-	return nil
-}
-
-func migrateToFlatSchema() error {
-	_, _ = DB.Exec(`DROP TABLE IF EXISTS requestDetails`)
 	return nil
 }
 
