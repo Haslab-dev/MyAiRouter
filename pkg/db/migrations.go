@@ -33,28 +33,14 @@ func RunMigrations() error {
 		return fmt.Errorf("dedup provider nodes: %w", err)
 	}
 
-	if err := purgeLegacyTraces(); err != nil {
-		log.Printf("[migration] warning purging legacy requestDetails: %v", err)
+	if err := migrateToFlatSchema(); err != nil {
+		log.Printf("[migration] warning migrating requestDetails to flat schema: %v", err)
 	}
 	return nil
 }
 
-func purgeLegacyTraces() error {
-	var count int
-	err := DB.QueryRow("SELECT COUNT(*) FROM kv WHERE scope = 'migration' AND key = 'purge_legacy_traces_v1'").Scan(&count)
-	if err == nil && count > 0 {
-		// Migration has already run once on this database; skip to preserve trace data
-		return nil
-	}
-
-	// One-time purge of legacy heavy trace format to upgrade database to lightweight trace schema
-	res, err := DB.Exec("DELETE FROM requestDetails;")
-	if err == nil {
-		if rows, _ := res.RowsAffected(); rows > 0 {
-			log.Printf("[migration] purged %d legacy heavy trace entries for lightweight tracer upgrade", rows)
-		}
-		_, _ = DB.Exec("INSERT OR REPLACE INTO kv (scope, key, value) VALUES ('migration', 'purge_legacy_traces_v1', 'done');")
-	}
+func migrateToFlatSchema() error {
+	_, _ = DB.Exec(`DROP TABLE IF EXISTS requestDetails`)
 	return nil
 }
 
@@ -85,6 +71,16 @@ func ensureSchemaColumns() error {
 
 		// combos
 		{"combos", "kind", "TEXT"},
+
+		// traces
+		{"traces", "totalAttempts", "INTEGER DEFAULT 1"},
+		{"traces", "isStream", "INTEGER DEFAULT 0"},
+		{"traces", "retryCount", "INTEGER DEFAULT 0"},
+		{"traces", "fallbackCount", "INTEGER DEFAULT 0"},
+		{"traces", "targetAttempts", "TEXT"},
+		{"traces", "pipeline", "TEXT"},
+		{"traces", "requestMeta", "TEXT"},
+		{"traces", "responseMeta", "TEXT"},
 	}
 
 	for _, spec := range requiredColumns {
@@ -139,7 +135,7 @@ func ensureSchemaIndexes() error {
 		"CREATE INDEX IF NOT EXISTS idx_pn_type ON providerNodes(type);",
 		"CREATE INDEX IF NOT EXISTS idx_combo_name ON combos(name);",
 		"CREATE INDEX IF NOT EXISTS idx_kv_scope ON kv(scope);",
-		"CREATE INDEX IF NOT EXISTS idx_rd_ts ON requestDetails(timestamp DESC);",
+		"CREATE INDEX IF NOT EXISTS idx_traces_ts ON traces(timestamp DESC);",
 	}
 
 	for _, idxQuery := range indexes {

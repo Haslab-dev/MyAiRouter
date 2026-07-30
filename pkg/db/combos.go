@@ -1,7 +1,9 @@
 package db
 
 import (
+	"database/sql"
 	"encoding/json"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -59,14 +61,25 @@ func ListCombos() ([]Combo, error) {
 }
 
 func GetComboByName(name string) (*Combo, error) {
-	var c Combo
-	var modelsStr string
-	err := DB.QueryRow("SELECT id, name, kind, models, createdAt, updatedAt FROM combos WHERE name = ?", name).Scan(&c.ID, &c.Name, &c.Kind, &modelsStr, &c.CreatedAt, &c.UpdatedAt)
-	if err != nil {
-		return nil, err
+	return ResolveCombo(name)
+}
+
+func ResolveCombo(modelOrName string) (*Combo, error) {
+	combos, err := ListCombos()
+	if err != nil || len(combos) == 0 {
+		return nil, sql.ErrNoRows
 	}
-	_ = json.Unmarshal([]byte(modelsStr), &c.Models)
-	return &c, nil
+
+	modelLower := strings.ToLower(strings.TrimSpace(modelOrName))
+
+	// Match ONLY exact or case-insensitive combo Name or combo ID
+	for _, c := range combos {
+		if strings.ToLower(c.Name) == modelLower || strings.ToLower(c.ID) == modelLower {
+			return &c, nil
+		}
+	}
+
+	return nil, sql.ErrNoRows
 }
 
 func DeleteCombo(id string) error {

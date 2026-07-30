@@ -73,6 +73,7 @@ func Compression(ctx *context.GatewayContext, next HandlerFunc) error {
 						if res.OriginalTokens > 0 {
 							savedPct = int((float64(res.SavedTokens) / float64(res.OriginalTokens)) * 100)
 						}
+						ctx.Metadata["compressionPct"] = savedPct
 						ctx.AddStep("Prompt Optimizer", "success", fmt.Sprintf("Optimization completed: saved %d%% tokens (%d -> %d) using %s plan.", savedPct, res.OriginalTokens, res.OptimizedTokens, plan.RoutedEngine))
 					} else {
 						ctx.AddStep("Prompt Optimizer", "failed", fmt.Sprintf("Runner failed: %s. Reverting to original.", runErr.Error()))

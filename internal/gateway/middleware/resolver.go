@@ -3,7 +3,6 @@ package middleware
 import (
 	"fmt"
 	"net/http"
-	"strings"
 
 	"myAiRouter/internal/gateway/context"
 	"myAiRouter/pkg/db"
@@ -21,15 +20,18 @@ func ModelResolver(ctx *context.GatewayContext, next HandlerFunc) error {
 	ctx.OriginalModel = modelStr
 
 	// Resolve model combo or single target model
-	combo, err := db.GetComboByName(modelStr)
+	combo, err := db.ResolveCombo(modelStr)
 	if err == nil && combo != nil && len(combo.Models) > 0 {
 		ctx.Metadata["modelsToTry"] = combo.Models
 		ctx.Metadata["comboKind"] = combo.Kind
-		ctx.AddStep("Model Resolver", "success", fmt.Sprintf("Resolved combo '%s' (kind: %s) to: %s", modelStr, combo.Kind, strings.Join(combo.Models, ", ")))
+		ctx.Metadata["comboName"] = combo.Name
+		ctx.Metadata["isCombo"] = true
+		ctx.AddStep("Model Resolver", "success", fmt.Sprintf("Resolved combo route '%s' (kind: %s) with %d models", combo.Name, combo.Kind, len(combo.Models)))
 	} else {
 		ctx.Metadata["modelsToTry"] = []string{modelStr}
-		ctx.Metadata["comboKind"] = "fallback"
-		ctx.AddStep("Model Resolver", "success", fmt.Sprintf("Resolved model name: %s", modelStr))
+		ctx.Metadata["comboKind"] = "direct"
+		ctx.Metadata["isCombo"] = false
+		ctx.AddStep("Model Resolver", "success", fmt.Sprintf("Direct single model call: %s", modelStr))
 	}
 
 	return next(ctx)

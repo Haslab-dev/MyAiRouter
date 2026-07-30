@@ -118,6 +118,10 @@ func startServer() {
 			return
 		}
 
+		w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
+		w.Header().Set("Pragma", "no-cache")
+		w.Header().Set("Expires", "0")
+
 		cleanPath := filepath.Clean(r.URL.Path)
 		if cleanPath == "/" {
 			cleanPath = "index.html"

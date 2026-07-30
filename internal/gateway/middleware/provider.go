@@ -46,15 +46,34 @@ func Provider(ctx *context.GatewayContext, next HandlerFunc) error {
 
 	if res.IsStream {
 		ctx.Stream = res.Stream
-		pTokens, cTokens, cat, ttfb, err := handleSSEStream(ctx.ResponseWriter, res.Stream, format)
+		pTokens, cTokens, cat, ttfb, preview, finishReason, err := handleSSEStream(ctx.ResponseWriter, res.Stream, format, ctx.StartTime)
 		if err == nil {
 			ctx.PromptTokens = pTokens
 			ctx.CompletionTokens = cTokens
 			ctx.CachedTokens = cat
 			ctx.TTFB = ttfb
+			synthBody, _ := json.Marshal(map[string]interface{}{
+				"choices": []interface{}{
+					map[string]interface{}{
+						"message": map[string]interface{}{
+							"content": preview,
+						},
+						"finish_reason": finishReason,
+					},
+				},
+				"usage": map[string]interface{}{
+					"prompt_tokens":     pTokens,
+					"completion_tokens": cTokens,
+					"cached_tokens":     cat,
+				},
+			})
+			ctx.ResponseBody = synthBody
 		}
 	} else {
 		ctx.ResponseBody = res.Body
+		if ctx.TTFB <= 0 {
+			ctx.TTFB = ctx.Latency
+		}
 		ctx.ResponseWriter.Header().Set("Content-Type", "application/json")
 		ctx.ResponseWriter.WriteHeader(res.ResponseCode)
 		_, _ = ctx.ResponseWriter.Write(res.Body)
@@ -92,11 +111,11 @@ type Flusher interface {
 	Flush()
 }
 
-func handleSSEStream(w http.ResponseWriter, stream io.ReadCloser, format string) (promptTokens, completionTokens, cachedTokens int, ttfb time.Duration, err error) {
+func handleSSEStream(w http.ResponseWriter, stream io.ReadCloser, format string, requestStartTime time.Time) (promptTokens, completionTokens, cachedTokens int, ttfb time.Duration, preview string, finishReason string, err error) {
 	defer stream.Close()
 	flusher, ok := w.(Flusher)
 	if !ok {
-		return 0, 0, 0, 0, fmt.Errorf("response writer does not support flushing")
+		return 0, 0, 0, 0, "", "", fmt.Errorf("response writer does not support flushing")
 	}
 
 	w.Header().Set("Content-Type", "text/event-stream")
@@ -105,8 +124,9 @@ func handleSSEStream(w http.ResponseWriter, stream io.ReadCloser, format string)
 	w.WriteHeader(http.StatusOK)
 	flusher.Flush()
 
-	startTime := time.Now()
+	finishReason = "stop"
 	hasReceivedFirstToken := false
+	var textBuf strings.Builder
 
 	scanner := bufio.NewScanner(stream)
 	for scanner.Scan() {
@@ -116,7 +136,14 @@ func handleSSEStream(w http.ResponseWriter, stream io.ReadCloser, format string)
 		}
 
 		if !hasReceivedFirstToken {
-			ttfb = time.Since(startTime)
+			if !requestStartTime.IsZero() {
+				ttfb = time.Since(requestStartTime)
+			} else {
+				ttfb = 10 * time.Millisecond
+			}
+			if ttfb <= 0 {
+				ttfb = 1 * time.Millisecond
+			}
 			hasReceivedFirstToken = true
 		}
 
@@ -147,6 +174,14 @@ func handleSSEStream(w http.ResponseWriter, stream io.ReadCloser, format string)
 			_, _ = w.Write(outputLine)
 			flusher.Flush()
 
+			chunkText, reason := extractDeltaFromChunk(outputLine)
+			if chunkText != "" && textBuf.Len() < 1024 {
+				textBuf.WriteString(chunkText)
+			}
+			if reason != "" {
+				finishReason = reason
+			}
+
 			if promptTokens == 0 && completionTokens == 0 {
 				completionTokens += 1
 			}
@@ -157,7 +192,44 @@ func handleSSEStream(w http.ResponseWriter, stream io.ReadCloser, format string)
 		}
 	}
 
-	return promptTokens, completionTokens, cachedTokens, ttfb, scanner.Err()
+	return promptTokens, completionTokens, cachedTokens, ttfb, textBuf.String(), finishReason, scanner.Err()
+}
+
+func extractDeltaFromChunk(chunk []byte) (string, string) {
+	lines := strings.Split(string(chunk), "\n")
+	var textBuf strings.Builder
+	var lastReason string
+	for _, l := range lines {
+		l = strings.TrimSpace(l)
+		if !strings.HasPrefix(l, "data: ") {
+			continue
+		}
+		data := strings.TrimPrefix(l, "data: ")
+		if data == "[DONE]" {
+			continue
+		}
+		var obj map[string]interface{}
+		if err := json.Unmarshal([]byte(data), &obj); err != nil {
+			continue
+		}
+		if choices, ok := obj["choices"].([]interface{}); ok && len(choices) > 0 {
+			if choice, ok := choices[0].(map[string]interface{}); ok {
+				if r, ok := choice["finish_reason"].(string); ok && r != "" {
+					lastReason = r
+				}
+				if delta, ok := choice["delta"].(map[string]interface{}); ok {
+					if content, ok := delta["content"].(string); ok && content != "" {
+						textBuf.WriteString(content)
+					} else if reasoning, ok := delta["reasoning"].(string); ok && reasoning != "" {
+						textBuf.WriteString(reasoning)
+					} else if reasoningContent, ok := delta["reasoning_content"].(string); ok && reasoningContent != "" {
+						textBuf.WriteString(reasoningContent)
+					}
+				}
+			}
+		}
+	}
+	return textBuf.String(), lastReason
 }
 
 func extractStreamUsage(line string) (promptTokens, completionTokens, cachedTokens int) {

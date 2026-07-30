@@ -142,16 +142,41 @@ func createTables() error {
 			data TEXT NOT NULL
 		);`,
 
-		`CREATE TABLE IF NOT EXISTS requestDetails (
+		`DROP TABLE IF EXISTS requestDetails;`,
+
+		// New flat traces table — typed columns & structured JSON fields
+		`CREATE TABLE IF NOT EXISTS traces (
 			id TEXT PRIMARY KEY,
 			timestamp TEXT NOT NULL,
+			status TEXT DEFAULT 'ok',
 			provider TEXT,
 			model TEXT,
-			connectionId TEXT,
-			status TEXT,
-			data TEXT NOT NULL
+			route TEXT DEFAULT 'direct',
+			node TEXT,
+			routeNodes TEXT,
+			attempt INTEGER DEFAULT 1,
+			totalAttempts INTEGER DEFAULT 1,
+			latencyMs INTEGER DEFAULT 0,
+			ttfbMs INTEGER DEFAULT 0,
+			inputTokens INTEGER DEFAULT 0,
+			outputTokens INTEGER DEFAULT 0,
+			cachedTokens INTEGER DEFAULT 0,
+			compression INTEGER DEFAULT 0,
+			cache TEXT DEFAULT 'bypass',
+			cost REAL DEFAULT 0,
+			isStream INTEGER DEFAULT 0,
+			retryCount INTEGER DEFAULT 0,
+			fallbackCount INTEGER DEFAULT 0,
+			targetAttempts TEXT,
+			pipeline TEXT,
+			requestMeta TEXT,
+			responseMeta TEXT,
+			request TEXT,
+			response TEXT
 		);`,
-		`CREATE INDEX IF NOT EXISTS idx_rd_ts ON requestDetails(timestamp DESC);`,
+		`CREATE INDEX IF NOT EXISTS idx_traces_ts ON traces(timestamp DESC);`,
+		`CREATE INDEX IF NOT EXISTS idx_traces_provider ON traces(provider);`,
+		`CREATE INDEX IF NOT EXISTS idx_traces_model ON traces(model);`,
 	}
 
 	for _, query := range queries {

@@ -36,6 +36,7 @@ func Routing(ctx *context.GatewayContext, next HandlerFunc) error {
 	}
 
 	var targets []ConnectionModel
+	seenConnIDs := make(map[string]bool)
 
 	for _, currentModel := range modelsToTry {
 		provider := "openai"
@@ -48,11 +49,14 @@ func Routing(ctx *context.GatewayContext, next HandlerFunc) error {
 		accounts, err := getActiveConnectionsForPrefix(provider)
 		if err == nil && len(accounts) > 0 {
 			for _, acc := range accounts {
-				targets = append(targets, ConnectionModel{
-					Connection: acc,
-					ModelName:  modelName,
-					Provider:   provider,
-				})
+				if !seenConnIDs[acc.ID] {
+					targets = append(targets, ConnectionModel{
+						Connection: acc,
+						ModelName:  modelName,
+						Provider:   provider,
+					})
+					seenConnIDs[acc.ID] = true
+				}
 			}
 		}
 	}
@@ -64,7 +68,7 @@ func Routing(ctx *context.GatewayContext, next HandlerFunc) error {
 	}
 
 	ctx.Metadata["routingTargets"] = targets
-	ctx.AddStep("Routing", "success", fmt.Sprintf("Routed to %d possible connection nodes", len(targets)))
+	ctx.AddStep("Routing", "success", fmt.Sprintf("Routed to %d target connection(s)", len(targets)))
 	return next(ctx)
 }
 

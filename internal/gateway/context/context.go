@@ -22,6 +22,17 @@ type TraceStep struct {
 	TPS        float64   `json:"tps"`
 }
 
+type TargetAttempt struct {
+	Index        int    `json:"index"`
+	Provider     string `json:"provider"`
+	Model        string `json:"model"`
+	ConnectionID string `json:"connectionId"`
+	Status       string `json:"status"` // "success", "failed", "skipped", "winner", "cancelled"
+	ResponseCode int    `json:"responseCode"`
+	DurationMs   int64  `json:"durationMs"`
+	Error        string `json:"error,omitempty"`
+}
+
 type GatewayContext struct {
 	Context          context.Context
 	RequestID        string
@@ -40,9 +51,10 @@ type GatewayContext struct {
 	Metadata         map[string]any
 
 	// Middleware Pipeline Tracking
-	Steps        []TraceStep
-	StartTime    time.Time
-	LastStepTime time.Time
+	Steps          []TraceStep
+	TargetAttempts []TargetAttempt
+	StartTime      time.Time
+	LastStepTime   time.Time
 
 	// HTTP / Upstream properties
 	ResponseWriter http.ResponseWriter
@@ -145,5 +157,11 @@ func (c *GatewayContext) CloneForTarget(ctx context.Context, conn *db.ProviderCo
 		StartTime:      time.Now(),
 		LastStepTime:   time.Now(),
 		Steps:          make([]TraceStep, 0),
+	}
+}
+
+func (c *GatewayContext) MergeStepsFrom(child *GatewayContext) {
+	if child != nil && len(child.Steps) > 0 {
+		c.Steps = append(c.Steps, child.Steps...)
 	}
 }

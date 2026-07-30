@@ -1,5 +1,6 @@
+package middleware
+
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -19,6 +20,45 @@ func Retry(ctx *gwContext.GatewayContext, next HandlerFunc) error {
 		return nil
 	}
 
+	isCombo, _ := ctx.Metadata["isCombo"].(bool)
+
+	// Single model call (non-combo): Direct 1:1 pass-through with zero latency overhead
+	if !isCombo || len(targets) == 1 {
+		target := targets[0]
+		ctx.Connection = &target.Connection
+		ctx.Model = target.ModelName
+		ctx.Provider = target.Provider
+		ctx.RequestBody["model"] = target.ModelName
+
+		attemptStart := time.Now()
+		err := next(ctx)
+		durMs := time.Since(attemptStart).Milliseconds()
+
+		status := "success"
+		errStr := ""
+		if err != nil || ctx.ResponseCode >= 400 {
+			status = "failed"
+			if err != nil {
+				errStr = err.Error()
+			} else {
+				errStr = fmt.Sprintf("HTTP %d", ctx.ResponseCode)
+			}
+		}
+
+		ctx.TargetAttempts = append(ctx.TargetAttempts, gwContext.TargetAttempt{
+			Index:        1,
+			Provider:     target.Provider,
+			Model:        target.ModelName,
+			ConnectionID: target.Connection.ID,
+			Status:       status,
+			ResponseCode: ctx.ResponseCode,
+			DurationMs:   durMs,
+			Error:        errStr,
+		})
+
+		return err
+	}
+
 	comboKind, _ := ctx.Metadata["comboKind"].(string)
 
 	switch comboKind {
@@ -36,12 +76,13 @@ func Retry(ctx *gwContext.GatewayContext, next HandlerFunc) error {
 		}
 	}
 
-	// Sequential strategies: fallback, smart, load_balance, progressive
+	// Sequential combo strategies: fallback, smart, load_balance, progressive
 	originalBody := cloneMap(ctx.RequestBody)
 	var lastErr error
 	var lastStatus int = http.StatusServiceUnavailable
 
 	for i, target := range targets {
+		attemptStart := time.Now()
 		ctx.Connection = &target.Connection
 		ctx.Model = target.ModelName
 		ctx.Provider = target.Provider
@@ -49,15 +90,62 @@ func Retry(ctx *gwContext.GatewayContext, next HandlerFunc) error {
 		ctx.RequestBody = cloneMap(originalBody)
 		ctx.RequestBody["model"] = target.ModelName
 
+		// Fast per-node attempt timeout (3.5s) if remaining targets exist, ensuring instant switch on slow/hanging nodes
+		var attemptCtx context.Context
+		var cancelAttempt context.CancelFunc
+		if i < len(targets)-1 {
+			attemptCtx, cancelAttempt = context.WithTimeout(ctx.Context, 3500*time.Millisecond)
+		} else {
+			attemptCtx, cancelAttempt = context.WithTimeout(ctx.Context, 60*time.Second)
+		}
+
+		oldCtx := ctx.Context
+		ctx.Context = attemptCtx
+
 		err := next(ctx)
+		durMs := time.Since(attemptStart).Milliseconds()
+		cancelAttempt()
+		ctx.Context = oldCtx
+
 		if err == nil && ctx.ResponseCode < 400 {
 			if comboKind == "progressive" && i < len(targets)-1 {
 				if isLowConfidence(ctx.ResponseBody) {
+					ctx.TargetAttempts = append(ctx.TargetAttempts, gwContext.TargetAttempt{
+						Index:        i + 1,
+						Provider:     target.Provider,
+						Model:        target.ModelName,
+						ConnectionID: target.Connection.ID,
+						Status:       "failed",
+						ResponseCode: ctx.ResponseCode,
+						DurationMs:   durMs,
+						Error:        "Low confidence output",
+					})
 					ctx.AddStep("Progressive Routing", "info", fmt.Sprintf("Low confidence output on %s, escalating to %s", target.ModelName, targets[i+1].ModelName))
 					ctx.FallbackCount++
 					continue
 				}
 			}
+
+			ctx.TargetAttempts = append(ctx.TargetAttempts, gwContext.TargetAttempt{
+				Index:        i + 1,
+				Provider:     target.Provider,
+				Model:        target.ModelName,
+				ConnectionID: target.Connection.ID,
+				Status:       "success",
+				ResponseCode: ctx.ResponseCode,
+				DurationMs:   durMs,
+			})
+
+			for j := i + 1; j < len(targets); j++ {
+				ctx.TargetAttempts = append(ctx.TargetAttempts, gwContext.TargetAttempt{
+					Index:        j + 1,
+					Provider:     targets[j].Provider,
+					Model:        targets[j].ModelName,
+					ConnectionID: targets[j].Connection.ID,
+					Status:       "skipped",
+				})
+			}
+
 			ctx.AddStep("Routing Engine", "success", fmt.Sprintf("Attempt %d succeeded with %s (status %d)", i+1, target.ModelName, ctx.ResponseCode))
 			return nil
 		}
@@ -67,19 +155,28 @@ func Retry(ctx *gwContext.GatewayContext, next HandlerFunc) error {
 			ctx.FallbackCount++
 		}
 
+		errStr := ""
 		if err != nil {
+			errStr = err.Error()
 			lastErr = err
-			ctx.Errors = append(ctx.Errors, err.Error())
+			ctx.Errors = append(ctx.Errors, errStr)
 		} else {
-			lastErr = fmt.Errorf("upstream responded with HTTP %d", ctx.ResponseCode)
-			ctx.Errors = append(ctx.Errors, lastErr.Error())
+			errStr = fmt.Sprintf("Upstream HTTP %d", ctx.ResponseCode)
+			lastErr = fmt.Errorf(errStr)
+			ctx.Errors = append(ctx.Errors, errStr)
 		}
 		lastStatus = ctx.ResponseCode
 
-		if ctx.ResponseCode == http.StatusBadRequest {
-			ctx.AddStep("Routing Engine", "failed", "Bypassed fallback loop due to 400 Bad Request")
-			return nil
-		}
+		ctx.TargetAttempts = append(ctx.TargetAttempts, gwContext.TargetAttempt{
+			Index:        i + 1,
+			Provider:     target.Provider,
+			Model:        target.ModelName,
+			ConnectionID: target.Connection.ID,
+			Status:       "failed",
+			ResponseCode: ctx.ResponseCode,
+			DurationMs:   durMs,
+			Error:        errStr,
+		})
 	}
 
 	errMsg := "All provider accounts and routes exhausted"
@@ -118,11 +215,16 @@ func isLowConfidence(body []byte) bool {
 }
 
 type targetResult struct {
-	target       ConnectionModel
-	responseCode int
-	responseBody []byte
-	isStream     bool
-	err          error
+	target           ConnectionModel
+	responseCode     int
+	responseBody     []byte
+	isStream         bool
+	promptTokens     int
+	completionTokens int
+	cachedTokens     int
+	ttfb             time.Duration
+	steps            []gwContext.TraceStep
+	err              error
 }
 
 func executeRaceStrategy(ctx *gwContext.GatewayContext, targets []ConnectionModel, next HandlerFunc) error {
@@ -141,10 +243,15 @@ func executeRaceStrategy(ctx *gwContext.GatewayContext, targets []ConnectionMode
 		if subCtx.ResponseCode < 400 && err == nil {
 			select {
 			case resultChan <- targetResult{
-				target:       t,
-				responseCode: subCtx.ResponseCode,
-				responseBody: subCtx.ResponseBody,
-				isStream:     subCtx.IsStream,
+				target:           t,
+				responseCode:     subCtx.ResponseCode,
+				responseBody:     subCtx.ResponseBody,
+				isStream:         subCtx.IsStream,
+				promptTokens:     subCtx.PromptTokens,
+				completionTokens: subCtx.CompletionTokens,
+				cachedTokens:     subCtx.CachedTokens,
+				ttfb:             subCtx.TTFB,
+				steps:            subCtx.Steps,
 			}:
 				cancel()
 			default:
@@ -158,14 +265,23 @@ func executeRaceStrategy(ctx *gwContext.GatewayContext, targets []ConnectionMode
 	timer := time.NewTimer(400 * time.Millisecond)
 	defer timer.Stop()
 
-	select {
-	case res := <-resultChan:
+	applyWin := func(res targetResult, msg string) {
 		ctx.Connection = &res.target.Connection
 		ctx.Model = res.target.ModelName
 		ctx.Provider = res.target.Provider
 		ctx.ResponseCode = res.responseCode
 		ctx.ResponseBody = res.responseBody
-		ctx.AddStep("Race (Hedged)", "success", fmt.Sprintf("Primary model %s won race", res.target.ModelName))
+		ctx.PromptTokens = res.promptTokens
+		ctx.CompletionTokens = res.completionTokens
+		ctx.CachedTokens = res.cachedTokens
+		ctx.TTFB = res.ttfb
+		ctx.Steps = append(ctx.Steps, res.steps...)
+		ctx.AddStep("Race (Hedged)", "success", msg)
+	}
+
+	select {
+	case res := <-resultChan:
+		applyWin(res, fmt.Sprintf("Primary model %s won race", res.target.ModelName))
 		return nil
 	case <-timer.C:
 		ctx.AddStep("Race (Hedged)", "info", "Primary slow (>400ms), hedging 2nd model")
@@ -177,12 +293,7 @@ func executeRaceStrategy(ctx *gwContext.GatewayContext, targets []ConnectionMode
 
 	select {
 	case res := <-resultChan:
-		ctx.Connection = &res.target.Connection
-		ctx.Model = res.target.ModelName
-		ctx.Provider = res.target.Provider
-		ctx.ResponseCode = res.responseCode
-		ctx.ResponseBody = res.responseBody
-		ctx.AddStep("Race (Hedged)", "success", fmt.Sprintf("Hedged model %s won race", res.target.ModelName))
+		applyWin(res, fmt.Sprintf("Hedged model %s won race", res.target.ModelName))
 		return nil
 	case <-time.After(30 * time.Second):
 		ctx.WriteError(http.StatusGatewayTimeout, "Race hedged requests timed out")
@@ -205,9 +316,14 @@ func executeParallelStrategy(ctx *gwContext.GatewayContext, targets []Connection
 			if subCtx.ResponseCode < 400 && err == nil {
 				select {
 				case resultChan <- targetResult{
-					target:       target,
-					responseCode: subCtx.ResponseCode,
-					responseBody: subCtx.ResponseBody,
+					target:           target,
+					responseCode:     subCtx.ResponseCode,
+					responseBody:     subCtx.ResponseBody,
+					promptTokens:     subCtx.PromptTokens,
+					completionTokens: subCtx.CompletionTokens,
+					cachedTokens:     subCtx.CachedTokens,
+					ttfb:             subCtx.TTFB,
+					steps:            subCtx.Steps,
 				}:
 					cancel()
 				default:
@@ -223,6 +339,11 @@ func executeParallelStrategy(ctx *gwContext.GatewayContext, targets []Connection
 		ctx.Provider = res.target.Provider
 		ctx.ResponseCode = res.responseCode
 		ctx.ResponseBody = res.responseBody
+		ctx.PromptTokens = res.promptTokens
+		ctx.CompletionTokens = res.completionTokens
+		ctx.CachedTokens = res.cachedTokens
+		ctx.TTFB = res.ttfb
+		ctx.Steps = append(ctx.Steps, res.steps...)
 		ctx.AddStep("Parallel Execution", "success", fmt.Sprintf("Fastest model %s returned response", res.target.ModelName))
 		return nil
 	case <-time.After(30 * time.Second):
@@ -248,9 +369,14 @@ func executeEnsembleStrategy(ctx *gwContext.GatewayContext, targets []Connection
 			if subCtx.ResponseCode < 400 && err == nil && len(subCtx.ResponseBody) > 0 {
 				mu.Lock()
 				results = append(results, targetResult{
-					target:       target,
-					responseCode: subCtx.ResponseCode,
-					responseBody: subCtx.ResponseBody,
+					target:           target,
+					responseCode:     subCtx.ResponseCode,
+					responseBody:     subCtx.ResponseBody,
+					promptTokens:     subCtx.PromptTokens,
+					completionTokens: subCtx.CompletionTokens,
+					cachedTokens:     subCtx.CachedTokens,
+					ttfb:             subCtx.TTFB,
+					steps:            subCtx.Steps,
 				})
 				mu.Unlock()
 			}
@@ -277,6 +403,11 @@ func executeEnsembleStrategy(ctx *gwContext.GatewayContext, targets []Connection
 	ctx.Provider = bestRes.target.Provider
 	ctx.ResponseCode = bestRes.responseCode
 	ctx.ResponseBody = bestRes.responseBody
+	ctx.PromptTokens = bestRes.promptTokens
+	ctx.CompletionTokens = bestRes.completionTokens
+	ctx.CachedTokens = bestRes.cachedTokens
+	ctx.TTFB = bestRes.ttfb
+	ctx.Steps = append(ctx.Steps, bestRes.steps...)
 	ctx.AddStep("Ensemble Synthesis", "success", fmt.Sprintf("Selected top ensemble response from %s (%d models consensus)", bestRes.target.ModelName, len(results)))
 	return nil
 }

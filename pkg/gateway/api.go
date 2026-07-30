@@ -1209,6 +1209,11 @@ func handleImportProviderModels(w http.ResponseWriter, r *http.Request, connecti
 
 func handleTraces(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
+	if r.Method == http.MethodDelete {
+		_ = db.ResetFlatTraces()
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"success": true})
+		return
+	}
 	if r.Method != http.MethodGet {
 		w.WriteHeader(http.StatusMethodNotAllowed)
 		return
@@ -1225,10 +1230,13 @@ func handleTraces(w http.ResponseWriter, r *http.Request) {
 		perPage = 20
 	}
 
-	traces, total, err := db.GetRecentTracesPaginated(page, perPage)
+	traces, total, err := db.GetFlatTracesPaginated(page, perPage)
 	if err != nil {
 		WriteErrorResponse(w, http.StatusInternalServerError, err.Error())
 		return
+	}
+	if traces == nil {
+		traces = []*db.FlatTrace{}
 	}
 	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"traces":  traces,
@@ -1252,7 +1260,7 @@ func handleTraceDetail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	trace, err := db.GetTraceByID(id)
+	trace, err := db.GetFlatTraceByID(id)
 	if err != nil {
 		WriteErrorResponse(w, http.StatusInternalServerError, err.Error())
 		return
@@ -1262,10 +1270,7 @@ func handleTraceDetail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var parsed map[string]interface{}
-	_ = json.Unmarshal([]byte(trace.Data), &parsed)
-
-	_ = json.NewEncoder(w).Encode(parsed)
+	_ = json.NewEncoder(w).Encode(trace)
 }
 
 
@@ -1520,7 +1525,7 @@ func handleOptimizerBenchmark(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	traces, err := db.GetRecentTraces(100)
+	traces, _, err := db.GetFlatTracesPaginated(1, 100)
 	if err != nil {
 		WriteErrorResponse(w, http.StatusInternalServerError, err.Error())
 		return
@@ -1571,19 +1576,15 @@ func handleOptimizerBenchmark(w http.ResponseWriter, r *http.Request) {
 	loadedAnalyzers := registry.GetAnalyzers()
 
 	for _, t := range traces {
-		var traceData map[string]interface{}
-		if err := json.Unmarshal([]byte(t.Data), &traceData); err != nil {
+		if t.Request == "" {
 			continue
 		}
 
-		origMsgsObj, ok := traceData["originalMessages"]
-		if !ok || origMsgsObj == nil {
-			continue
-		}
-
-		origMsgs, ok := origMsgsObj.([]interface{})
-		if !ok || len(origMsgs) == 0 {
-			continue
+		origMsgs := []interface{}{
+			map[string]interface{}{
+				"role":    "user",
+				"content": t.Request,
+			},
 		}
 
 		optCtx := &optimizer.OptimizationContext{
