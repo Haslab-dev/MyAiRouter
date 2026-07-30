@@ -105,6 +105,7 @@ func RegisterAdminRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/usage/provider-summary", handleProviderUsageSummary)
 	mux.HandleFunc("/api/usage/export", handleUsageExport)
 	mux.HandleFunc("/api/usage/import", handleUsageImport)
+	mux.HandleFunc("/api/usage/inject", handleUsageInject)
 	mux.HandleFunc("/api/models/disabled", handleModelsDisabled)
 	mux.HandleFunc("/api/models/enabled", handleModelsEnabled)
 	mux.HandleFunc("/api/models/custom", handleModelsCustom)
@@ -401,6 +402,30 @@ func handleCombos(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if r.Method == http.MethodPut || r.Method == http.MethodPatch {
+		id := r.URL.Query().Get("id")
+		var combo db.Combo
+		if err := json.NewDecoder(r.Body).Decode(&combo); err != nil {
+			WriteErrorResponse(w, http.StatusBadRequest, "Invalid JSON")
+			return
+		}
+		if id == "" {
+			id = combo.ID
+		}
+		if id == "" {
+			WriteErrorResponse(w, http.StatusBadRequest, "Missing id parameter")
+			return
+		}
+
+		if err := db.UpdateCombo(id, combo.Name, combo.Kind, combo.Models); err != nil {
+			WriteErrorResponse(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		combo.ID = id
+		_ = json.NewEncoder(w).Encode(combo)
+		return
+	}
+
 	if r.Method == http.MethodDelete {
 		id := r.URL.Query().Get("id")
 		if id == "" {
@@ -423,7 +448,7 @@ func handleUsageStats(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	provider := r.URL.Query().Get("provider")
 	period := r.URL.Query().Get("period")
-	stats, err := db.GetUsageStats(provider, period)
+	stats, err := db.GetUsageStats(provider, period, "", "")
 	if err != nil {
 		WriteErrorResponse(w, http.StatusInternalServerError, err.Error())
 		return
@@ -447,7 +472,7 @@ func handleUsageLogs(w http.ResponseWriter, r *http.Request) {
 		perPage = 20
 	}
 
-	logs, total, err := db.GetRecentLogsPaginated(page, perPage, provider, period)
+	logs, total, err := db.GetRecentLogsPaginated(page, perPage, provider, period, "", "")
 	if err != nil {
 		WriteErrorResponse(w, http.StatusInternalServerError, err.Error())
 		return
@@ -472,7 +497,7 @@ func handleUsageCharts(w http.ResponseWriter, r *http.Request) {
 		Cost   float64 `json:"cost"`
 	}
 
-	whereClause, args := db.BuildUsageWhere(provider, period)
+	whereClause, args := db.BuildUsageWhere(provider, period, "", "")
 
 	if period == "week" || period == "7d" {
 		now := time.Now().UTC()
@@ -829,7 +854,7 @@ func handleUsageModels(w http.ResponseWriter, r *http.Request) {
 	}
 	provider := r.URL.Query().Get("provider")
 	period := r.URL.Query().Get("period")
-	summaries, err := db.GetModelUsageSummary(provider, period)
+	summaries, err := db.GetModelUsageSummary(provider, period, "", "")
 	if err != nil {
 		WriteErrorResponse(w, http.StatusInternalServerError, err.Error())
 		return
@@ -1667,6 +1692,37 @@ func handleUsageImport(w http.ResponseWriter, r *http.Request) {
 		"success": true,
 		"message": "Metrics overview imported and synced successfully",
 	})
+}
+
+func handleUsageInject(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+
+	var payload struct {
+		TotalRequests         *int `json:"totalRequests"`
+		TotalPromptTokens     *int `json:"totalPromptTokens"`
+		TotalCompletionTokens *int `json:"totalCompletionTokens"`
+		TotalCachedTokens     *int `json:"totalCachedTokens"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		WriteErrorResponse(w, http.StatusBadRequest, "Invalid JSON: "+err.Error())
+		return
+	}
+
+	if err := db.InjectUsageTotals(&db.InjectUsageRequest{
+		TotalRequests:         payload.TotalRequests,
+		TotalPromptTokens:     payload.TotalPromptTokens,
+		TotalCompletionTokens: payload.TotalCompletionTokens,
+		TotalCachedTokens:     payload.TotalCachedTokens,
+	}); err != nil {
+		WriteErrorResponse(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{"success": true})
 }
 
 func handleModelsThinking(w http.ResponseWriter, r *http.Request) {

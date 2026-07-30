@@ -127,3 +127,23 @@ func (c *GatewayContext) WriteJSON(code int, data interface{}) {
 	c.ResponseWriter.WriteHeader(code)
 	_ = json.NewEncoder(c.ResponseWriter).Encode(data)
 }
+
+func (c *GatewayContext) CloneForTarget(ctx context.Context, conn *db.ProviderConnection, model string, provider string, body map[string]interface{}) *GatewayContext {
+	body["model"] = model
+	return &GatewayContext{
+		Context:        ctx,
+		RequestID:      c.RequestID,
+		UserID:         c.UserID,
+		Model:          model,
+		OriginalModel:  c.OriginalModel,
+		Provider:       provider,
+		Connection:     conn,
+		ResponseWriter: c.ResponseWriter,
+		Request:        c.Request,
+		RequestBody:    body,
+		Metadata:       c.Metadata,
+		StartTime:      time.Now(),
+		LastStepTime:   time.Now(),
+		Steps:          make([]TraceStep, 0),
+	}
+}

@@ -376,22 +376,35 @@ func updateDailySummary(dateKey string, entry *UsageEntry) error {
 	return err
 }
 
-func BuildUsageWhere(provider, period string) (string, []interface{}) {
+func BuildUsageWhere(provider, period, startDate, endDate string) (string, []interface{}) {
 	var clauses []string
 	var args []interface{}
 
-	if provider != "" {
-		clauses = append(clauses, "(LOWER(provider) = LOWER(?) OR LOWER(connectionId) = LOWER(?) OR LOWER(model) LIKE LOWER(?))")
-		args = append(args, provider, provider, provider+"/%")
+	if provider != "" && provider != "all" {
+		clauses = append(clauses, "LOWER(provider) = LOWER(?)")
+		args = append(args, provider)
 	}
 
-	switch strings.ToLower(strings.TrimSpace(period)) {
-	case "day", "1d", "24h":
-		clauses = append(clauses, "timestamp >= datetime('now', '-1 day')")
-	case "week", "7d":
-		clauses = append(clauses, "timestamp >= datetime('now', '-7 days')")
-	case "month", "30d", "1m":
-		clauses = append(clauses, "timestamp >= datetime('now', '-30 days')")
+	if startDate != "" || endDate != "" {
+		if startDate != "" {
+			clauses = append(clauses, "timestamp >= ?")
+			args = append(args, startDate)
+		}
+		if endDate != "" {
+			clauses = append(clauses, "timestamp <= ?")
+			args = append(args, endDate+"T23:59:59Z")
+		}
+	} else {
+		switch strings.ToLower(strings.TrimSpace(period)) {
+		case "day", "1d", "24h":
+			clauses = append(clauses, "timestamp >= datetime('now', '-1 day')")
+		case "yesterday":
+			clauses = append(clauses, "timestamp >= datetime('now', '-1 day', 'start of day') AND timestamp < datetime('now', 'start of day')")
+		case "week", "7d":
+			clauses = append(clauses, "timestamp >= datetime('now', '-7 days')")
+		case "month", "30d", "1m":
+			clauses = append(clauses, "timestamp >= datetime('now', '-30 days')")
+		}
 	}
 
 	where := ""
@@ -401,9 +414,9 @@ func BuildUsageWhere(provider, period string) (string, []interface{}) {
 	return where, args
 }
 
-func GetUsageStats(provider string, period string) (*UsageStats, error) {
+func GetUsageStats(provider, period, startDate, endDate string) (*UsageStats, error) {
 	var stats UsageStats
-	where, args := BuildUsageWhere(provider, period)
+	where, args := BuildUsageWhere(provider, period, startDate, endDate)
 
 	row := DB.QueryRow("SELECT COUNT(*), SUM(promptTokens), SUM(completionTokens), SUM(cost) FROM usageHistory"+where, args...)
 	var requests, prompt, completion sql.NullInt64
@@ -425,11 +438,11 @@ func GetUsageStats(provider string, period string) (*UsageStats, error) {
 }
 
 func GetRecentLogs(limit int, provider string, period string) ([]UsageEntry, error) {
-	entries, _, err := GetRecentLogsPaginated(1, limit, provider, period)
+	entries, _, err := GetRecentLogsPaginated(1, limit, provider, period, "", "")
 	return entries, err
 }
 
-func GetRecentLogsPaginated(page, perPage int, provider string, period string) ([]UsageEntry, int, error) {
+func GetRecentLogsPaginated(page, perPage int, provider, period, startDate, endDate string) ([]UsageEntry, int, error) {
 	keys, err := ListApiKeys()
 	keyNameMap := make(map[string]string)
 	if err == nil {
@@ -438,7 +451,7 @@ func GetRecentLogsPaginated(page, perPage int, provider string, period string) (
 		}
 	}
 
-	where, args := BuildUsageWhere(provider, period)
+	where, args := BuildUsageWhere(provider, period, startDate, endDate)
 
 	var total int
 	countQuery := `SELECT COUNT(*) FROM usageHistory` + where
@@ -533,8 +546,8 @@ type ModelUsageSummary struct {
 	Cost             float64 `json:"cost"`
 }
 
-func GetModelUsageSummary(provider string, period string) ([]ModelUsageSummary, error) {
-	where, args := BuildUsageWhere(provider, period)
+func GetModelUsageSummary(provider, period, startDate, endDate string) ([]ModelUsageSummary, error) {
+	where, args := BuildUsageWhere(provider, period, startDate, endDate)
 	query := `
 		SELECT 
 			model, 
@@ -613,7 +626,7 @@ type MetricsOverview struct {
 }
 
 func GetMetricsOverview() (*MetricsOverview, error) {
-	stats, err := GetUsageStats("", "")
+	stats, err := GetUsageStats("", "", "", "")
 	if err != nil {
 		return nil, err
 	}
@@ -621,7 +634,7 @@ func GetMetricsOverview() (*MetricsOverview, error) {
 	if err != nil {
 		return nil, err
 	}
-	models, err := GetModelUsageSummary("", "")
+	models, err := GetModelUsageSummary("", "", "", "")
 	if err != nil {
 		return nil, err
 	}
@@ -704,6 +717,67 @@ func ImportMetricsOverview(overview *MetricsOverview) error {
 				p.CachedTokens,
 				p.Cost,
 			)
+			if err != nil {
+				return err
+			}
+		}
+	}
+
+	return tx.Commit()
+}
+
+type InjectUsageRequest struct {
+	TotalRequests         *int `json:"totalRequests"`
+	TotalPromptTokens     *int `json:"totalPromptTokens"`
+	TotalCompletionTokens *int `json:"totalCompletionTokens"`
+	TotalCachedTokens     *int `json:"totalCachedTokens"`
+}
+
+func InjectUsageTotals(req *InjectUsageRequest) error {
+	nowStr := time.Now().UTC().Format(time.RFC3339)
+	tx, err := DB.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	requests := 0
+	if req.TotalRequests != nil {
+		requests = *req.TotalRequests
+	}
+	prompt := 0
+	if req.TotalPromptTokens != nil {
+		prompt = *req.TotalPromptTokens
+	}
+	completion := 0
+	if req.TotalCompletionTokens != nil {
+		completion = *req.TotalCompletionTokens
+	}
+	cached := 0
+	if req.TotalCachedTokens != nil {
+		cached = *req.TotalCachedTokens
+	}
+
+	_, err = tx.Exec(`
+		INSERT INTO usageHistory (
+			timestamp, provider, model, connectionId, apiKey, endpoint,
+			promptTokens, completionTokens, cachedTokens, cost, status, meta
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ok', '{}')
+	`, nowStr, "manual", "injected", "manual", "manual", "/v1/manual_inject",
+		prompt, completion, cached, 0.0)
+	if err != nil {
+		return err
+	}
+
+	if requests > 1 {
+		for i := 1; i < requests; i++ {
+			_, err = tx.Exec(`
+				INSERT INTO usageHistory (
+					timestamp, provider, model, connectionId, apiKey, endpoint,
+					promptTokens, completionTokens, cachedTokens, cost, status, meta
+				) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ok', '{}')
+			`, nowStr, "manual", "injected", "manual", "manual", "/v1/manual_inject",
+				0, 0, 0, 0.0)
 			if err != nil {
 				return err
 			}

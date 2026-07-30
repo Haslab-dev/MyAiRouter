@@ -24,9 +24,11 @@ func ModelResolver(ctx *context.GatewayContext, next HandlerFunc) error {
 	combo, err := db.GetComboByName(modelStr)
 	if err == nil && combo != nil && len(combo.Models) > 0 {
 		ctx.Metadata["modelsToTry"] = combo.Models
-		ctx.AddStep("Model Resolver", "success", fmt.Sprintf("Resolved combo '%s' to: %s", modelStr, strings.Join(combo.Models, ", ")))
+		ctx.Metadata["comboKind"] = combo.Kind
+		ctx.AddStep("Model Resolver", "success", fmt.Sprintf("Resolved combo '%s' (kind: %s) to: %s", modelStr, combo.Kind, strings.Join(combo.Models, ", ")))
 	} else {
 		ctx.Metadata["modelsToTry"] = []string{modelStr}
+		ctx.Metadata["comboKind"] = "fallback"
 		ctx.AddStep("Model Resolver", "success", fmt.Sprintf("Resolved model name: %s", modelStr))
 	}
 

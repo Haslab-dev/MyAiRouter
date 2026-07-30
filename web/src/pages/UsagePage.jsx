@@ -24,7 +24,19 @@ export default function UsagePage() {
   const [connections, setConnections] = useState([]);
   const [nodesList, setNodesList] = useState([]);
   const [selectedProvider, setSelectedProvider] = useState('');
-  const [selectedPeriod, setSelectedPeriod] = useState('day');
+  const [selectedPeriod, setSelectedPeriod] = useState('');
+  const [dateFilter, setDateFilter] = useState('all');
+  const [customStartDate, setCustomStartDate] = useState('');
+  const [customEndDate, setCustomEndDate] = useState('');
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [chartTooltip, setChartTooltip] = useState(null);
+  const [showInjectModal, setShowInjectModal] = useState(false);
+  const [injectForm, setInjectForm] = useState({
+    totalRequests: '',
+    inputToken: '',
+    outputToken: '',
+    totalCached: '',
+  });
 
   // Tree zoom state (no pan)
   const [treeScale, setTreeScale] = useState(1);
@@ -39,6 +51,56 @@ export default function UsagePage() {
     e.preventDefault();
     const delta = e.deltaY > 0 ? -0.1 : 0.1;
     setTreeScale(s => Math.max(0.3, Math.min(3, s + delta)));
+  };
+
+  // Date filter helpers
+   const getDateRange = (filter) => {
+    const now = new Date();
+    const pad = (n) => String(n).padStart(2, '0');
+    const toISO = (d) => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T00:00:00Z`;
+    switch (filter) {
+      case 'all':
+        return { period: '' };
+      case 'today': {
+        const start = toISO(new Date(now.getFullYear(), now.getMonth(), now.getDate()));
+        return { startDate: start, period: 'day' };
+      }
+      case 'yesterday': {
+        const yesterday = new Date(now);
+        yesterday.setDate(yesterday.getDate() - 1);
+        const start = toISO(new Date(yesterday.getFullYear(), yesterday.getMonth(), yesterday.getDate()));
+        const end = toISO(now);
+        return { startDate: start, endDate: end };
+      }
+      case 'week': {
+        const monday = new Date(now);
+        monday.setDate(monday.getDate() - ((monday.getDay() + 6) % 7));
+        return { startDate: toISO(monday), period: 'week' };
+      }
+      case 'month': {
+        const first = new Date(now.getFullYear(), now.getMonth(), 1);
+        return { startDate: toISO(first), period: 'month' };
+      }
+      case 'custom':
+        return { startDate: customStartDate || '', endDate: customEndDate || '' };
+      default:
+        return { period: '' };
+    }
+  };
+
+  const handleDateFilter = (filter) => {
+    setCurrentPage(1);
+    setDateFilter(filter);
+    if (filter === 'custom') return;
+    const range = getDateRange(filter);
+    setCustomStartDate(range.startDate || '');
+    setCustomEndDate(range.endDate || '');
+    if (filter === 'all') setSelectedPeriod('');
+    else if (filter === 'today') setSelectedPeriod('day');
+    else if (filter === 'week') setSelectedPeriod('week');
+    else if (filter === 'month') setSelectedPeriod('month');
+    setSelectedPeriod(period);
+    fetchData(selectedProvider, period);
   };
 
   const treeCenterX = 300;
@@ -80,10 +142,13 @@ const [settings, setSettings] = useState(null);
     try {
       const p = provider !== undefined ? provider : selectedProvider;
       const t = period !== undefined ? period : selectedPeriod;
+      const range = getDateRange(dateFilter);
 
       const params = new URLSearchParams();
       if (p) params.append('provider', p);
       if (t) params.append('period', t);
+      if (range.startDate) params.append('startDate', range.startDate);
+      if (range.endDate) params.append('endDate', range.endDate);
 
       const queryStr = params.toString() ? `?${params.toString()}` : '';
 
@@ -145,7 +210,34 @@ const [settings, setSettings] = useState(null);
     } catch (err) {
       console.error('Error fetching usage data:', err);
     }
-  }, [selectedProvider, selectedPeriod]);
+  }, [selectedProvider, selectedPeriod, dateFilter, customStartDate, customEndDate]);
+
+  const handleInjectMetrics = async (e) => {
+    e.preventDefault();
+    const payload = {};
+    if (injectForm.totalRequests) payload.totalRequests = parseInt(injectForm.totalRequests, 10) || 0;
+    if (injectForm.inputToken) payload.totalPromptTokens = parseInt(injectForm.inputToken, 10) || 0;
+    if (injectForm.outputToken) payload.totalCompletionTokens = parseInt(injectForm.outputToken, 10) || 0;
+    if (injectForm.totalCached) payload.totalCachedTokens = parseInt(injectForm.totalCached, 10) || 0;
+
+    try {
+      const res = await fetch('/api/usage/inject', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      if (res.ok) {
+        setShowInjectModal(false);
+        setInjectForm({ totalRequests: '', inputToken: '', outputToken: '', totalCached: '' });
+        fetchData(selectedProvider, selectedPeriod);
+      } else {
+        alert('Failed to inject metrics.');
+      }
+    } catch (err) {
+      console.error('Inject error:', err);
+      alert('Failed to inject metrics.');
+    }
+  };
 
   const fileInputRef = useRef(null);
 
@@ -454,6 +546,14 @@ const [settings, setSettings] = useState(null);
             <span className="material-symbols-outlined" style={{ fontSize: '16px' }}>download</span>
             Export Metrics
           </button>
+          <button
+            onClick={() => setShowInjectModal(true)}
+            className="btn btn-secondary"
+            style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', padding: '6px 12px' }}
+          >
+            <span className="material-symbols-outlined" style={{ fontSize: '16px' }}>edit_note</span>
+            Inject
+          </button>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 12px', background: 'rgba(46, 204, 113, 0.08)', border: '1px solid rgba(46, 204, 113, 0.18)', borderRadius: 'var(--radius-md)', fontSize: '12px', color: 'var(--color-success)', fontWeight: '600' }}>
             <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>circle</span>
             System Active
@@ -534,29 +634,28 @@ const [settings, setSettings] = useState(null);
               </div>
 
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-subtle)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Time Period</span>
-                <div style={{ display: 'flex', background: 'var(--bg-sidebar)', borderRadius: '6px', border: '1px solid var(--border-color)', padding: '2px' }}>
+                <div style={{ display: 'flex', gap: '4px', background: 'var(--bg-sidebar)', borderRadius: '6px', border: '1px solid var(--border-color)', padding: '2px' }}>
                   {[
-                    { id: 'day', label: 'Day' },
-                    { id: 'week', label: 'Week' },
-                    { id: 'month', label: 'Month' },
+                    { id: 'all', label: 'All' },
+                    { id: 'today', label: 'Today' },
+                    { id: 'yesterday', label: 'Yesterday' },
+                    { id: 'week', label: 'This Week' },
+                    { id: 'month', label: 'This Month' },
+                    { id: 'custom', label: 'Custom' },
                   ].map((p) => (
                     <button
                       key={p.id}
-                      onClick={() => {
-                        setSelectedPeriod(p.id);
-                        setCurrentPage(1);
-                        fetchData(selectedProvider, p.id);
-                      }}
+                      onClick={() => handleDateFilter(p.id)}
                       style={{
-                        padding: '4px 12px',
-                        fontSize: '12px',
-                        fontWeight: selectedPeriod === p.id ? '700' : '500',
+                        padding: '4px 10px',
+                        fontSize: '11px',
+                        fontWeight: dateFilter === p.id ? '700' : '500',
                         borderRadius: '4px',
                         border: 'none',
-                        background: selectedPeriod === p.id ? 'var(--color-primary)' : 'transparent',
-                        color: selectedPeriod === p.id ? '#fff' : 'var(--text-muted)',
+                        background: dateFilter === p.id ? 'var(--color-primary)' : 'transparent',
+                        color: dateFilter === p.id ? '#fff' : 'var(--text-muted)',
                         cursor: 'pointer',
+                        whiteSpace: 'nowrap',
                         transition: 'all 0.15s ease'
                       }}
                     >
@@ -564,11 +663,26 @@ const [settings, setSettings] = useState(null);
                     </button>
                   ))}
                 </div>
+                {dateFilter === 'custom' && (
+                  <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                    <input type="date" value={customStartDate} onChange={e => setCustomStartDate(e.target.value)}
+                      style={{ padding: '4px 8px', fontSize: '12px', borderRadius: '4px', border: '1px solid var(--border-color)', background: 'var(--bg-sidebar)', color: 'var(--text-main)' }} />
+                    <span style={{ fontSize: '12px', color: 'var(--text-subtle)' }}>to</span>
+                    <input type="date" value={customEndDate} onChange={e => setCustomEndDate(e.target.value)}
+                      style={{ padding: '4px 8px', fontSize: '12px', borderRadius: '4px', border: '1px solid var(--border-color)', background: 'var(--bg-sidebar)', color: 'var(--text-main)' }} />
+                    <button onClick={() => { setCurrentPage(1); fetchData(selectedProvider, ''); }} className="btn btn-primary" style={{ padding: '4px 12px', fontSize: '11px' }}>Apply</button>
+                  </div>
+                )}
+                <button onClick={async () => { setIsRefreshing(true); await fetchData(); setIsRefreshing(false); }} disabled={isRefreshing}
+                  style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '4px 10px', fontSize: '11px', borderRadius: '4px', border: '1px solid var(--border-color)', background: 'transparent', color: 'var(--text-muted)', cursor: 'pointer' }}>
+                  <span className="material-symbols-outlined" style={{ fontSize: '14px', animation: isRefreshing ? 'spin 1s linear infinite' : 'none' }}>refresh</span>
+                  Refresh
+                </button>
               </div>
             </div>
 
             <div style={{ fontSize: '11px', color: 'var(--text-subtle)' }}>
-              {selectedProvider ? `Showing: ${getProviderDisplayName(selectedProvider, nodesList)} (${selectedPeriod.toUpperCase()})` : `Overall Summary (${selectedPeriod.toUpperCase()})`}
+              {selectedProvider ? `Showing: ${getProviderDisplayName(selectedProvider, nodesList)} (${dateFilter.toUpperCase()})` : `Overall Summary (${dateFilter.toUpperCase()})`}
             </div>
           </div>
 
@@ -676,18 +790,58 @@ const [settings, setSettings] = useState(null);
                   {/* Stroke Line */}
                   {linePath && <path d={linePath} fill="none" stroke="var(--color-primary)" strokeWidth="2.5" style={{ filter: 'drop-shadow(0 2px 4px rgba(0, 200, 255, 0.3))' }} />}
                   
-                  {/* Scatter Dots */}
-                  {chartPoints && chartPoints.map((p, idx) => (
-                    <circle 
-                      key={idx} 
-                      cx={p.x} 
-                      cy={p.y} 
-                      r="3" 
-                      fill="var(--color-primary)" 
-                      style={{ filter: 'drop-shadow(0 0 2px rgba(0,200,255,0.5))' }} 
-                    />
-                  ))}
-                </svg>
+                   {/* Scatter Dots with tooltip */}
+                   {chartPoints && chartPoints.map((p, idx) => (
+                     <circle 
+                       key={idx} 
+                       cx={p.x} 
+                       cy={p.y} 
+                       r={chartTooltip?.index === idx ? "5" : "3"}
+                       fill="var(--color-primary)" 
+                       style={{ cursor: 'pointer', filter: chartTooltip?.index === idx ? 'drop-shadow(0 0 6px rgba(0,200,255,0.8))' : 'drop-shadow(0 0 2px rgba(0,200,255,0.5))', transition: 'all 0.15s ease' }}
+                       onMouseEnter={() => setChartTooltip({ index: idx, x: p.x, y: p.y, data: chartData[idx] })}
+                       onMouseLeave={() => setChartTooltip(null)}
+                     />
+                   ))}
+                 </svg>
+
+                 {/* Chart tooltip */}
+                 {chartTooltip && chartTooltip.data && (
+                   <div style={{
+                     position: 'absolute',
+                     left: Math.min(chartTooltip.x + 10, 350),
+                     top: Math.max(chartTooltip.y - 100, 0),
+                     background: 'var(--bg-sidebar)',
+                     border: '1px solid var(--border-color)',
+                     borderRadius: '8px',
+                     padding: '10px 14px',
+                     fontSize: '11px',
+                     boxShadow: '0 4px 16px rgba(0,0,0,0.3)',
+                     zIndex: 100,
+                     pointerEvents: 'none',
+                     minWidth: '150px'
+                   }}>
+                     <div style={{ fontWeight: 700, color: 'var(--text-main)', marginBottom: '6px', fontSize: '12px' }}>{chartTooltip.data.label}</div>
+                     <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                       <div style={{ display: 'flex', justifyContent: 'space-between', gap: '16px' }}>
+                         <span style={{ color: 'var(--text-subtle)' }}>Cost</span>
+                         <span style={{ fontWeight: 600, color: 'var(--color-primary)', fontFamily: 'var(--font-mono)' }}>${chartTooltip.data.cost?.toFixed(5) || '0'}</span>
+                       </div>
+                       <div style={{ display: 'flex', justifyContent: 'space-between', gap: '16px' }}>
+                         <span style={{ color: 'var(--text-subtle)' }}>Input</span>
+                         <span style={{ fontWeight: 600, color: 'var(--color-primary)', fontFamily: 'var(--font-mono)' }}>{(chartTooltip.data.promptTokens || 0).toLocaleString()}</span>
+                       </div>
+                       <div style={{ display: 'flex', justifyContent: 'space-between', gap: '16px' }}>
+                         <span style={{ color: 'var(--text-subtle)' }}>Output</span>
+                         <span style={{ fontWeight: 600, color: 'var(--color-success)', fontFamily: 'var(--font-mono)' }}>{(chartTooltip.data.completionTokens || 0).toLocaleString()}</span>
+                       </div>
+                       <div style={{ display: 'flex', justifyContent: 'space-between', gap: '16px' }}>
+                         <span style={{ color: 'var(--text-subtle)' }}>Total</span>
+                         <span style={{ fontWeight: 600, fontFamily: 'var(--font-mono)' }}>{(chartTooltip.data.tokens || 0).toLocaleString()}</span>
+                       </div>
+                     </div>
+                   </div>
+                 )}
 
                 {/* Time labels axis */}
                 <div style={{ display: 'flex', justifyContent: 'space-between', padding: '0 30px', fontSize: '10px', color: 'var(--text-subtle)', marginTop: '8px' }}>
@@ -760,6 +914,11 @@ const [settings, setSettings] = useState(null);
                     @keyframes transport-dash {
                       to {
                         stroke-dashoffset: -20;
+                      }
+                    }
+                    @keyframes spin {
+                      to {
+                        transform: rotate(360deg);
                       }
                     }
                     .active-transport-line {
@@ -1012,12 +1171,14 @@ const [settings, setSettings] = useState(null);
                     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '11px', textAlign: 'left' }}>
                       <thead>
                         <tr style={{ borderBottom: '1px solid var(--border-color)', color: 'var(--text-subtle)' }}>
-                          <th style={{ padding: '10px 8px' }}>DATE</th>
-                          <th style={{ padding: '10px 8px', textAlign: 'right' }}>TPS</th>
-                          <th style={{ padding: '10px 8px' }}>PROVIDER</th>
-                          <th style={{ padding: '10px 8px' }}>MODEL</th>
-                          <th style={{ padding: '10px 8px', textAlign: 'right' }}>COST</th>
-                          <th style={{ padding: '10px 8px', textAlign: 'right' }}>IN / OUT</th>
+                          <th style={{ padding: '10px 8px' }}>Date</th>
+                          <th style={{ padding: '10px 8px' }}>Model</th>
+                          <th style={{ padding: '10px 8px' }}>Status</th>
+                          <th style={{ padding: '10px 8px' }}>API Key / Client</th>
+                          <th style={{ padding: '10px 8px', textAlign: 'right' }}>Input</th>
+                          <th style={{ padding: '10px 8px', textAlign: 'right' }}>Output</th>
+                          <th style={{ padding: '10px 8px', textAlign: 'right' }}>Cost</th>
+                          <th style={{ padding: '10px 8px', textAlign: 'right' }}>Speed</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -1027,39 +1188,51 @@ const [settings, setSettings] = useState(null);
                           const durationMs = parsedMeta.duration_ms || 0;
                           const totalTokens = row.promptTokens + row.completionTokens;
                           const tps = durationMs > 0 ? (totalTokens / (durationMs / 1000)).toFixed(1) : '—';
+                          const isSuccess = row.status === 'ok';
                           return (
                             <tr key={index} style={{ borderBottom: '1px solid var(--border-color)', color: 'var(--text-main)' }}>
                               <td style={{ padding: '10px 8px', color: 'var(--text-subtle)', whiteSpace: 'nowrap' }}>
                                 {formatLogDate(row.timestamp)}
                               </td>
-                              <td style={{ padding: '10px 8px', fontFamily: 'var(--font-mono)', textAlign: 'right', fontWeight: 600, color: 'var(--color-primary)' }}>
-                                {tps}
-                              </td>
-                              <td style={{ padding: '10px 8px', fontWeight: 600 }}>
+                              <td style={{ padding: '10px 8px', fontWeight: 600, maxWidth: '160px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                                   <div style={{
-                                    width: '18px', height: '18px', borderRadius: '3px',
+                                    width: '16px', height: '16px', borderRadius: '3px',
                                     background: getProviderColor(row.provider), color: '#fff',
                                     display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                    fontSize: '9px', fontWeight: 700, textTransform: 'uppercase'
+                                    fontSize: '8px', fontWeight: 700, textTransform: 'uppercase', flexShrink: 0
                                   }}>
                                     {row.provider ? row.provider.charAt(0) : '?'}
                                   </div>
-                                  <span style={{ maxWidth: '100px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                    {row.provider || '—'}
-                                  </span>
+                                  <span>{row.model || '—'}</span>
                                 </div>
                               </td>
-                              <td style={{ padding: '10px 8px', fontWeight: 600, maxWidth: '140px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                {row.model}
+                              <td style={{ padding: '10px 8px' }}>
+                                <span style={{
+                                  display: 'inline-flex', alignItems: 'center', gap: '4px',
+                                  padding: '2px 8px', borderRadius: '4px',
+                                  background: isSuccess ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)',
+                                  color: isSuccess ? '#10b981' : '#ef4444',
+                                  fontWeight: 600, fontSize: '10px'
+                                }}>
+                                  <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: isSuccess ? '#10b981' : '#ef4444' }}></span>
+                                  {isSuccess ? 'Success' : row.status || 'Failed'}
+                                </span>
                               </td>
-                              <td style={{ padding: '10px 8px', fontWeight: 600, textAlign: 'right' }}>
+                              <td style={{ padding: '10px 8px', fontSize: '10px', color: 'var(--text-muted)' }}>
+                                {row.apiKeyName || row.connectionId || '—'}
+                              </td>
+                              <td style={{ padding: '10px 8px', fontFamily: 'var(--font-mono)', textAlign: 'right', fontSize: '10px', color: 'var(--color-primary)' }}>
+                                {row.promptTokens.toLocaleString()}
+                              </td>
+                              <td style={{ padding: '10px 8px', fontFamily: 'var(--font-mono)', textAlign: 'right', fontSize: '10px', color: 'var(--color-success)' }}>
+                                {row.completionTokens.toLocaleString()}
+                              </td>
+                              <td style={{ padding: '10px 8px', fontWeight: 600, textAlign: 'right', fontSize: '10px' }}>
                                 ${row.cost.toFixed(5)}
                               </td>
-                              <td style={{ padding: '10px 8px', fontFamily: 'var(--font-mono)', textAlign: 'right', fontSize: '10px', color: 'var(--text-subtle)' }}>
-                                <span style={{ color: 'var(--color-primary)' }}>{row.promptTokens.toLocaleString()}↑</span>
-                                <span style={{ color: 'var(--text-muted)', margin: '0 2px' }}>/</span>
-                                <span style={{ color: 'var(--color-success)' }}>{row.completionTokens.toLocaleString()}↓</span>
+                              <td style={{ padding: '10px 8px', fontFamily: 'var(--font-mono)', textAlign: 'right', fontWeight: 600, color: 'var(--color-primary)', fontSize: '10px' }}>
+                                {tps}{tps !== '—' ? ' t/s' : ''}
                               </td>
                             </tr>
                           );
@@ -1096,6 +1269,66 @@ const [settings, setSettings] = useState(null);
           </div>
         </div>
       )}
+
+      {showInjectModal && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 999 }}>
+          <form onSubmit={handleInjectMetrics} className="card" style={{ maxWidth: '400px', width: '100%', margin: '20px' }}>
+            <h3 className="card-title">Inject Overview Data</h3>
+
+            <div className="form-group">
+              <label className="form-label">Total Request <span style={{ color: 'var(--text-subtle)', fontSize: '11px' }}>(optional)</span></label>
+              <input
+                type="number"
+                className="input-field"
+                placeholder="0"
+                value={injectForm.totalRequests}
+                onChange={(e) => setInjectForm({ ...injectForm, totalRequests: e.target.value })}
+              />
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">Input Token</label>
+              <input
+                type="number"
+                className="input-field"
+                placeholder="0"
+                required
+                value={injectForm.inputToken}
+                onChange={(e) => setInjectForm({ ...injectForm, inputToken: e.target.value })}
+              />
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">Output Token</label>
+              <input
+                type="number"
+                className="input-field"
+                placeholder="0"
+                required
+                value={injectForm.outputToken}
+                onChange={(e) => setInjectForm({ ...injectForm, outputToken: e.target.value })}
+              />
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">Total Cached</label>
+              <input
+                type="number"
+                className="input-field"
+                placeholder="0"
+                required
+                value={injectForm.totalCached}
+                onChange={(e) => setInjectForm({ ...injectForm, totalCached: e.target.value })}
+              />
+            </div>
+
+            <div style={{ display: 'flex', gap: '12px', marginTop: '16px' }}>
+              <button type="submit" className="btn btn-primary">Inject</button>
+              <button type="button" onClick={() => setShowInjectModal(false)} className="btn btn-secondary">Cancel</button>
+            </div>
+          </form>
+        </div>
+      )}
     </div>
   );
 }
@@ -1103,7 +1336,7 @@ const [settings, setSettings] = useState(null);
 const formatLogDate = (ts) => {
   try {
     const date = new Date(ts);
-    return date.toLocaleDateString('en-US', {
+    return date.toLocaleString('en-US', {
       month: 'short',
       day: 'numeric',
       hour: 'numeric',

@@ -11,6 +11,7 @@ import (
 	"myAiRouter/pkg/db"
 )
 
+// AnthropicProvider routes requests to the Anthropic Messages API (api.anthropic.com/v1/messages).
 type AnthropicProvider struct{}
 
 func init() {
@@ -21,6 +22,8 @@ func (p *AnthropicProvider) Name() string {
 	return "anthropic"
 }
 
+// Execute sends a request to the Anthropic Messages API. It handles auth via x-api-key,
+// sets the anthropic-version header, supports streaming, and allows custom header injection.
 func (p *AnthropicProvider) Execute(ctx context.Context, conn *db.ProviderConnection, body map[string]interface{}) *ExecutionResult {
 	apiKey, _ := conn.Data["apiKey"].(string)
 	if apiKey == "" {
@@ -48,7 +51,7 @@ func (p *AnthropicProvider) Execute(ctx context.Context, conn *db.ProviderConnec
 	req.Header.Set("x-api-key", apiKey)
 	req.Header.Set("anthropic-version", "2023-06-01")
 
-	// Inject custom headers
+	// Apply custom headers from provider connection config (e.g. org-id, client-info)
 	if headers, ok := conn.Data["headers"].(map[string]interface{}); ok {
 		for k, v := range headers {
 			if valStr, ok := v.(string); ok {

@@ -73,3 +73,12 @@ func DeleteCombo(id string) error {
 	_, err := DB.Exec("DELETE FROM combos WHERE id = ?", id)
 	return err
 }
+
+func UpdateCombo(id string, name, kind string, models []string) error {
+	modelsBytes, err := json.Marshal(models)
+	if err != nil {
+		return err
+	}
+	_, err = DB.Exec("UPDATE combos SET name = ?, kind = ?, models = ?, updatedAt = ? WHERE id = ?", name, kind, string(modelsBytes), time.Now().UTC().Format(time.RFC3339), id)
+	return err
+}
