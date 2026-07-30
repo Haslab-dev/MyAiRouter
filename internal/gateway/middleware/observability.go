@@ -157,7 +157,9 @@ func Observability(ctx *context.GatewayContext, next HandlerFunc) error {
 
 	// --- Cache status ---
 	cacheStatus := "bypass"
-	if ctx.Metadata["cacheHit"] == true {
+	if ctx.Metadata["memoryCacheHit"] == true {
+		cacheStatus = "memory_hit"
+	} else if ctx.Metadata["cacheHit"] == true {
 		cacheStatus = "hit"
 	}
 
@@ -324,6 +326,19 @@ func extractResponsePreview(body []byte, maxLen int) string {
 			}
 		}
 	}
+	// Handle error responses (e.g., 403, 401, etc.)
+	if errObj, ok := resp["error"].(map[string]interface{}); ok {
+		if msg, ok := errObj["message"].(string); ok && msg != "" {
+			trimmed := strings.TrimSpace(msg)
+			if len(trimmed) > maxLen {
+				return trimmed[:maxLen] + "...[TRUNCATED]"
+			}
+			return trimmed
+		}
+		if code, ok := errObj["code"].(float64); ok {
+			return fmt.Sprintf("Error code: %.0f", code)
+		}
+	}
 	return ""
 }
 
@@ -341,6 +356,10 @@ func extractFinishReason(body []byte) string {
 				return reason
 			}
 		}
+	}
+	// Handle error responses (e.g., 403, 401, etc.)
+	if _, ok := resp["error"].(map[string]interface{}); ok {
+		return "error"
 	}
 	return "stop"
 }

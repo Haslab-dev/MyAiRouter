@@ -43,10 +43,10 @@ func HandleChatCompletions(w http.ResponseWriter, r *http.Request) {
 
 	pipe := middleware.NewPipeline()
 
-	// Pipeline: Wrappers first, then Resolver, then Routing/Retry loops, then dynamic filters/executors
 	pipe.Use(middleware.Observability)
 	pipe.Use(middleware.Auth)
 	pipe.Use(middleware.RateLimit)
+	pipe.Use(middleware.SessionManager)
 	pipe.Use(middleware.ModelResolver)
 	pipe.Use(middleware.Routing)
 

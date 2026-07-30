@@ -5,3 +5,5 @@ web/node_modules
 *.db
 *.sqlite
 .kilo/kilo.jsonc
+.cortex/data/cortex.db-shm
+.cortex/data/cortex.db-wal

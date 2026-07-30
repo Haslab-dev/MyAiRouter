@@ -97,6 +97,7 @@ func RegisterAdminRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/oauth/kilocode/initiate", handleKilocodeInitiate)
 	mux.HandleFunc("/api/oauth/kilocode/poll", handleKilocodePoll)
 	mux.HandleFunc("/api/keys", handleKeys)
+	mux.HandleFunc("/api/apikeys", handleKeys)
 	mux.HandleFunc("/api/combos", handleCombos)
 	mux.HandleFunc("/api/usage/stats", handleUsageStats)
 	mux.HandleFunc("/api/usage/logs", handleUsageLogs)

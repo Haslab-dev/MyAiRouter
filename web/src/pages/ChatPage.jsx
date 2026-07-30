@@ -115,7 +115,7 @@ export default function ChatPage() {
 
   const fetchSystemApiKey = async () => {
     try {
-      const res = await fetch('/api/apikeys');
+      const res = await fetch('/api/keys');
       if (res.ok) {
         const keys = await res.json();
         const activeKey = keys.find(k => k.isActive);

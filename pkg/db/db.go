@@ -175,6 +175,22 @@ func createTables() error {
 		`CREATE INDEX IF NOT EXISTS idx_traces_ts ON traces(timestamp DESC);`,
 		`CREATE INDEX IF NOT EXISTS idx_traces_provider ON traces(provider);`,
 		`CREATE INDEX IF NOT EXISTS idx_traces_model ON traces(model);`,
+
+		// Session & Memory Store tables
+		`CREATE TABLE IF NOT EXISTS sessions (
+			id TEXT PRIMARY KEY,
+			workspace TEXT,
+			summary TEXT,
+			updated_at TEXT NOT NULL
+		);`,
+		`CREATE TABLE IF NOT EXISTS contentCache (
+			hash TEXT PRIMARY KEY,
+			file_path TEXT,
+			summary TEXT,
+			tokens INTEGER DEFAULT 0,
+			updated_at TEXT NOT NULL
+		);`,
+		`CREATE INDEX IF NOT EXISTS idx_cc_hash ON contentCache(hash);`,
 	}
 
 	for _, query := range queries {

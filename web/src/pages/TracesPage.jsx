@@ -245,8 +245,12 @@ function TraceDetailPanel({ trace, onClose }) {
   const reqChars = requestMeta?.chars ?? (request?.length || 0);
   const reqTokens = requestMeta?.tokens ?? inputTokens;
 
-  const respPreview = responseMeta?.preview || response || '(No text output captured)';
-  const finishReason = responseMeta?.finishReason || 'stop';
+  const isError = status === 'error' || (trace.responseCode && trace.responseCode >= 400);
+  const respCode = trace.responseCode || (isError ? 500 : 200);
+  const finishReason = responseMeta?.finishReason || (isError ? 'error' : 'stop');
+  const respPreview = isError
+    ? (responseMeta?.preview || trace.error || response || '(Error - no response body)')
+    : (responseMeta?.preview || response || '(No text output captured)');
 
   return (
     <div className="card" style={{ padding: '24px', display: 'flex', flexDirection: 'column', height: 'calc(100vh - 160px)', overflowY: 'auto' }}>
@@ -381,14 +385,23 @@ function TraceDetailPanel({ trace, onClose }) {
             </div>
 
             {/* Response Card */}
-            <div style={{ background: 'var(--bg-sidebar)', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '14px' }}>
+            <div style={{ background: 'var(--bg-sidebar)', border: isError ? '1px solid rgba(239,68,68,0.3)' : '1px solid var(--border-color)', borderRadius: '8px', padding: '14px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                <span style={{ fontSize: '12px', fontWeight: 700, color: 'var(--color-success)' }}>Response Output</span>
-                <span className="badge badge-secondary" style={{ fontSize: '10px' }}>
-                  finish: {finishReason}
+                <span style={{ fontSize: '12px', fontWeight: 700, color: isError ? 'var(--color-danger)' : 'var(--color-success)' }}>
+                  {isError ? 'Response Error' : 'Response Output'}
                 </span>
+                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                  {isError && respCode && (
+                    <span className="badge badge-danger" style={{ fontSize: '10px' }}>
+                      {respCode}
+                    </span>
+                  )}
+                  <span className="badge badge-secondary" style={{ fontSize: '10px' }}>
+                    finish: {finishReason}
+                  </span>
+                </div>
               </div>
-              <pre style={{ fontSize: '11px', background: 'rgba(0,0,0,0.2)', border: '1px solid var(--border-color)', padding: '8px 10px', borderRadius: '4px', marginTop: '4px', whiteSpace: 'pre-wrap', maxHeight: '220px', overflowY: 'auto', margin: 0 }}>
+              <pre style={{ fontSize: '11px', background: isError ? 'rgba(239,68,68,0.1)' : 'rgba(0,0,0,0.2)', border: isError ? '1px solid rgba(239,68,68,0.2)' : '1px solid var(--border-color)', padding: '8px 10px', borderRadius: '4px', marginTop: '4px', whiteSpace: 'pre-wrap', maxHeight: '220px', overflowY: 'auto', margin: 0, color: isError ? 'var(--color-danger)' : 'var(--text-muted)' }}>
                 {respPreview}
               </pre>
             </div>
