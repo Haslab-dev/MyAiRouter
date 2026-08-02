@@ -5,6 +5,7 @@ const CORE_PROVIDERS = [
   { id: 'kilocode', name: 'Kilo Code', type: 'oauth', icon: 'grid_view', color: '#eab308', desc: 'Secure authorization code login' },
   { id: 'opencode-go', name: 'OpenCode Go', type: 'apikey', icon: 'terminal', color: '#2563eb', desc: 'Fast, secure open code credentials' },
   { id: 'opencode-zen', name: 'OpenCode Zen', type: 'apikey', icon: 'psychology', color: '#06b6d4', desc: 'Custom code generation engine' },
+  { id: 'commandcode', name: 'Command Code', type: 'apikey', icon: 'smart_toy', color: '#000000', desc: 'Key from ~/.commandcode/auth.json or commandcode.ai/studio' },
   { id: 'glm', name: 'GLM API', type: 'apikey', icon: 'chat', color: '#8b5cf6', desc: 'General LLM access keys' },
   { id: 'glm-coding', name: 'GLM Coding Plan', type: 'apikey', icon: 'code', color: '#10b981', desc: 'Targeted coding intelligence' },
   { id: 'nvidia', name: 'NVIDIA NIM', type: 'apikey', icon: 'memory', color: '#76b900', desc: 'NVIDIA API Catalog & NIM endpoints' },
@@ -469,6 +470,7 @@ export default function ProvidersPage() {
     const defaultUrls = {
       'opencode-go': 'https://opencode.ai/zen/go/v1',
       'opencode-zen': 'https://opencode.ai/zen/v1',
+      'commandcode': 'https://api.commandcode.ai/provider/v1',
       'glm': 'https://open.bigmodel.cn/api/paas/v4',
       'glm-coding': 'https://open.bigmodel.cn/api/coding/paas/v4',
       'nvidia': 'https://integrate.api.nvidia.com/v1',
@@ -580,6 +582,57 @@ export default function ProvidersPage() {
     } catch (err) {
       console.error(err);
       notify('Error deleting node.', 'error');
+    }
+  };
+
+  const handleAutoDetectCommandCode = async () => {
+    try {
+      const res = await fetch('/api/commandcode/token');
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        notify(data.error || 'No Command Code key found. Run `commandcode login` first.', 'error');
+        return;
+      }
+      const { apiKey } = await res.json();
+      if (!apiKey) {
+        notify('No Command Code key found in ~/.commandcode/auth.json.', 'error');
+        return;
+      }
+
+      const baseUrl = 'https://api.commandcode.ai/provider/v1';
+      const existing = connections.find(c => c.provider === 'commandcode');
+      let saveRes;
+      if (existing) {
+        saveRes = await fetch(`/api/providers/${existing.id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: 'Auto-detect', priority: 1, data: { apiKey, baseUrl } }),
+        });
+      } else {
+        saveRes = await fetch('/api/providers', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            id: `commandcode-conn-${Date.now()}`,
+            provider: 'commandcode',
+            authType: 'apikey',
+            name: 'Auto-detect',
+            email: '',
+            priority: 1,
+            isActive: true,
+            data: { apiKey, baseUrl, headers: {} },
+          }),
+        });
+      }
+      if (!saveRes.ok) {
+        notify(existing ? 'Failed to update Command Code credentials.' : 'Failed to save Command Code credentials.', 'error');
+        return;
+      }
+      await fetchData();
+      notify(existing ? 'Command Code key refreshed & saved.' : 'Command Code key auto-detected & saved.', 'success');
+    } catch (err) {
+      console.error(err);
+      notify('Error auto-detecting Command Code key.', 'error');
     }
   };
 
@@ -858,6 +911,17 @@ export default function ProvidersPage() {
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
               <h3 style={{ fontSize: '15px', fontWeight: 600, color: 'var(--text-main)', margin: 0 }}>Endpoint URL Configuration</h3>
               <div style={{ display: 'flex', gap: '8px' }}>
+                {viewingDetailProvider?.id === 'commandcode' && (
+                  <button
+                    onClick={handleAutoDetectCommandCode}
+                    className="btn btn-secondary"
+                    title="Read key from ~/.commandcode/auth.json (commandcode login)"
+                    style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', height: '28px' }}
+                  >
+                    <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>refresh</span>
+                    Auto-detect
+                  </button>
+                )}
                 {!activeConn && (
                   <button
                     onClick={() => isCustom ? setSelectedNode(viewingDetailProvider) : setSelectedStandard(viewingDetailProvider)}

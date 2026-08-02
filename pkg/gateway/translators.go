@@ -24,8 +24,8 @@ type ClaudeRequest struct {
 }
 
 type GeminiRequest struct {
-	Contents         []map[string]interface{} `json:"contents"`
-	SystemInstruction map[string]interface{}  `json:"systemInstruction,omitempty"`
+	Contents          []map[string]interface{} `json:"contents"`
+	SystemInstruction map[string]interface{}   `json:"systemInstruction,omitempty"`
 }
 
 // 1. Claude request -> OpenAI request

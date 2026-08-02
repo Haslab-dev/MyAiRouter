@@ -7,6 +7,9 @@ import (
 	"fmt"
 	"math"
 	"net/http"
+	"os"
+	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -92,6 +95,7 @@ func RegisterAdminRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/settings", handleSettings)
 	mux.HandleFunc("/api/providers", handleProviders)
 	mux.HandleFunc("/api/providers/", handleProviderDetail) // Matches /api/providers/<id>
+	mux.HandleFunc("/api/commandcode/token", handleCommandCodeToken)
 	mux.HandleFunc("/api/provider-nodes", handleProviderNodes)
 	mux.HandleFunc("/api/provider-nodes/", handleProviderNodeDetail) // Matches /api/provider-nodes/<id>
 	mux.HandleFunc("/api/oauth/kilocode/initiate", handleKilocodeInitiate)
@@ -194,6 +198,37 @@ func handleProviders(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusMethodNotAllowed)
+}
+
+var commandCodeKeyRe = regexp.MustCompile(`user_[A-Za-z0-9]+`)
+
+// handleCommandCodeToken reads the local Command Code CLI session
+// (~/.commandcode/auth.json) and returns its user_... API key so the UI
+// can auto-provision a connection.
+func handleCommandCodeToken(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	if r.Method != http.MethodGet {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+
+	home, err := os.UserHomeDir()
+	if err != nil {
+		WriteErrorResponse(w, http.StatusInternalServerError, "cannot resolve home directory")
+		return
+	}
+	path := filepath.Join(home, ".commandcode", "auth.json")
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		WriteErrorResponse(w, http.StatusNotFound, "~/.commandcode/auth.json not found. Run `commandcode login` first.")
+		return
+	}
+	apiKey := string(commandCodeKeyRe.Find(raw))
+	if apiKey == "" {
+		WriteErrorResponse(w, http.StatusNotFound, "no user_... key found in ~/.commandcode/auth.json")
+		return
+	}
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{"apiKey": apiKey, "source": path})
 }
 
 func handleProviderDetail(w http.ResponseWriter, r *http.Request) {

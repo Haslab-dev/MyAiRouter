@@ -46,6 +46,8 @@ func ExecuteProviderRequest(ctx context.Context, conn *db.ProviderConnection, bo
 		return executeAnthropic(ctx, conn, apiKey, body, stream)
 	case "gemini":
 		return executeGemini(ctx, conn, apiKey, body, stream)
+	case "commandcode":
+		return executeCommandCode(ctx, apiKey, body, stream)
 	default:
 		// Default to OpenAI compatible format
 		return executeOpenAI(ctx, conn, apiKey, body, stream)
@@ -95,6 +97,48 @@ func executeOpenAI(ctx context.Context, conn *db.ProviderConnection, apiKey stri
 			req.Header.Set("X-Kilocode-OrganizationID", orgId)
 		}
 	}
+
+	resp, err := sharedHTTPClient.Do(req)
+	if err != nil {
+		return &ExecutionResult{Err: err}
+	}
+
+	if stream && resp.StatusCode == http.StatusOK {
+		return &ExecutionResult{
+			ResponseCode: resp.StatusCode,
+			Stream:       resp.Body,
+			IsStream:     true,
+		}
+	}
+
+	defer resp.Body.Close()
+	respBody, err := io.ReadAll(resp.Body)
+	return &ExecutionResult{
+		ResponseCode: resp.StatusCode,
+		Body:         respBody,
+		IsStream:     false,
+		Err:          err,
+	}
+}
+
+// executeCommandCode streams to the documented Command Code Provider API
+// (OpenAI-compatible: https://api.commandcode.ai/provider/v1/chat/completions).
+func executeCommandCode(ctx context.Context, apiKey string, body map[string]interface{}, stream bool) *ExecutionResult {
+	url := "https://api.commandcode.ai/provider/v1/chat/completions"
+
+	bodyBytes, err := json.Marshal(body)
+	if err != nil {
+		return &ExecutionResult{Err: fmt.Errorf("marshalling body: %w", err)}
+	}
+
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(bodyBytes))
+	if err != nil {
+		return &ExecutionResult{Err: err}
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+apiKey)
+	req.Header.Set("Accept", "text/event-stream")
 
 	resp, err := sharedHTTPClient.Do(req)
 	if err != nil {

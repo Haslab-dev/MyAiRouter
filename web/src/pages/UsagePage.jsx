@@ -117,6 +117,7 @@ export default function UsagePage() {
   'kilocode': 'Kilo Code',
   'opencode-go': 'OpenCode Go',
   'opencode-zen': 'OpenCode Zen',
+  'commandcode': 'Command Code',
   'glm': 'GLM API',
   'glm-coding': 'GLM Coding Plan',
   'openai': 'OpenAI',
@@ -330,6 +331,7 @@ const [settings, setSettings] = useState(null);
       (isProviderActive('kilocode') ? 1 : 0) +
       (isProviderActive('opencode-go') ? 1 : 0) +
       (isProviderActive('opencode-zen') ? 1 : 0) +
+      (isProviderActive('commandcode') ? 1 : 0) +
       (isProviderActive('glm') ? 1 : 0) +
       (isProviderActive('glm-coding') ? 1 : 0) +
       (isProviderActive('nvidia') ? 1 : 0) +
@@ -345,6 +347,7 @@ const [settings, setSettings] = useState(null);
     if (isProviderActive('kilocode')) activeNodes.push({ id: 'kilocode', name: 'Kilo Code', icon: 'grid_view' });
     if (isProviderActive('opencode-go')) activeNodes.push({ id: 'opencode-go', name: 'OpenCode Go', icon: 'terminal' });
     if (isProviderActive('opencode-zen')) activeNodes.push({ id: 'opencode-zen', name: 'OpenCode Zen', icon: 'psychology' });
+    if (isProviderActive('commandcode')) activeNodes.push({ id: 'commandcode', name: 'Command Code', icon: 'smart_toy' });
     if (isProviderActive('glm')) activeNodes.push({ id: 'glm', name: 'GLM API', icon: 'chat' });
     if (isProviderActive('glm-coding')) activeNodes.push({ id: 'glm-coding', name: 'GLM Coding', icon: 'code' });
     if (isProviderActive('nvidia')) activeNodes.push({ id: 'nvidia', name: 'NVIDIA NIM', icon: 'memory' });
@@ -1354,7 +1357,8 @@ const getProviderColor = (prov) => {
     'anthropic': '#ea580c',
     'gemini': '#2563eb',
     'deepseek': '#8b5cf6',
-    'kilocode': '#eab308'
+    'kilocode': '#eab308',
+    'commandcode': '#000000'
   };
   return colors[prov] || '#6b7280';
 };
