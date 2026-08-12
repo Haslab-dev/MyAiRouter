@@ -22,6 +22,16 @@ func (p *OpenAIProvider) Name() string {
 	return "openai"
 }
 
+func (p *OpenAIProvider) Capabilities(conn *db.ProviderConnection) ProviderCapabilities {
+	if conn == nil {
+		return ProviderCapabilities{PromptCache: CacheCapabilities{Supported: true, PrefixCaching: true, ReportsTokens: true, ReportsHit: false}}
+	}
+	if conn.Provider == "deepseek" || conn.Provider == "openai" {
+		return ProviderCapabilities{PromptCache: CacheCapabilities{Supported: true, PrefixCaching: true, ReportsTokens: true, ReportsHit: false}}
+	}
+	return ProviderCapabilities{PromptCache: CacheCapabilities{Supported: false, PrefixCaching: false, ReportsTokens: false, ReportsHit: false}}
+}
+
 func (p *OpenAIProvider) Execute(ctx context.Context, conn *db.ProviderConnection, body map[string]interface{}) *ExecutionResult {
 	apiKey, _ := conn.Data["apiKey"].(string)
 	if apiKey == "" {

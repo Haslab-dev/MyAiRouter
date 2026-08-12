@@ -18,8 +18,11 @@ run: build
 	./myairouter
 
 dev-server:
-	go run .
-
+	@if [ -f $$HOME/go/bin/air ]; then \
+		$$HOME/go/bin/air; \
+	else \
+		go run .; \
+	fi
 dev-client:
 	cd web && npm run dev
 

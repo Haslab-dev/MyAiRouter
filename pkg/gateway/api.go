@@ -114,6 +114,7 @@ func RegisterAdminRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/models/disabled", handleModelsDisabled)
 	mux.HandleFunc("/api/models/enabled", handleModelsEnabled)
 	mux.HandleFunc("/api/models/custom", handleModelsCustom)
+	mux.HandleFunc("/api/models/policies", handleModelPolicies)
 	mux.HandleFunc("/api/models/thinking", handleModelsThinking)
 	mux.HandleFunc("/api/models/pricing", handleModelPricing)
 	mux.HandleFunc("/api/logs", handleServerLogs)
@@ -1140,6 +1141,61 @@ func handleModelsCustom(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if err := db.DeleteCustomModel(providerAlias, id, modelType); err != nil {
+			WriteErrorResponse(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"success": true})
+		return
+	}
+
+	w.WriteHeader(http.StatusMethodNotAllowed)
+}
+
+func handleModelPolicies(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	if !validateSession(r) {
+		WriteErrorResponse(w, http.StatusUnauthorized, "Unauthorized")
+		return
+	}
+
+	if r.Method == http.MethodGet {
+		cfgs, err := db.ListModelConfigs()
+		if err != nil {
+			WriteErrorResponse(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"policies": cfgs})
+		return
+	}
+
+	if r.Method == http.MethodPost {
+		var cfg db.ModelConfig
+		if err := json.NewDecoder(r.Body).Decode(&cfg); err != nil {
+			WriteErrorResponse(w, http.StatusBadRequest, "Invalid JSON")
+			return
+		}
+		if cfg.ID == "" || cfg.Routing.PrimaryProvider == "" {
+			WriteErrorResponse(w, http.StatusBadRequest, "id and primary_provider are required")
+			return
+		}
+		if cfg.Name == "" {
+			cfg.Name = cfg.ID
+		}
+		if err := db.SaveModelConfig(&cfg); err != nil {
+			WriteErrorResponse(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"success": true, "policy": cfg})
+		return
+	}
+
+	if r.Method == http.MethodDelete {
+		id := r.URL.Query().Get("id")
+		if id == "" {
+			WriteErrorResponse(w, http.StatusBadRequest, "id parameter required")
+			return
+		}
+		if err := db.DeleteModelConfig(id); err != nil {
 			WriteErrorResponse(w, http.StatusInternalServerError, err.Error())
 			return
 		}

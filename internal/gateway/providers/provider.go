@@ -28,9 +28,21 @@ type ExecutionResult struct {
 	Err          error
 }
 
+type CacheCapabilities struct {
+	Supported     bool `json:"supported"`
+	PrefixCaching bool `json:"prefix_caching"`
+	ReportsTokens bool `json:"reports_tokens"`
+	ReportsHit    bool `json:"reports_hit"`
+}
+
+type ProviderCapabilities struct {
+	PromptCache CacheCapabilities `json:"prompt_cache"`
+}
+
 type Provider interface {
 	Name() string
 	Execute(ctx context.Context, conn *db.ProviderConnection, body map[string]interface{}) *ExecutionResult
+	Capabilities(conn *db.ProviderConnection) ProviderCapabilities
 }
 
 var Registry = make(map[string]Provider)

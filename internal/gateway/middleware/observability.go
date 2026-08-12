@@ -262,6 +262,17 @@ func Observability(ctx *context.GatewayContext, next HandlerFunc) error {
 		Tokens:   ctx.PromptTokens,
 	}
 
+	if prep, ok := ctx.Metadata["prepareResult"].(PrepareResult); ok {
+		reqMeta.Modified = prep.Modified
+		reqMeta.CompressionApplied = prep.CompressionApplied
+		reqMeta.OriginalTokens = prep.OriginalTokens
+		reqMeta.PreparedTokens = prep.PreparedTokens
+		reqMeta.CompressedTokens = prep.CompressedTokens
+		reqMeta.ProtectedPrefixTokens = prep.ProtectedPrefixTokens
+		reqMeta.ProtectedSuffixTokens = prep.ProtectedSuffixTokens
+		reqMeta.Strategy = prep.Strategy
+	}
+
 	respMeta := db.ResponseMeta{
 		Preview:      respPreview,
 		FinishReason: finishReason,

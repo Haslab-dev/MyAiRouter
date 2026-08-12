@@ -22,6 +22,10 @@ func (p *AnthropicProvider) Name() string {
 	return "anthropic"
 }
 
+func (p *AnthropicProvider) Capabilities(conn *db.ProviderConnection) ProviderCapabilities {
+	return ProviderCapabilities{PromptCache: CacheCapabilities{Supported: true, PrefixCaching: true, ReportsTokens: true, ReportsHit: false}}
+}
+
 // Execute sends a request to the Anthropic Messages API. It handles auth via x-api-key,
 // sets the anthropic-version header, supports streaming, and allows custom header injection.
 func (p *AnthropicProvider) Execute(ctx context.Context, conn *db.ProviderConnection, body map[string]interface{}) *ExecutionResult {

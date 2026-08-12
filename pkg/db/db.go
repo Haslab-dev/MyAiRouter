@@ -191,6 +191,22 @@ func createTables() error {
 			updated_at TEXT NOT NULL
 		);`,
 		`CREATE INDEX IF NOT EXISTS idx_cc_hash ON contentCache(hash);`,
+
+		// Model-Centric Routing & Configuration table
+		`CREATE TABLE IF NOT EXISTS models (
+			id TEXT PRIMARY KEY,
+			name TEXT NOT NULL,
+			primary_provider TEXT NOT NULL,
+			fallback_provider TEXT,
+			fallback_model TEXT,
+			compression_enabled INTEGER DEFAULT 0,
+			compression_strategy TEXT DEFAULT 'balanced',
+			compression_trigger TEXT DEFAULT 'threshold',
+			compression_threshold INTEGER DEFAULT 64000,
+			preserve_recent_messages INTEGER DEFAULT 20,
+			createdAt TEXT NOT NULL,
+			updatedAt TEXT NOT NULL
+		);`,
 	}
 
 	for _, query := range queries {
@@ -202,6 +218,8 @@ func createTables() error {
 	// Migrations: add columns that may not exist in older schemas
 	migrations := []string{
 		"ALTER TABLE usageHistory ADD COLUMN cachedTokens INTEGER DEFAULT 0;",
+		"ALTER TABLE models ADD COLUMN compression_trigger TEXT DEFAULT 'threshold';",
+		"ALTER TABLE models ADD COLUMN fallback_model TEXT;",
 	}
 	for _, m := range migrations {
 		_, _ = DB.Exec(m) // Ignore errors — column may already exist

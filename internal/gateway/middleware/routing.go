@@ -39,28 +39,55 @@ func Routing(ctx *context.GatewayContext, next HandlerFunc) error {
 	seenConnIDs := make(map[string]bool)
 
 	for _, currentModel := range modelsToTry {
-		provider := "openai"
-		modelName := currentModel
+		cfg := db.GetModelConfigOrDefault(currentModel)
+		baseModelName := currentModel
 		if idx := strings.Index(currentModel, "/"); idx != -1 {
-			provider = currentModel[:idx]
-			modelName = currentModel[idx+1:]
+			baseModelName = currentModel[idx+1:]
 		}
 
-		accounts, err := getActiveConnectionsForPrefix(provider)
+		// 1. Resolve Primary Provider targets
+		primaryProvider := cfg.Routing.PrimaryProvider
+		accounts, err := getActiveConnectionsForPrefix(primaryProvider)
 		if err == nil && len(accounts) > 0 {
+			targetModelName := resolveTargetModelName(primaryProvider, baseModelName)
 			for _, acc := range accounts {
 				if !seenConnIDs[acc.ID] {
 					targets = append(targets, ConnectionModel{
 						Connection: acc,
-						ModelName:  modelName,
-						Provider:   provider,
+						ModelName:  targetModelName,
+						Provider:   primaryProvider,
 					})
 					seenConnIDs[acc.ID] = true
 				}
 			}
 		}
-	}
 
+		// 2. Resolve Fallback Model targets
+		if cfg.Routing.FallbackModel != nil && *cfg.Routing.FallbackModel != "" && *cfg.Routing.FallbackModel != "None" {
+			fallbackModelID := *cfg.Routing.FallbackModel
+			fbProvider := "openai"
+			fbModelName := fallbackModelID
+			if idx := strings.Index(fallbackModelID, "/"); idx != -1 {
+				fbProvider = fallbackModelID[:idx]
+				fbModelName = fallbackModelID[idx+1:]
+			}
+
+			fbAccounts, err := getActiveConnectionsForPrefix(fbProvider)
+			if err == nil && len(fbAccounts) > 0 {
+				targetModelName := resolveTargetModelName(fbProvider, fbModelName)
+				for _, acc := range fbAccounts {
+					if !seenConnIDs[acc.ID] {
+						targets = append(targets, ConnectionModel{
+							Connection: acc,
+							ModelName:  targetModelName,
+							Provider:   fbProvider,
+						})
+						seenConnIDs[acc.ID] = true
+					}
+				}
+			}
+		}
+	}
 	if len(targets) == 0 {
 		ctx.WriteError(503, "No active upstream connections found for requested models")
 		ctx.AddStep("Routing", "failed", "No connections available")
@@ -165,4 +192,18 @@ func getActiveConnectionsForPrefix(providerPrefix string) ([]db.ProviderConnecti
 	}
 
 	return nil, nil
+}
+
+func resolveTargetModelName(providerAlias string, baseModelName string) string {
+	customs, err := db.GetCustomModels()
+	if err == nil {
+		for _, cm := range customs {
+			if cm.ProviderAlias == providerAlias {
+				if cm.ID == baseModelName || strings.HasSuffix(cm.ID, "/"+baseModelName) || strings.HasSuffix(cm.ID, "|"+baseModelName) {
+					return cm.ID
+				}
+			}
+		}
+	}
+	return baseModelName
 }

@@ -190,11 +190,13 @@ export default function CombosPage() {
               <div style={{ flex: 1 }}>
                 <label className="form-label">Strategy Algorithm</label>
                 <select value={kind} onChange={(e) => setKind(e.target.value)} className="input-field">
-                  {Object.entries(STRATEGY_DETAILS).map(([key, info]) => (
-                    <option key={key} value={key}>
-                      {info.label} ({info.tokenTag})
-                    </option>
-                  ))}
+                  {Object.entries(STRATEGY_DETAILS)
+                    .filter(([key]) => !['smart', 'race', 'parallel', 'ensemble'].includes(key))
+                    .map(([key, info]) => (
+                      <option key={key} value={key}>
+                        {info.label} ({info.tokenTag})
+                      </option>
+                    ))}
                 </select>
               </div>
             </div>

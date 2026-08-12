@@ -19,11 +19,8 @@ func Retry(ctx *gwContext.GatewayContext, next HandlerFunc) error {
 		ctx.AddStep("Routing Engine", "failed", "No targets available")
 		return nil
 	}
-
-	isCombo, _ := ctx.Metadata["isCombo"].(bool)
-
 	// Single model call (non-combo): Direct 1:1 pass-through with zero latency overhead
-	if !isCombo || len(targets) == 1 {
+	if len(targets) == 1 {
 		target := targets[0]
 		ctx.Connection = &target.Connection
 		ctx.Model = target.ModelName
@@ -162,7 +159,7 @@ func Retry(ctx *gwContext.GatewayContext, next HandlerFunc) error {
 			ctx.Errors = append(ctx.Errors, errStr)
 		} else {
 			errStr = fmt.Sprintf("Upstream HTTP %d", ctx.ResponseCode)
-			lastErr = fmt.Errorf(errStr)
+			lastErr = fmt.Errorf("%s", errStr)
 			ctx.Errors = append(ctx.Errors, errStr)
 		}
 		lastStatus = ctx.ResponseCode

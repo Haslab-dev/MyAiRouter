@@ -235,7 +235,7 @@ function TraceDetailPanel({ trace, onClose }) {
   const {
     id, timestamp, status, provider, model, route, node, routeNodes,
     attempt, totalAttempts, latencyMs, ttfbMs, inputTokens, outputTokens, cachedTokens,
-    compression, cache, cost, isStream, retryCount, fallbackCount,
+    cachedRatio, compression, cache, cost, isStream, retryCount, fallbackCount,
     targetAttempts, pipeline, requestMeta, responseMeta, request, response,
   } = trace;
 
@@ -314,7 +314,13 @@ function TraceDetailPanel({ trace, onClose }) {
           {/* Metrics bar */}
           <div style={{ background: 'var(--bg-sidebar)', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '4px 14px', marginTop: '10px' }}>
             <KV label="Prompt Compression" value={compression > 0 ? `${compression}%` : 'None'} mono accent={compression > 0 ? 'var(--color-accent)' : undefined} />
-            <KV label="Cache Hit" value={cache === 'hit' ? 'Yes' : 'No'} mono accent={cache === 'hit' ? 'var(--color-success)' : undefined} />
+            {cache === 'hit' || cache === 'memory_hit' ? (
+              <KV label="Cache Hit" value={cache === 'hit' ? 'Yes (Gateway)' : 'Yes (Memory)'} mono accent="var(--color-success)" />
+            ) : cachedTokens > 0 ? (
+              <KV label="Cached Token Ratio" value={`${((cachedRatio || 0) * 100).toFixed(1)}%`} mono accent="var(--color-success)" />
+            ) : (
+              <KV label="Cache Hit" value="No" mono />
+            )}
             <KV label="Streaming" value={isStream ? 'Yes' : 'No'} mono />
             <KV label="Attempts" value={`${attempt}/${totalAttempts || (routeNodes?.length || 1)}`} mono />
             <KV label="Fallback Count" value={fallbackCount} mono />

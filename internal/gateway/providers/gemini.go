@@ -22,6 +22,10 @@ func (p *GeminiProvider) Name() string {
 	return "gemini"
 }
 
+func (p *GeminiProvider) Capabilities(conn *db.ProviderConnection) ProviderCapabilities {
+	return ProviderCapabilities{PromptCache: CacheCapabilities{Supported: false, PrefixCaching: false, ReportsTokens: false, ReportsHit: false}}
+}
+
 func (p *GeminiProvider) Execute(ctx context.Context, conn *db.ProviderConnection, body map[string]interface{}) *ExecutionResult {
 	apiKey, _ := conn.Data["apiKey"].(string)
 	if apiKey == "" {

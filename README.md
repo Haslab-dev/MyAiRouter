@@ -19,6 +19,22 @@ This tutorial guides you through compiling, running, and configuring your **myAi
 
 ---
 
+## Key Features
+
+1. **Cache Transparency & Verbatim Pass-Through**: By default, requests with compression disabled are passed to provider endpoints completely untouched (zero cloning, zero metadata injection, zero prompt mutation), preserving provider-native prompt caching invariants.
+2. **Model-Centric Routing Policies**: Routing, compression, and caching rules are configured per-model rather than globally.
+3. **Custom Fallback Models**: Fail over seamlessly to alternative model IDs (e.g. falling back from `deepseek/deepseek-v4-flash` to `opzen/mimo-v2.5-free`) when primary providers return errors or insufficient balance.
+4. **Dynamic Cache-Preserving Compression**:
+   * **Protected Prefix** (System prompts and tool definitions) — Preserved verbatim.
+   * **Middle History** (Older conversation context) — Compressed dynamically using the AST optimizer or RTK fallback.
+   * **Protected Suffix** (Last $N$ recent chat messages, default 20) — Preserved verbatim.
+5. **Explicit Compression Triggers**:
+   * **Proactive (`threshold`)**: Compresses when request exceeds user-specified token threshold.
+   * **Reactive (`context_limit`)**: Compresses only when request exceeds model context limits (OpenAI: 128k, Anthropic: 200k, Gemini: 1M).
+6. **Live Reloading Watcher**: Native file watching and recompilation of the Go backend using the integrated `air` dev server.
+
+---
+
 ## 1. Build the Application
 
 Because `myAiRouter` embeds all frontend assets directly into the Go executable, you only need to run a simple build step to generate the final standalone binary.
@@ -79,17 +95,16 @@ On startup, `myAiRouter` will:
 
 ---
 
-## 4. Build & Install from Source
+## 4. Development & Live Reload
+
+To build the client and run the server locally with file watching and live reloading:
 
 ```bash
-make install
+make dev-server       # Launches Go backend (auto-runs `air` hot reload if installed, falling back to `go run .`)
+make dev-client       # Launches Vite HMR client on port 5173
 ```
-Or manually:
-```bash
-cd web && npm install && npm run build && cd ..
-go build -o myairouter .
-./website/install.sh
-```
+
+Open `http://localhost:5173` in your browser. All API requests are automatically proxied to the Go backend.
 
 ---
 
@@ -97,10 +112,12 @@ go build -o myairouter .
 
 The **Request Traces** dashboard (`http://localhost:20128/traces`) displays routing-focused analytics organized into four distinct sections:
 
-1. **Summary**: High-level execution metrics (Latency, TTFB, Input/Output/Cached Tokens, Cost, Prompt Compression %, Cache Hit, Streaming, Attempts count, Fallback & Retry counts).
-2. **Route Graph**: Visual node tree for Fallback, Race, Parallel, and Smart routing strategies showing per-node execution status (✔ Success, ↷ Skipped, ✖ Failed).
-3. **Pipeline**: Clean 6 routing-focused steps (`Resolve Model`, `Prompt Rewrite`, `Optimizer`, `Cache`, `Route`, `Provider`). Noisy internal middleware logs (Auth, Rate Limit, Guardrails) are hidden.
-4. **Request / Response Preview**: Request metadata (`system`, `user`, `messages`, `chars`, `tokens`) and Response metadata (`preview`, `finish_reason`).
+1. **Summary**: High-level execution metrics (Latency, TTFB, Input/Output/Cached Tokens, Cost, Prompt Compression %, Streaming, Attempts count, Fallback & Retry counts).
+   * **Cache Hit Status**: Shows explicit gateway cache status (`Yes (Gateway)` / `Yes (Memory)`).
+   * **Cached Token Ratio**: Shows the ratio of provider-cached reuse (`Cached Token Ratio: X.Y%`) calculated on the backend.
+2. **Route Graph**: Visual node tree for Fallback and Load Balance routing strategies showing per-node execution status (✔ Success, ✖ Failed).
+3. **Pipeline**: Clean routing-focused steps (`Resolve Model`, `Request Preparation` (unified rewrite + dynamic compression), `Cache`, `Route`, `Provider`).
+4. **Request / Response Preview**: Request metadata (`system`, `user`, `messages`, `chars`, `tokens`, plus detailed compression telemetry) and Response metadata (`preview`, `finish_reason`).
 
 ---
 
@@ -121,11 +138,10 @@ Updates both `main.go` (backend) and `web/package.json` (client).
 
 1. Open your web browser and navigate to the dashboard at: **`http://localhost:20128/`**.
 2. Go to the **Providers** section using the sidebar navigation.
-3. Click **Add Connection** in the top right.
-4. Select your provider (e.g. *OpenAI*, *Anthropic (Claude)*, *Google Gemini*, *DeepSeek*, *NVIDIA*, *Groq*, etc.).
-5. Enter a display name, paste your API Key, and set a priority.
-6. Click **Save Connection**.
-7. Click **Test** next to the newly created connection to verify connectivity.
+3. Add or configure your credentials:
+   * **Core Providers**: Configure active connections for *OpenAI*, *Anthropic*, *DeepSeek*, *Gemini*, etc.
+   * **Custom Providers**: Click **Add OpenAI/Anthropic Compatible** to register custom target proxies, configure endpoints, and assign credentials. Easily remove nodes completely via the red **Remove** button.
+4. Test connectivity next to the connection card to verify configuration.
 
 ---
 

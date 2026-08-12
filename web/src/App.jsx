@@ -9,7 +9,7 @@ const EndpointPage = lazy(() => import('./pages/EndpointPage'));
 const ProvidersPage = lazy(() => import('./pages/ProvidersPage'));
 const CombosPage = lazy(() => import('./pages/CombosPage'));
 const UsagePage = lazy(() => import('./pages/UsagePage'));
-const TokenSaverPage = lazy(() => import('./pages/TokenSaverPage'));
+const ModelsPage = lazy(() => import('./pages/ModelsPage'));
 const SkillsPage = lazy(() => import('./pages/SkillsPage'));
 const QuotaPage = lazy(() => import('./pages/QuotaPage'));
 const ConsoleLogPage = lazy(() => import('./pages/ConsoleLogPage'));
@@ -24,7 +24,7 @@ const NAV_ITEMS = [
   { to: '/endpoint', label: 'Gateway', icon: 'explore' },
   { to: '/providers', label: 'Providers', icon: 'dns' },
   { to: '/combos', label: 'Routes', icon: 'alt_route' },
-  { to: '/token-saver', label: 'Compression', icon: 'compress' },
+  { to: '/models', label: 'Models', icon: 'settings_suggest' },
   { to: '/traces', label: 'Traces', icon: 'history_toggle_off' },
   { to: '/quota', label: 'Health', icon: 'health_and_safety' },
   { to: '/skills', label: 'Skills', icon: 'conversion_path' },
@@ -187,7 +187,7 @@ const activeConns = conns.filter(c => c.isActive);
               <Route path="/endpoint" element={<EndpointPage />} />
               <Route path="/providers" element={<ProvidersPage />} />
               <Route path="/combos" element={<CombosPage />} />
-              <Route path="/token-saver" element={<TokenSaverPage />} />
+              <Route path="/models" element={<ModelsPage />} />
               <Route path="/chat" element={<ChatPage />} />
               <Route path="/traces" element={<TracesPage />} />
               <Route path="/quota" element={<QuotaPage />} />

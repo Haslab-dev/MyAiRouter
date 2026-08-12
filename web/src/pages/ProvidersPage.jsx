@@ -1371,9 +1371,9 @@ export default function ProvidersPage() {
                             handleDeleteNode(node.id);
                           }}
                           className="btn"
-                          style={{ padding: '2px 8px', fontSize: '10px', color: 'var(--text-subtle)', border: '1px solid var(--border-color)', background: 'transparent' }}
+                          style={{ padding: '2px 8px', fontSize: '10px', color: 'var(--color-danger)', border: '1px solid rgba(239,68,68,0.2)', background: 'transparent' }}
                         >
-                          Delete Node
+                          Remove
                         </button>
                       </div>
                     </div>

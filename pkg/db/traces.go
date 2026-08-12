@@ -30,11 +30,19 @@ type AttemptDetail struct {
 }
 
 type RequestMeta struct {
-	System   string `json:"system,omitempty"`
-	User     string `json:"user,omitempty"`
-	Messages int    `json:"messages"`
-	Chars    int    `json:"chars"`
-	Tokens   int    `json:"tokens"`
+	System                string `json:"system,omitempty"`
+	User                  string `json:"user,omitempty"`
+	Messages              int    `json:"messages"`
+	Chars                 int    `json:"chars"`
+	Tokens                int    `json:"tokens"`
+	Modified              bool   `json:"modified,omitempty"`
+	CompressionApplied    bool   `json:"compressionApplied,omitempty"`
+	OriginalTokens        int    `json:"originalTokens,omitempty"`
+	PreparedTokens        int    `json:"preparedTokens,omitempty"`
+	CompressedTokens      int    `json:"compressedTokens,omitempty"`
+	ProtectedPrefixTokens int    `json:"protectedPrefixTokens,omitempty"`
+	ProtectedSuffixTokens int    `json:"protectedSuffixTokens,omitempty"`
+	Strategy              string `json:"strategy,omitempty"`
 }
 
 type ResponseMeta struct {
@@ -58,6 +66,7 @@ type FlatTrace struct {
 	InputTokens    int             `json:"inputTokens"`
 	OutputTokens   int             `json:"outputTokens"`
 	CachedTokens   int             `json:"cachedTokens"`
+	CachedRatio    float64         `json:"cachedRatio"`
 	Compression    int             `json:"compression"`
 	Cache          string          `json:"cache"`
 	Cost           float64         `json:"cost"`
@@ -168,6 +177,9 @@ func scanFlatTrace(rows interface {
 	}
 
 	t.IsStream = isStreamInt == 1
+	if t.InputTokens > 0 {
+		t.CachedRatio = float64(t.CachedTokens) / float64(t.InputTokens)
+	}
 
 	if nodesJSON.Valid && nodesJSON.String != "" && nodesJSON.String != "[]" {
 		_ = json.Unmarshal([]byte(nodesJSON.String), &t.RouteNodes)
