@@ -1,5 +1,15 @@
-import { useState, useEffect, useRef, useMemo } from 'react';
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import ProviderIcon from '../components/ProviderIcon';
+import MarkdownRenderer from '../components/chat/MarkdownRenderer';
+import ThinkingSection from '../components/chat/ThinkingSection';
+import ImageLightbox from '../components/chat/ImageLightbox';
+import ToolCallCard from '../components/chat/ToolCallCard';
+import SlashCommandPopup from '../components/chat/SlashCommandPopup';
+import ConfigModal from '../components/chat/ConfigModal';
+import { useSlashCommands } from '../hooks/useSlashCommands';
+import { executeTool, getToolDefinitions } from '../services/toolExecutor';
+import { parseSlashCommand } from '../services/slashCommandRegistry';
+import { useChatStore } from '../stores/chatStore';
 
 function formatRelativeTime(dateStr) {
   if (!dateStr) return '';
@@ -49,407 +59,6 @@ function groupSessions(sessions) {
   return groups;
 }
 
-function ImageLightbox({ src, alt, onClose }) {
-  if (!src) return null;
-
-  const handleDownload = async (e) => {
-    e.stopPropagation();
-    try {
-      const res = await fetch(src);
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `image-${Date.now()}.png`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-    } catch {
-      window.open(src, '_blank');
-    }
-  };
-
-  const handleCopy = async (e) => {
-    e.stopPropagation();
-    try {
-      const res = await fetch(src);
-      const blob = await res.blob();
-      await navigator.clipboard.write([new ClipboardItem({ [blob.type]: blob })]);
-      alert('Image copied to clipboard!');
-    } catch {
-      navigator.clipboard.writeText(src);
-      alert('Image URL copied to clipboard!');
-    }
-  };
-
-  return (
-    <div
-      onClick={onClose}
-      style={{
-        position: 'fixed',
-        inset: 0,
-        zIndex: 9999,
-        background: 'rgba(0, 0, 0, 0.9)',
-        backdropFilter: 'blur(8px)',
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        justifyContent: 'center',
-        padding: '24px'
-      }}
-    >
-      <div
-        style={{
-          position: 'absolute',
-          top: '20px',
-          right: '24px',
-          display: 'flex',
-          gap: '12px',
-          zIndex: 10000
-        }}
-        onClick={e => e.stopPropagation()}
-      >
-        <button
-          onClick={handleCopy}
-          className="btn btn-secondary btn-sm"
-          style={{ display: 'flex', alignItems: 'center', gap: '6px', background: 'rgba(255,255,255,0.12)', color: '#fff' }}
-        >
-          <span className="material-symbols-outlined" style={{ fontSize: '16px' }}>content_copy</span>
-          Copy Image
-        </button>
-        <button
-          onClick={handleDownload}
-          className="btn btn-secondary btn-sm"
-          style={{ display: 'flex', alignItems: 'center', gap: '6px', background: 'rgba(255,255,255,0.12)', color: '#fff' }}
-        >
-          <span className="material-symbols-outlined" style={{ fontSize: '16px' }}>download</span>
-          Download
-        </button>
-        <button
-          onClick={onClose}
-          className="btn btn-secondary btn-sm"
-          style={{ background: 'rgba(255,255,255,0.12)', color: '#fff' }}
-        >
-          <span className="material-symbols-outlined" style={{ fontSize: '18px' }}>close</span>
-        </button>
-      </div>
-
-      <img
-        src={src}
-        alt={alt || 'Full preview'}
-        onClick={e => e.stopPropagation()}
-        style={{
-          maxWidth: '90vw',
-          maxHeight: '85vh',
-          objectFit: 'contain',
-          borderRadius: '8px',
-          boxShadow: '0 20px 50px rgba(0,0,0,0.6)'
-        }}
-      />
-    </div>
-  );
-}
-
-function RenderMarkdown({ content, onImageClick }) {
-  if (!content) return null;
-
-  const parts = content.split(/(```[\s\S]*?```)/g);
-
-  return (
-    <div style={{ lineHeight: '1.6', fontSize: '14px' }}>
-      {parts.map((part, idx) => {
-        if (part.startsWith('```')) {
-          const firstLineEnd = part.indexOf('\n');
-          let lang = 'text';
-          let code = part;
-          if (firstLineEnd !== -1) {
-            lang = part.slice(3, firstLineEnd).trim() || 'text';
-            code = part.slice(firstLineEnd + 1, -3);
-          } else {
-            code = part.slice(3, -3);
-          }
-
-          const copyToClipboard = () => {
-            navigator.clipboard.writeText(code);
-          };
-
-          return (
-            <div
-              key={idx}
-              style={{
-                margin: '12px 0',
-                borderRadius: '8px',
-                overflow: 'hidden',
-                border: '1px solid var(--border-color)',
-                background: '#161b22'
-              }}
-            >
-              <div
-                style={{
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                  padding: '6px 12px',
-                  background: '#21262d',
-                  fontSize: '11px',
-                  color: '#8b949e',
-                  fontFamily: 'var(--font-mono)'
-                }}
-              >
-                <span>{lang}</span>
-                <button
-                  onClick={copyToClipboard}
-                  style={{
-                    background: 'transparent',
-                    border: 'none',
-                    color: '#8b949e',
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '4px',
-                    fontSize: '11px'
-                  }}
-                >
-                  <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>content_copy</span>
-                  Copy
-                </button>
-              </div>
-              <pre
-                style={{
-                  padding: '12px 16px',
-                  margin: 0,
-                  fontSize: '13px',
-                  fontFamily: 'var(--font-mono)',
-                  color: '#c9d1d9',
-                  overflowX: 'auto',
-                  lineHeight: '1.5'
-                }}
-              >
-                <code>{code}</code>
-              </pre>
-            </div>
-          );
-        }
-
-        const imageRegex = /!\[(.*?)\]\((https?:\/\/[^\s)]+|data:image\/[^\s)]+)\)/g;
-        const subParts = [];
-        let lastIdx = 0;
-        let match;
-
-        while ((match = imageRegex.exec(part)) !== null) {
-          if (match.index > lastIdx) {
-            subParts.push({ type: 'text', content: part.slice(lastIdx, match.index) });
-          }
-          subParts.push({ type: 'image', alt: match[1], url: match[2] });
-          lastIdx = match.index + match[0].length;
-        }
-        if (lastIdx < part.length) {
-          subParts.push({ type: 'text', content: part.slice(lastIdx) });
-        }
-
-        if (subParts.length > 1 || (subParts.length === 1 && subParts[0].type === 'image')) {
-          return (
-            <div key={idx}>
-              {subParts.map((sp, sIdx) => {
-                if (sp.type === 'image') {
-                  return (
-                    <div
-                      key={sIdx}
-                      style={{
-                        position: 'relative',
-                        margin: '12px 0',
-                        display: 'inline-block',
-                        borderRadius: '10px',
-                        overflow: 'hidden',
-                        border: '1px solid var(--border-color)',
-                        background: 'var(--bg-card)'
-                      }}
-                      className="chat-image-container"
-                    >
-                      <img
-                        src={sp.url}
-                        alt={sp.alt || 'Generated or attached'}
-                        onClick={() => onImageClick && onImageClick(sp.url, sp.alt)}
-                        style={{
-                          maxWidth: '100%',
-                          maxHeight: '400px',
-                          display: 'block',
-                          cursor: 'pointer',
-                          objectFit: 'cover'
-                        }}
-                      />
-                      <div
-                        style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'space-between',
-                          padding: '6px 10px',
-                          background: 'rgba(0,0,0,0.6)',
-                          backdropFilter: 'blur(4px)',
-                          fontSize: '11px',
-                          color: '#e5e7eb'
-                        }}
-                      >
-                        <span style={{ maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                          {sp.alt || 'Image'}
-                        </span>
-                        <div style={{ display: 'flex', gap: '8px' }}>
-                          <button
-                            onClick={() => onImageClick && onImageClick(sp.url, sp.alt)}
-                            style={{ background: 'none', border: 'none', color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center' }}
-                            title="Fullscreen"
-                          >
-                            <span className="material-symbols-outlined" style={{ fontSize: '15px' }}>zoom_in</span>
-                          </button>
-                          <button
-                            onClick={async () => {
-                              try {
-                                const res = await fetch(sp.url);
-                                const blob = await res.blob();
-                                await navigator.clipboard.write([new ClipboardItem({ [blob.type]: blob })]);
-                                alert('Image copied to clipboard!');
-                              } catch {
-                                navigator.clipboard.writeText(sp.url);
-                                alert('Image link copied!');
-                              }
-                            }}
-                            style={{ background: 'none', border: 'none', color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center' }}
-                            title="Copy Image"
-                          >
-                            <span className="material-symbols-outlined" style={{ fontSize: '15px' }}>content_copy</span>
-                          </button>
-                          <button
-                            onClick={async () => {
-                              try {
-                                const res = await fetch(sp.url);
-                                const blob = await res.blob();
-                                const u = URL.createObjectURL(blob);
-                                const a = document.createElement('a');
-                                a.href = u;
-                                a.download = `image-${Date.now()}.png`;
-                                a.click();
-                                URL.revokeObjectURL(u);
-                              } catch {
-                                window.open(sp.url, '_blank');
-                              }
-                            }}
-                            style={{ background: 'none', border: 'none', color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center' }}
-                            title="Download Image"
-                          >
-                            <span className="material-symbols-outlined" style={{ fontSize: '15px' }}>download</span>
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                }
-                return (
-                  <span key={sIdx} style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
-                    {sp.content}
-                  </span>
-                );
-              })}
-            </div>
-          );
-        }
-
-        return (
-          <span key={idx} style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
-            {part}
-          </span>
-        );
-      })}
-    </div>
-  );
-}
-
-function ThinkingSection({ reasoning, isThinking, durationSec }) {
-  const [isOpen, setIsOpen] = useState(isThinking);
-
-  useEffect(() => {
-    if (isThinking) {
-      setIsOpen(true);
-    }
-  }, [isThinking]);
-
-  if (!reasoning && !isThinking) return null;
-
-  return (
-    <div
-      style={{
-        margin: '8px 0 14px 0',
-        borderRadius: '8px',
-        border: '1px solid var(--border-color)',
-        background: 'rgba(255, 255, 255, 0.02)',
-        overflow: 'hidden'
-      }}
-    >
-      <button
-        onClick={() => setIsOpen(!isOpen)}
-        style={{
-          width: '100%',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          padding: '8px 12px',
-          background: 'transparent',
-          border: 'none',
-          color: 'var(--text-muted)',
-          fontSize: '12px',
-          cursor: 'pointer',
-          fontFamily: 'var(--font-mono)'
-        }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          {isThinking ? (
-            <span className="material-symbols-outlined spin" style={{ fontSize: '16px', color: 'var(--color-primary)' }}>
-              progress_activity
-            </span>
-          ) : (
-            <span className="material-symbols-outlined" style={{ fontSize: '16px', color: 'var(--color-primary)' }}>
-              psychology
-            </span>
-          )}
-          <span style={{ fontWeight: 600, color: isThinking ? 'var(--color-primary)' : 'var(--text-muted)' }}>
-            {isThinking ? 'Thinking...' : `Thought for ${durationSec ? durationSec.toFixed(1) : 0}s`}
-          </span>
-        </div>
-        <span
-          className="material-symbols-outlined"
-          style={{
-            fontSize: '16px',
-            transform: isOpen ? 'rotate(180deg)' : 'rotate(0deg)',
-            transition: 'transform 0.2s ease'
-          }}
-        >
-          expand_more
-        </span>
-      </button>
-
-      {isOpen && (
-        <div
-          style={{
-            padding: '10px 14px',
-            borderTop: '1px solid var(--border-color)',
-            fontSize: '12.5px',
-            lineHeight: '1.55',
-            color: 'var(--text-muted)',
-            fontStyle: 'italic',
-            whiteSpace: 'pre-wrap',
-            wordBreak: 'break-word',
-            background: 'rgba(0, 0, 0, 0.15)',
-            maxHeight: '320px',
-            overflowY: 'auto'
-          }}
-        >
-          {reasoning || (isThinking ? 'Analyzing context and formulating response...' : '')}
-        </div>
-      )}
-    </div>
-  );
-}
-
 export default function ChatPage() {
   const [models, setModels] = useState([]);
   const [selectedModel, setSelectedModel] = useState('');
@@ -479,6 +88,20 @@ export default function ChatPage() {
   // Lightbox
   const [lightboxImg, setLightboxImg] = useState(null);
 
+  // Config Modal
+  const [showConfig, setShowConfig] = useState(false);
+
+  // MCP & Tools
+  const mcpServers = useChatStore(s => s.mcpServers);
+  const activeMcpServerIds = useChatStore(s => s.activeMcpServerIds);
+  const getActiveMcpTools = useChatStore(s => s.getActiveMcpTools);
+  const skills = useChatStore(s => s.skills);
+  const customSkills = useChatStore(s => s.customSkills);
+  const allSkills = useMemo(() => [...skills, ...customSkills], [skills, customSkills]);
+
+  const browserToolDefs = useMemo(() => getToolDefinitions(), []);
+  const slash = useSlashCommands({ mcpServers, browserTools: browserToolDefs, skills: allSkills });
+
   // Refs
   const abortControllerRef = useRef(null);
   const messagesEndRef = useRef(null);
@@ -494,15 +117,25 @@ export default function ChatPage() {
       const key = await fetchSystemApiKey();
       await fetchModels(key);
       await loadSessions();
+      useChatStore.getState().reconnectAll();
     }
     init();
-  }, []);
+
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape' && isStreaming) {
+        handleStop();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isStreaming]);
 
   const fetchSystemApiKey = async () => {
     try {
       const res = await fetch('/api/keys');
       if (res.ok) {
-        const keys = await res.json();
+        const data = await res.json();
+        const keys = Array.isArray(data) ? data : data?.keys || [];
         const activeKey = keys.find(k => k.isActive) || keys[0];
         if (activeKey) {
           setSystemApiKey(activeKey.key);
@@ -570,10 +203,17 @@ export default function ChatPage() {
       ];
     }
 
-    setModels(loaded);
+    const seen = new Set();
+    const deduped = loaded.filter(m => {
+      if (seen.has(m.id)) return false;
+      seen.add(m.id);
+      return true;
+    });
+
+    setModels(deduped);
     setSelectedModel(prev => {
-      if (prev && loaded.some(m => m.id === prev)) return prev;
-      return loaded[0].id;
+      if (prev && deduped.some(m => m.id === prev)) return prev;
+      return deduped[0]?.id || '';
     });
     setIsLoadingModels(false);
   };
@@ -900,6 +540,104 @@ export default function ChatPage() {
 
     const isFirstMessage = messages.length === 0;
 
+    // Handle slash commands
+    if (textToSend.trim().startsWith('/')) {
+      const parsed = parseSlashCommand(textToSend.trim());
+      if (parsed) {
+        if (parsed.type === 'builtin') {
+          if (parsed.command === 'clear') {
+            setMessages([]);
+            setInput('');
+            return;
+          }
+          if (parsed.command === 'export') {
+            const blob = new Blob([JSON.stringify(messages, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `chat-export-${Date.now()}.json`;
+            a.click();
+            URL.revokeObjectURL(url);
+            setInput('');
+            return;
+          }
+          if (parsed.command === 'time') {
+            const timeMsg = {
+              id: `msg-${Date.now()}`,
+              role: 'assistant',
+              content: `Current time: ${new Date().toLocaleString()} (${Intl.DateTimeFormat().resolvedOptions().timeZone})`,
+              timestamp: new Date().toISOString()
+            };
+            setMessages(prev => [...prev, timeMsg]);
+            setInput('');
+            return;
+          }
+        }
+        if (parsed.type === 'tool') {
+          try {
+            const result = await executeTool(parsed.tool, parsed.args ? JSON.parse(parsed.args) : {});
+            const toolMsg = {
+              id: `msg-${Date.now()}`,
+              role: 'assistant',
+              content: typeof result === 'string' ? result : JSON.stringify(result, null, 2),
+              timestamp: new Date().toISOString()
+            };
+            setMessages(prev => [...prev, toolMsg]);
+          } catch (e) {
+            showToast(`Tool error: ${e.message}`);
+          }
+          setInput('');
+          return;
+        }
+        if (parsed.type === 'mcp') {
+          const activeTools = getActiveMcpTools();
+          const mcpTool = activeTools.find(t => t._serverName === parsed.server && t.name === parsed.tool);
+          if (mcpTool) {
+            try {
+              const result = await useChatStore.getState().callMcpTool(mcpTool._serverId, parsed.tool, parsed.args ? JSON.parse(parsed.args) : {});
+              const toolMsg = {
+                id: `msg-${Date.now()}`,
+                role: 'assistant',
+                content: typeof result === 'string' ? result : JSON.stringify(result, null, 2),
+                timestamp: new Date().toISOString()
+              };
+              setMessages(prev => [...prev, toolMsg]);
+            } catch (e) {
+              showToast(`MCP tool error: ${e.message}`);
+            }
+          } else {
+            showToast(`MCP tool not found: ${parsed.server}:${parsed.tool}`);
+          }
+          setInput('');
+          return;
+        }
+        if (parsed.type === 'skill') {
+          const allSkills = useChatStore.getState().getAllSkills();
+          const skill = allSkills.find(s => s.id === parsed.skill);
+          if (skill && skill.content) {
+            const skillMsg = `[Skill: ${skill.name}]\n${skill.content}\n[/Skill]\n\n${parsed.args || ''}`;
+            setInput(skillMsg);
+            showToast(`Skill "${skill.name}" loaded`);
+          } else {
+            try {
+              const res = await fetch(`/skills/${parsed.skill}/SKILL.md`);
+              if (res.ok) {
+                const skillContent = await res.text();
+                const skillMsg = `[Skill: ${parsed.skill}]\n${skillContent}\n[/Skill]\n\n${parsed.args || ''}`;
+                setInput(skillMsg);
+                showToast(`Skill loaded`);
+              } else {
+                showToast(`Skill not found: ${parsed.skill}`);
+              }
+            } catch (e) {
+              showToast(`Skill error: ${e.message}`);
+            }
+          }
+          return;
+        }
+      }
+    }
+
     if (chatMode === 'image' || textToSend.trim().startsWith('/image ')) {
       await handleGenerateImage(textToSend.replace(/^\/image\s*/, ''));
       return;
@@ -935,7 +673,14 @@ export default function ChatPage() {
       apiMessages.push({ role: 'system', content: systemPrompt.trim() });
     }
 
-    newMessages.forEach(m => {
+    // Limit to last 40 messages to prevent context overflow
+    const messagesToSend = newMessages.slice(-40);
+
+    messagesToSend.forEach(m => {
+      // Skip empty assistant messages to prevent API errors
+      if (m.role === 'assistant' && (!m.content || m.content === '(empty response)') && !m.tool_calls) {
+        return;
+      }
       const imageAttachments = (m.attachments || []).filter(a => a.type === 'image');
       if (imageAttachments.length > 0) {
         const parts = [{ type: 'text', text: m.content || 'Please analyze this image.' }];
@@ -974,6 +719,7 @@ export default function ChatPage() {
 
     const thinkingStartTime = Date.now();
     let durationSec = 0;
+    let accumulatedToolCalls = [];
 
     try {
       const res = await fetch('/v1/chat/completions', {
@@ -982,6 +728,7 @@ export default function ChatPage() {
         body: JSON.stringify({
           model: selectedModel,
           messages: apiMessages,
+          max_tokens: 16384,
           stream: true
         }),
         signal: controller.signal
@@ -989,6 +736,7 @@ export default function ChatPage() {
 
       if (!res.ok) {
         const errText = await res.text();
+        console.error('API error:', res.status, errText);
         const errMsg = {
           role: 'assistant',
           content: `Error ${res.status}: ${errText}`,
@@ -1064,6 +812,23 @@ export default function ChatPage() {
               }
             }
 
+            // Accumulate tool calls
+            if (delta.tool_calls) {
+              for (const tc of delta.tool_calls) {
+                const idx = tc.index ?? accumulatedToolCalls.length;
+                if (!accumulatedToolCalls[idx]) {
+                  accumulatedToolCalls[idx] = {
+                    id: tc.id || `call_${Date.now()}_${idx}`,
+                    type: 'function',
+                    function: { name: '', arguments: '' }
+                  };
+                }
+                if (tc.id) accumulatedToolCalls[idx].id = tc.id;
+                if (tc.function?.name) accumulatedToolCalls[idx].function.name += tc.function.name;
+                if (tc.function?.arguments) accumulatedToolCalls[idx].function.arguments += tc.function.arguments;
+              }
+            }
+
             setMessages(prev => {
               const updated = [...prev];
               if (updated[assistantIndex]) {
@@ -1077,19 +842,22 @@ export default function ChatPage() {
               }
               return updated;
             });
-          } catch { }
+          } catch (e) {
+            console.error('Stream parse error:', e, 'line:', trimmed);
+          }
         }
       }
 
       const finalAssistantMsg = {
         id: `msg-${Date.now()}`,
         role: 'assistant',
-        content: accumulatedContent,
+        content: accumulatedContent || (accumulatedToolCalls.length > 0 ? '' : '(empty response)'),
         reasoning: accumulatedReasoning,
         thinkingDurationSec: durationSec,
         isThinking: false,
         isStreaming: false,
         model: selectedModel,
+        tool_calls: accumulatedToolCalls.length > 0 ? accumulatedToolCalls : undefined,
         timestamp: new Date().toISOString()
       };
 
@@ -1100,6 +868,124 @@ export default function ChatPage() {
       });
 
       appendMessageToStorage(currSessionId, finalAssistantMsg);
+
+      // Execute tool calls if present
+      if (accumulatedToolCalls.length > 0 && accumulatedToolCalls.length <= 5) {
+        const toolResults = [];
+        for (const tc of accumulatedToolCalls) {
+          try {
+            const args = tc.function.arguments ? JSON.parse(tc.function.arguments) : {};
+            const result = await executeTool(tc.function.name, args);
+            toolResults.push({
+              role: 'tool',
+              tool_call_id: tc.id,
+              content: typeof result === 'string' ? result : JSON.stringify(result)
+            });
+          } catch (e) {
+            toolResults.push({
+              role: 'tool',
+              tool_call_id: tc.id,
+              content: `Error: ${e.message}`
+            });
+          }
+        }
+
+        // Re-call API with tool results
+        const updatedMessages = [...newMessages, finalAssistantMsg, ...toolResults];
+        setMessages(prev => [...prev.slice(0, assistantIndex), finalAssistantMsg, ...toolResults]);
+
+        const toolApiMessages = [];
+        if (systemPrompt.trim()) {
+          toolApiMessages.push({ role: 'system', content: systemPrompt.trim() });
+        }
+        updatedMessages.forEach(m => {
+          if (m.role === 'tool') {
+            toolApiMessages.push({ role: 'tool', content: m.content, tool_call_id: m.tool_call_id });
+          } else if (m.role !== 'assistant' || m.tool_calls) {
+            toolApiMessages.push({ role: m.role, content: m.content });
+          }
+        });
+
+        const toolAssistantIndex = updatedMessages.length;
+        const toolInitialMsg = {
+          id: `msg-${Date.now() + 2}`,
+          role: 'assistant',
+          content: '',
+          isStreaming: true,
+          model: selectedModel,
+          timestamp: new Date().toISOString()
+        };
+        setMessages(prev => [...prev, toolInitialMsg]);
+
+        try {
+          const toolRes = await fetch('/v1/chat/completions', {
+            method: 'POST',
+            headers: reqHeaders,
+            body: JSON.stringify({
+              model: selectedModel,
+              messages: toolApiMessages,
+              stream: true
+            }),
+            signal: controller.signal
+          });
+
+          if (toolRes.ok) {
+            const reader2 = toolRes.body.getReader();
+            const decoder2 = new TextDecoder();
+            let buffer2 = '';
+            let toolContent = '';
+
+            while (true) {
+              const { done, value } = await reader2.read();
+              if (done) break;
+              buffer2 += decoder2.decode(value, { stream: true });
+              const lines2 = buffer2.split('\n');
+              buffer2 = lines2.pop() || '';
+
+              for (const line of lines2) {
+                const trimmed2 = line.trim();
+                if (!trimmed2 || !trimmed2.startsWith('data: ')) continue;
+                const dataStr2 = trimmed2.slice(6);
+                if (dataStr2 === '[DONE]') break;
+                try {
+                  const json2 = JSON.parse(dataStr2);
+                  const delta2 = json2.choices?.[0]?.delta || {};
+                  if (delta2.content) {
+                    toolContent += delta2.content;
+                    setMessages(prev => {
+                      const updated = [...prev];
+                      if (updated[toolAssistantIndex]) {
+                        updated[toolAssistantIndex] = {
+                          ...updated[toolAssistantIndex],
+                          content: toolContent,
+                          isStreaming: true
+                        };
+                      }
+                      return updated;
+                    });
+                  }
+                } catch {}
+              }
+            }
+
+            const toolFinalMsg = {
+              id: `msg-${Date.now() + 3}`,
+              role: 'assistant',
+              content: toolContent,
+              isThinking: false,
+              isStreaming: false,
+              model: selectedModel,
+              timestamp: new Date().toISOString()
+            };
+            setMessages(prev => {
+              const updated = [...prev];
+              updated[toolAssistantIndex] = toolFinalMsg;
+              return updated;
+            });
+            appendMessageToStorage(currSessionId, toolFinalMsg);
+          }
+        } catch {}
+      }
     } catch (err) {
       if (err.name !== 'AbortError') {
         const errMsg = {
@@ -1273,6 +1159,10 @@ export default function ChatPage() {
         />
       )}
 
+      {showConfig && (
+        <ConfigModal isOpen={showConfig} onClose={() => setShowConfig(false)} />
+      )}
+
       {errorToast && (
         <div
           style={{
@@ -1332,14 +1222,6 @@ export default function ChatPage() {
             >
               <span className="material-symbols-outlined" style={{ fontSize: '18px' }}>add</span>
               New Chat
-            </button>
-            <button
-              onClick={() => setIsSidebarOpen(false)}
-              className="btn btn-secondary btn-sm"
-              style={{ padding: '6px', borderRadius: '6px' }}
-              title="Collapse chat history"
-            >
-              <span className="material-symbols-outlined" style={{ fontSize: '18px' }}>dock_to_left</span>
             </button>
           </div>
 
@@ -1579,6 +1461,16 @@ export default function ChatPage() {
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            {/* Config Button */}
+            <button
+              onClick={() => setShowConfig(true)}
+              className="btn btn-secondary btn-sm"
+              style={{ padding: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+              title="MCP Servers & Skills"
+            >
+              <span className="material-symbols-outlined" style={{ fontSize: '18px' }}>extension</span>
+            </button>
+
             {/* Mode Switcher */}
             <div
               style={{
@@ -1599,7 +1491,7 @@ export default function ChatPage() {
                   border: 'none',
                   cursor: 'pointer',
                   background: chatMode === 'chat' ? 'var(--color-primary)' : 'transparent',
-                  color: chatMode === 'chat' ? '#000' : 'var(--text-muted)',
+                  color: chatMode === 'chat' ? '#fff' : 'var(--text-muted)',
                   display: 'flex',
                   alignItems: 'center',
                   gap: '4px'
@@ -1618,7 +1510,7 @@ export default function ChatPage() {
                   border: 'none',
                   cursor: 'pointer',
                   background: chatMode === 'image' ? 'var(--color-primary)' : 'transparent',
-                  color: chatMode === 'image' ? '#000' : 'var(--text-muted)',
+                  color: chatMode === 'image' ? '#fff' : 'var(--text-muted)',
                   display: 'flex',
                   alignItems: 'center',
                   gap: '4px'
@@ -1634,35 +1526,51 @@ export default function ChatPage() {
               style={{
                 display: 'flex',
                 alignItems: 'center',
-                gap: '8px',
-                background: 'var(--bg-surface)',
-                border: '1px solid var(--border-color)',
-                borderRadius: '6px',
-                padding: '3px 8px'
+                gap: '6px',
               }}
             >
-              <ProviderIcon provider={selectedModel.includes('/') ? selectedModel.split('/')[0] : 'openai'} size={18} />
-              <select
-                value={selectedModel}
-                onChange={e => handleModelChange(e.target.value)}
-                disabled={isLoadingModels}
+              <div
                 style={{
-                  border: 'none',
-                  background: 'transparent',
-                  color: 'var(--text-main)',
-                  fontSize: '12.5px',
-                  fontWeight: 500,
-                  maxWidth: '240px',
-                  outline: 'none',
-                  cursor: 'pointer'
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  background: 'var(--bg-surface)',
+                  border: '1px solid var(--border-color)',
+                  borderRadius: '6px',
+                  padding: '3px 8px'
                 }}
               >
-                {models.map(m => (
-                  <option key={m.id} value={m.id} style={{ background: '#1c2128', color: '#fff' }}>
-                    {m.id}
-                  </option>
-                ))}
-              </select>
+                <ProviderIcon provider={selectedModel.includes('/') ? selectedModel.split('/')[0] : 'openai'} size={18} />
+                <select
+                  value={selectedModel}
+                  onChange={e => handleModelChange(e.target.value)}
+                  disabled={isLoadingModels}
+                  style={{
+                    border: 'none',
+                    background: 'transparent',
+                    color: 'var(--text-main)',
+                    fontSize: '12.5px',
+                    fontWeight: 500,
+                    maxWidth: '240px',
+                    outline: 'none',
+                    cursor: 'pointer'
+                  }}
+                >
+                  {models.map(m => (
+                    <option key={m.id} value={m.id} style={{ background: '#1c2128', color: '#fff' }}>
+                      {m.id}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <button
+                onClick={async () => { const key = await fetchSystemApiKey(); await fetchModels(key); }}
+                className="btn btn-secondary btn-sm"
+                style={{ padding: '5px', borderRadius: '6px' }}
+                title="Refresh models"
+              >
+                <span className="material-symbols-outlined" style={{ fontSize: '16px', animation: isLoadingModels ? 'spin 1s linear infinite' : 'none' }}>refresh</span>
+              </button>
             </div>
 
             <button
@@ -1750,8 +1658,9 @@ export default function ChatPage() {
                   width: '56px',
                   height: '56px',
                   borderRadius: '16px',
-                  background: 'rgba(0, 200, 255, 0.1)',
-                  color: 'var(--color-primary)',
+                  background: 'var(--bg-surface)',
+                  border: '1px solid var(--border-color)',
+                  color: 'var(--text-muted)',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
@@ -1847,170 +1756,150 @@ export default function ChatPage() {
                 <div
                   key={idx}
                   style={{
-                    display: 'flex',
-                    flexDirection: 'column',
-                    alignItems: isUser ? 'flex-end' : 'flex-start',
                     maxWidth: '860px',
                     width: '100%',
-                    margin: '0 auto'
+                    margin: '0 auto',
+                    padding: isUser ? '0 0 0 20%' : '0',
                   }}
                 >
-                  <div
-                    style={{
-                      display: 'flex',
-                      gap: '12px',
-                      flexDirection: isUser ? 'row-reverse' : 'row',
-                      maxWidth: isUser ? '85%' : '100%',
-                      width: isUser ? 'auto' : '100%'
-                    }}
-                  >
-                    <div
-                      style={{
-                        width: '32px',
-                        height: '32px',
-                        borderRadius: '8px',
-                        background: isUser ? 'var(--color-primary)' : 'var(--bg-card)',
-                        border: '1px solid var(--border-color)',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        flexShrink: 0,
-                        marginTop: '2px'
-                      }}
-                    >
-                      {isUser ? (
-                        <span className="material-symbols-outlined" style={{ fontSize: '18px', color: '#000' }}>
-                          person
-                        </span>
-                      ) : (
-                        <ProviderIcon
-                          provider={m.model?.includes('/') ? m.model.split('/')[0] : 'openai'}
-                          size={18}
-                        />
-                      )}
+                  {isUser && m.attachments && m.attachments.length > 0 && (
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '10px', justifyContent: 'flex-end' }}>
+                      {m.attachments.map((att, aIdx) => {
+                        if (att.type === 'image') {
+                          return (
+                            <img
+                              key={aIdx}
+                              src={att.dataUrl}
+                              alt={att.name}
+                              onClick={() => setLightboxImg({ url: att.dataUrl, alt: att.name })}
+                              style={{
+                                maxWidth: '180px',
+                                maxHeight: '120px',
+                                borderRadius: '6px',
+                                cursor: 'pointer',
+                                objectFit: 'cover',
+                                border: '1px solid var(--border-color)'
+                              }}
+                            />
+                          );
+                        }
+                        return (
+                          <div
+                            key={aIdx}
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '6px',
+                              padding: '4px 8px',
+                              borderRadius: '6px',
+                              background: 'rgba(255,255,255,0.05)',
+                              fontSize: '11.5px',
+                              border: '1px solid var(--border-color)'
+                            }}
+                          >
+                            <span className="material-symbols-outlined" style={{ fontSize: '15px' }}>description</span>
+                            <span>{att.name}</span>
+                            <span style={{ color: 'var(--text-muted)' }}>({(att.size / 1024).toFixed(1)} KB)</span>
+                          </div>
+                        );
+                      })}
                     </div>
+                  )}
 
+                  {!isUser && (m.reasoning || m.isThinking) && (
+                    <ThinkingSection
+                      reasoning={m.reasoning}
+                      isThinking={m.isThinking}
+                      durationSec={m.thinkingDurationSec}
+                    />
+                  )}
+
+                  {!isUser && m.tool_calls && m.tool_calls.length > 0 && (
+                    <div style={{ margin: '8px 0' }}>
+                      {m.tool_calls.map((tc, i) => (
+                        <ToolCallCard key={tc.id || i} toolCall={tc} isExecuting={m.isStreaming && !m.content} />
+                      ))}
+                    </div>
+                  )}
+
+                  {isUser ? (
                     <div
                       style={{
-                        flex: 1,
-                        background: isUser ? 'var(--bg-hover)' : 'var(--bg-card)',
-                        border: '1px solid var(--border-color)',
-                        borderRadius: isUser ? '14px 4px 14px 14px' : '4px 14px 14px 14px',
-                        padding: '14px 18px',
-                        boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
+                        background: 'var(--bg-hover)',
+                        borderRadius: '18px',
+                        padding: '10px 16px',
+                        display: 'inline-block',
+                        float: 'right',
+                        maxWidth: '100%',
+                        clear: 'both'
                       }}
                     >
-                      {isUser && m.attachments && m.attachments.length > 0 && (
-                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '10px' }}>
-                          {m.attachments.map((att, aIdx) => {
-                            if (att.type === 'image') {
-                              return (
-                                <img
-                                  key={aIdx}
-                                  src={att.dataUrl}
-                                  alt={att.name}
-                                  onClick={() => setLightboxImg({ url: att.dataUrl, alt: att.name })}
-                                  style={{
-                                    maxWidth: '180px',
-                                    maxHeight: '120px',
-                                    borderRadius: '6px',
-                                    cursor: 'pointer',
-                                    objectFit: 'cover',
-                                    border: '1px solid var(--border-color)'
-                                  }}
-                                />
-                              );
-                            }
-                            return (
-                              <div
-                                key={aIdx}
-                                style={{
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                  gap: '6px',
-                                  padding: '4px 8px',
-                                  borderRadius: '6px',
-                                  background: 'rgba(255,255,255,0.05)',
-                                  fontSize: '11.5px',
-                                  border: '1px solid var(--border-color)'
-                                }}
-                              >
-                                <span className="material-symbols-outlined" style={{ fontSize: '15px' }}>description</span>
-                                <span>{att.name}</span>
-                                <span style={{ color: 'var(--text-muted)' }}>({(att.size / 1024).toFixed(1)} KB)</span>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      )}
-
-                      {!isUser && (m.reasoning || m.isThinking) && (
-                        <ThinkingSection
-                          reasoning={m.reasoning}
-                          isThinking={m.isThinking}
-                          durationSec={m.thinkingDurationSec}
-                        />
-                      )}
-
-                      <RenderMarkdown
+                      <MarkdownRenderer
                         content={m.content}
                         onImageClick={(url, alt) => setLightboxImg({ url, alt })}
                       />
-
-                      {!isUser && m.isStreaming && !m.content && !m.reasoning && (
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--text-muted)', fontSize: '13px' }}>
-                          <span className="material-symbols-outlined spin" style={{ fontSize: '16px', color: 'var(--color-primary)' }}>
-                            progress_activity
-                          </span>
-                          Generating response...
-                        </div>
-                      )}
-
-                      {!isUser && !m.isStreaming && (
-                        <div
-                          style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'space-between',
-                            marginTop: '12px',
-                            paddingTop: '8px',
-                            borderTop: '1px solid var(--border-color)',
-                            fontSize: '11px',
-                            color: 'var(--text-muted)'
-                          }}
-                        >
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                            <span>{m.model || selectedModel}</span>
-                            {m.timestamp && <span>• {formatRelativeTime(m.timestamp)}</span>}
-                          </div>
-                          <div style={{ display: 'flex', gap: '8px' }}>
-                            <button
-                              onClick={() => {
-                                navigator.clipboard.writeText(m.content);
-                                alert('Message copied to clipboard!');
-                              }}
-                              style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}
-                              title="Copy response"
-                            >
-                              <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>content_copy</span>
-                              Copy
-                            </button>
-                            <button
-                              onClick={() => {
-                                const lastUserMsg = [...messages].reverse().find(msg => msg.role === 'user');
-                                if (lastUserMsg) handleSend(lastUserMsg.content);
-                              }}
-                              style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}
-                              title="Regenerate"
-                            >
-                              <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>refresh</span>
-                              Retry
-                            </button>
-                          </div>
-                        </div>
-                      )}
                     </div>
-                  </div>
+                  ) : (
+                    <div style={{
+                      padding: '4px 0',
+                      color: m.isError ? 'var(--color-danger)' : undefined,
+                      fontStyle: m.isError ? 'italic' : undefined,
+                      fontSize: m.isError ? '13px' : undefined
+                    }}>
+                      <MarkdownRenderer
+                        content={m.content}
+                        onImageClick={(url, alt) => setLightboxImg({ url, alt })}
+                      />
+                    </div>
+                  )}
+
+                  {!isUser && m.isStreaming && !m.content && !m.reasoning && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--text-muted)', fontSize: '13px' }}>
+                      <span className="material-symbols-outlined spin" style={{ fontSize: '16px', color: 'var(--color-primary)' }}>
+                        progress_activity
+                      </span>
+                      Generating response...
+                    </div>
+                  )}
+
+                  {!isUser && !m.isStreaming && m.content && (
+                    <div
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '12px',
+                        marginTop: '8px',
+                        fontSize: '11px',
+                        color: 'var(--text-muted)',
+                        opacity: 0
+                      }}
+                      className="msg-actions"
+                    >
+                      <span>{m.model || selectedModel}</span>
+                      {m.timestamp && <span>• {formatRelativeTime(m.timestamp)}</span>}
+                      <div style={{ display: 'flex', gap: '6px', marginLeft: 'auto' }}>
+                        <button
+                          onClick={() => {
+                            navigator.clipboard.writeText(m.content);
+                          }}
+                          style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}
+                          title="Copy response"
+                        >
+                          <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>content_copy</span>
+                        </button>
+                        <button
+                          onClick={() => {
+                            const lastUserMsg = [...messages].reverse().find(msg => msg.role === 'user');
+                            if (lastUserMsg) handleSend(lastUserMsg.content);
+                          }}
+                          style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}
+                          title="Regenerate"
+                        >
+                          <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>refresh</span>
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               );
             })
@@ -2021,8 +1910,6 @@ export default function ChatPage() {
         {/* Bottom Input Area */}
         <div
           style={{
-            borderTop: '1px solid var(--border-color)',
-            background: 'var(--bg-card)',
             padding: '14px 20px 18px 20px',
             position: 'relative'
           }}
@@ -2090,16 +1977,36 @@ export default function ChatPage() {
               position: 'relative',
               borderRadius: '12px',
               border: '1px solid var(--border-color)',
-              background: 'var(--bg-surface)',
-              overflow: 'hidden',
-              boxShadow: '0 2px 10px rgba(0,0,0,0.1)'
+              background: 'var(--bg-card)',
+              overflow: 'visible'
             }}
           >
+            {slash.isOpen && (
+              <SlashCommandPopup
+                commands={slash.filtered}
+                selectedIndex={slash.selectedIndex}
+                onSelect={(cmd) => {
+                  const newInput = slash.selectCommand(cmd);
+                  setInput(newInput);
+                  textareaRef.current?.focus();
+                }}
+              />
+            )}
             <textarea
               ref={textareaRef}
               value={input}
-              onChange={e => setInput(e.target.value)}
+              onChange={e => {
+                setInput(e.target.value);
+                slash.handleInput(e.target.value);
+              }}
               onKeyDown={e => {
+                const slashResult = slash.handleKeyDown(e);
+                if (slashResult && typeof slashResult === 'object') {
+                  const newInput = slash.selectCommand(slashResult);
+                  setInput(newInput);
+                  return;
+                }
+                if (slashResult) return;
                 if (e.key === 'Enter' && !e.shiftKey) {
                   e.preventDefault();
                   handleSend();
@@ -2108,8 +2015,8 @@ export default function ChatPage() {
               onPaste={handlePaste}
               placeholder={
                 chatMode === 'image'
-                  ? 'Describe an image prompt... (e.g. A hyper-detailed cosmic dragon in neon nebulae)'
-                  : 'Message AI Router... (Paste images, attach files up to 5MB, or press Shift+Enter for newline)'
+                  ? 'Describe an image prompt...'
+                  : 'Message AI Router... (Type / for commands)'
               }
               rows={input.split('\n').length > 1 ? Math.min(input.split('\n').length, 6) : 2}
               style={{
@@ -2192,7 +2099,7 @@ export default function ChatPage() {
                       borderRadius: '8px',
                       border: 'none',
                       background: input.trim() || attachments.length > 0 ? 'var(--color-primary)' : 'var(--border-color)',
-                      color: input.trim() || attachments.length > 0 ? '#000' : 'var(--text-muted)',
+                      color: input.trim() || attachments.length > 0 ? '#fff' : 'var(--text-muted)',
                       cursor: input.trim() || attachments.length > 0 ? 'pointer' : 'not-allowed',
                       display: 'flex',
                       alignItems: 'center',

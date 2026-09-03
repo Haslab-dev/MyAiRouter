@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200');
+@import url('https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200');
 
 @keyframes spin {
   from { transform: rotate(0deg); }
@@ -36,7 +36,7 @@
   --nav-active-border: rgba(0, 200, 255, 0.15);
   --status-bg: rgba(46, 204, 113, 0.05);
   --status-border: rgba(46, 204, 113, 0.15);
-  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-sans: 'Roboto', -apple-system, BlinkMacSystemFont, sans-serif;
   --font-mono: 'JetBrains Mono', monospace;
   --radius-lg: 12px;
   --radius-md: 8px;
@@ -267,19 +267,61 @@ body::before {
 
 .app-container {
   display: flex;
-  flex: 1;
-  height: calc(100vh - 56px);
+  height: 92vh;
   overflow: hidden;
 }
 
 .sidebar {
   width: 200px;
+  height: 100%;
   background-color: var(--bg-sidebar);
   border-right: 1px solid var(--border-color);
   display: flex;
   flex-direction: column;
   padding: 16px 12px;
   flex-shrink: 0;
+  transition: width 0.2s ease, padding 0.2s ease;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.sidebar.collapsed {
+  width: 60px;
+  padding: 16px 8px;
+}
+
+.sidebar-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-color);
+  background: transparent;
+  cursor: pointer;
+  color: var(--text-muted);
+  transition: all 0.15s ease;
+  margin: 8px 0 0;
+  flex-shrink: 0;
+}
+
+.sidebar-toggle:hover {
+  background-color: var(--nav-hover);
+  color: var(--text-main);
+}
+
+.sidebar.collapsed .sidebar-toggle-wrap {
+  justify-content: center !important;
+}
+
+.sidebar.collapsed .nav-item {
+  justify-content: center;
+  padding: 8px;
+}
+
+.sidebar.collapsed .nav-item.active {
+  padding: 8px;
 }
 
 .nav-links {
@@ -507,31 +549,27 @@ input:checked + .slider:before { transform: translateX(22px); }
 }
 
 .btn-primary {
-  background: linear-gradient(135deg, var(--color-primary), #00a4d6);
+  background: var(--color-primary);
   color: #fff;
-  box-shadow: 0 4px 16px rgba(0, 200, 255, 0.25);
 }
 
 .btn-primary:hover {
-  background: linear-gradient(135deg, var(--color-primary-hover), var(--color-primary));
-  transform: translateY(-1px);
-  box-shadow: 0 6px 20px rgba(0, 200, 255, 0.35);
+  background: var(--color-primary-hover);
 }
 
 .btn-secondary {
-  background: var(--input-bg);
+  background: var(--bg-surface);
   color: var(--text-muted);
   border: 1px solid var(--border-color);
 }
 
 .btn-secondary:hover {
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--nav-hover);
   color: var(--text-main);
-  border-color: rgba(255, 255, 255, 0.1);
 }
 
 .btn-danger {
-  background: linear-gradient(135deg, var(--color-danger), #dc2626);
+  background: var(--color-danger);
   color: #fff;
 }
 
@@ -713,4 +751,10 @@ code {
   background: rgba(255, 255, 255, 0.12);
 }
 
+.msg-actions {
+  transition: opacity 0.15s ease;
+}
 
+div:hover > .msg-actions {
+  opacity: 1 !important;
+}

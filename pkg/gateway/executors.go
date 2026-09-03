@@ -86,6 +86,8 @@ func executeOpenAI(ctx context.Context, conn *db.ProviderConnection, apiKey stri
 			baseUrl = "https://dashscope.aliyuncs.com/compatible-mode/v1"
 		case "tencent":
 			baseUrl = "https://api.hunyuan.cloud.tencent.com/v1"
+		case "cerebras":
+			baseUrl = "https://api.cerebras.ai/v1"
 		case "vercel":
 			baseUrl = "https://api.vercel.ai/v1"
 		case "fireworks":

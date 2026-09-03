@@ -373,6 +373,7 @@ func HandleListModels(w http.ResponseWriter, r *http.Request) {
 		"vercel":        {"openai/gpt-4o", "anthropic/claude-3-5-sonnet"},
 		"fireworks":      {"accounts/fireworks/models/deepseek-r1", "accounts/fireworks/models/llama-v3p3-70b-instruct"},
 		"cloudflare-ai":  {"@cf/meta/llama-3.3-70b-instruct", "@cf/deepseek-ai/deepseek-r1-distill-qwen-32b"},
+		"cerebras":       {"llama-3.3-70b", "llama-3.1-8b", "qwen-2.5-32b", "deepseek-r1-distill-llama-70b"},
 	}
 
 	seenProviders := make(map[string]bool)

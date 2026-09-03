@@ -43,33 +43,33 @@ export function getProviderIconPath(providerId, providerName = '', providerType 
   };
 
   if (customMap[id]) {
-    return `/providers/${customMap[id]}`;
+    return `/assets/icons/${customMap[id]}`;
   }
 
   // 2. Direct exact match in known icons
   if (KNOWN_ICONS.includes(id)) {
-    return `/providers/${id}.png`;
+    return `/assets/icons/${id}.png`;
   }
 
   // 3. Match from id or name against known icon keywords
   for (const icon of KNOWN_ICONS) {
     if (icon.length >= 3) {
       if (id === icon || id.includes(icon) || name === icon || name.includes(icon)) {
-        return `/providers/${icon}.png`;
+        return `/assets/icons/${icon}.png`;
       }
     }
   }
 
   // 4. Fallback based on type
   if (type === 'anthropic-compatible' || id.startsWith('anthropic-compatible') || id.includes('anthropic')) {
-    return '/providers/anthropic.png';
+    return '/assets/icons/anthropic.png';
   }
 
   if (type === 'openai-compatible' || id.startsWith('openai-compatible') || id.includes('openai')) {
-    return '/providers/openai.png';
+    return '/assets/icons/openai.png';
   }
 
-  return '/providers/openai.png';
+  return '/assets/icons/openai.png';
 }
 
 export default function ProviderIcon({

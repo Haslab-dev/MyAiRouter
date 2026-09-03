@@ -22,7 +22,30 @@ const CORE_PROVIDERS = [
   { id: 'groq', name: 'Groq', type: 'apikey', color: '#f97316', desc: 'LPU inference engine for fast LLMs' },
   { id: 'openrouter', name: 'OpenRouter', type: 'apikey', color: '#6366f1', desc: 'Unified API for top AI models' },
   { id: 'deepseek', name: 'DeepSeek', type: 'apikey', color: '#3b82f6', desc: 'DeepSeek AI reasoning & chat models' },
+  { id: 'cerebras', name: 'Cerebras', type: 'apikey', color: '#f97316', desc: 'Ultra-fast inference on Cerebras hardware', url: 'https://api.cerebras.ai/v1' },
 ];
+
+const PROVIDER_URLS = {
+  'opencode-go': 'https://opencode.ai/zen/go/v1',
+  'opencode-zen': 'https://opencode.ai/zen/v1',
+  'kenari': 'https://kenari.id/v1',
+  'sumopod': 'https://ai.sumopod.com/v1',
+  'mistral': 'https://api.mistral.ai/v1',
+  'meta': 'https://api.meta.ai/v1',
+  'ollama': 'http://localhost:11434/v1',
+  'qwen': 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+  'tencent': 'https://api.hunyuan.cloud.tencent.com/v1',
+  'vercel': 'https://api.vercel.ai/v1',
+  'fireworks': 'https://api.fireworks.ai/inference/v1',
+  'cloudflare-ai': 'https://api.cloudflare.com/client/v4/accounts/{account_id}/ai/v1',
+  'glm': 'https://open.bigmodel.cn/api/paas/v4',
+  'glm-coding': 'https://open.bigmodel.cn/api/coding/paas/v4',
+  'nvidia': 'https://integrate.api.nvidia.com/v1',
+  'groq': 'https://api.groq.com/openai/v1',
+  'openrouter': 'https://openrouter.ai/api/v1',
+  'deepseek': 'https://api.deepseek.com/v1',
+  'cerebras': 'https://api.cerebras.ai/v1',
+};
 
 export default function ProvidersPage() {
   const notify = useSnackbar((s) => s.notify);
@@ -478,26 +501,7 @@ export default function ProvidersPage() {
     e.preventDefault();
     if (!credKey.trim() || !selectedStandard) return;
 
-    const defaultUrls = {
-      'opencode-go': 'https://opencode.ai/zen/go/v1',
-      'opencode-zen': 'https://opencode.ai/zen/v1',
-      'kenari': 'https://kenari.id/v1',
-      'sumopod': 'https://ai.sumopod.com/v1',
-      'mistral': 'https://api.mistral.ai/v1',
-      'meta': 'https://api.meta.ai/v1',
-      'ollama': 'http://localhost:11434/v1',
-      'qwen': 'https://dashscope.aliyuncs.com/compatible-mode/v1',
-      'tencent': 'https://api.hunyuan.cloud.tencent.com/v1',
-      'vercel': 'https://api.vercel.ai/v1',
-      'fireworks': 'https://api.fireworks.ai/inference/v1',
-      'cloudflare-ai': 'https://api.cloudflare.com/client/v4/accounts/{account_id}/ai/v1',
-      'glm': 'https://open.bigmodel.cn/api/paas/v4',
-      'glm-coding': 'https://open.bigmodel.cn/api/coding/paas/v4',
-      'nvidia': 'https://integrate.api.nvidia.com/v1',
-      'groq': 'https://api.groq.com/openai/v1',
-      'openrouter': 'https://openrouter.ai/api/v1',
-      'deepseek': 'https://api.deepseek.com/v1',
-    };
+    const defaultUrls = PROVIDER_URLS;
 
     const headersMap = {};
     customHeaders.forEach(h => {
@@ -924,7 +928,7 @@ export default function ProvidersPage() {
               </div>
             </div>
             <div style={{ fontSize: '13px', color: 'var(--text-muted)' }}>
-              <strong>Base Target endpoint:</strong> {activeConn?.data?.baseUrl || 'Not configured'}
+              <strong>Base Target endpoint:</strong> {activeConn?.data?.baseUrl || PROVIDER_URLS[activeConn?.provider] || 'Not configured'}
             </div>
           </div>
 
