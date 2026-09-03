@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"strings"
 	"time"
@@ -71,6 +72,26 @@ func executeOpenAI(ctx context.Context, conn *db.ProviderConnection, apiKey stri
 			baseUrl = "https://opencode.ai/zen/v1"
 		case "opencode-go":
 			baseUrl = "https://opencode.ai/zen/go/v1"
+		case "kenari":
+			baseUrl = "https://kenari.id/v1"
+		case "sumopod":
+			baseUrl = "https://ai.sumopod.com/v1"
+		case "mistral":
+			baseUrl = "https://api.mistral.ai/v1"
+		case "meta":
+			baseUrl = "https://api.meta.ai/v1"
+		case "ollama":
+			baseUrl = "http://localhost:11434/v1"
+		case "qwen":
+			baseUrl = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+		case "tencent":
+			baseUrl = "https://api.hunyuan.cloud.tencent.com/v1"
+		case "vercel":
+			baseUrl = "https://api.vercel.ai/v1"
+		case "fireworks":
+			baseUrl = "https://api.fireworks.ai/inference/v1"
+		case "cloudflare-ai":
+			baseUrl = "https://api.cloudflare.com/client/v4/accounts/{account_id}/ai/v1"
 		default:
 			baseUrl = "https://api.openai.com/v1"
 		}
@@ -277,12 +298,22 @@ func extractStreamUsage(line string) (promptTokens, completionTokens, cachedToke
 			return 0, 0, 0
 		}
 		if usage, ok := chunk["usage"].(map[string]interface{}); ok {
-			if p, ok := usage["prompt_tokens"].(float64); ok {
+			if p, ok := usage["prompt_tokens"].(float64); ok && p > 0 {
+				promptTokens = int(p)
+			} else if p, ok := usage["input_tokens"].(float64); ok && p > 0 {
+				promptTokens = int(p)
+			} else if p, ok := usage["prompt_eval_count"].(float64); ok && p > 0 {
 				promptTokens = int(p)
 			}
-			if c, ok := usage["completion_tokens"].(float64); ok {
+
+			if c, ok := usage["completion_tokens"].(float64); ok && c > 0 {
+				completionTokens = int(c)
+			} else if c, ok := usage["output_tokens"].(float64); ok && c > 0 {
+				completionTokens = int(c)
+			} else if c, ok := usage["eval_count"].(float64); ok && c > 0 {
 				completionTokens = int(c)
 			}
+
 			// Try common cached token field names at top level
 			for _, key := range []string{"cache_creation_input_tokens", "cache_read_input_tokens", "cached_tokens"} {
 				if v, ok := usage[key].(float64); ok {
@@ -297,9 +328,21 @@ func extractStreamUsage(line string) (promptTokens, completionTokens, cachedToke
 					}
 				}
 			}
-			if promptTokens > 0 || completionTokens > 0 || cachedTokens > 0 {
-				return promptTokens, completionTokens, cachedTokens
+		}
+
+		if promptTokens == 0 {
+			if p, ok := chunk["prompt_eval_count"].(float64); ok && p > 0 {
+				promptTokens = int(p)
 			}
+		}
+		if completionTokens == 0 {
+			if c, ok := chunk["eval_count"].(float64); ok && c > 0 {
+				completionTokens = int(c)
+			}
+		}
+
+		if promptTokens > 0 || completionTokens > 0 || cachedTokens > 0 {
+			return promptTokens, completionTokens, cachedTokens
 		}
 	}
 	return 0, 0, 0
@@ -336,6 +379,9 @@ func HandleSSEStream(w http.ResponseWriter, r *http.Request, stream io.ReadClose
 	completionTokens := 0
 	cachedTokens := 0
 
+	totalChars := 0
+	chunkCount := 0
+
 	for scanner.Scan() {
 		line := scanner.Text()
 		if len(line) == 0 {
@@ -343,10 +389,14 @@ func HandleSSEStream(w http.ResponseWriter, r *http.Request, stream io.ReadClose
 		}
 
 		// Extract usage from stream final chunk (OpenAI format)
-		if format == "openai" {
-			if pt, ct, cat := extractStreamUsage(line); pt > 0 || ct > 0 || cat > 0 {
+		if pt, ct, cat := extractStreamUsage(line); pt > 0 || ct > 0 || cat > 0 {
+			if pt > 0 {
 				promptTokens = pt
+			}
+			if ct > 0 {
 				completionTokens = ct
+			}
+			if cat > 0 {
 				cachedTokens = cat
 			}
 		}
@@ -369,14 +419,22 @@ func HandleSSEStream(w http.ResponseWriter, r *http.Request, stream io.ReadClose
 		if len(outputLine) > 0 {
 			_, _ = w.Write(outputLine)
 			flusher.Flush()
-
-			if promptTokens == 0 && completionTokens == 0 {
-				completionTokens += 1
-			}
+			totalChars += len(outputLine)
+			chunkCount++
 		}
 
 		if done {
 			break
+		}
+	}
+
+	if completionTokens <= 0 {
+		if totalChars > 0 {
+			completionTokens = int(math.Max(1, math.Ceil(float64(totalChars)/10.0)))
+		} else if chunkCount > 0 {
+			completionTokens = chunkCount
+		} else {
+			completionTokens = 1
 		}
 	}
 

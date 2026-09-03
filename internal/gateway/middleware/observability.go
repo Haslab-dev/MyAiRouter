@@ -47,6 +47,7 @@ func Observability(ctx *context.GatewayContext, next HandlerFunc) error {
 	if ctx.ResponseCode >= 400 || err != nil {
 		statusStr = "error"
 	}
+	isSuccess := statusStr == "ok"
 
 	// --- Token estimation fallback ---
 	var promptChars int
@@ -64,17 +65,30 @@ func Observability(ctx *context.GatewayContext, next HandlerFunc) error {
 
 	respPreview := extractResponsePreview(ctx.ResponseBody, 512)
 
-	if ctx.PromptTokens == 0 && promptChars > 0 {
-		ctx.PromptTokens = int(math.Max(1, float64(promptChars/4)))
+	if ctx.PromptTokens <= 0 {
+		if promptChars > 0 {
+			ctx.PromptTokens = int(math.Max(1, math.Ceil(float64(promptChars)/4.0)))
+		} else if isSuccess {
+			ctx.PromptTokens = 1
+		}
 	}
-	if ctx.CompletionTokens == 0 && len(respPreview) > 0 {
-		ctx.CompletionTokens = int(math.Max(1, float64(len(respPreview)/4)))
+	if ctx.CompletionTokens <= 0 {
+		if len(respPreview) > 0 {
+			ctx.CompletionTokens = int(math.Max(1, math.Ceil(float64(len(respPreview)/4.0))))
+		} else if len(ctx.ResponseBody) > 0 && isSuccess {
+			ctx.CompletionTokens = int(math.Max(1, math.Ceil(float64(len(ctx.ResponseBody)/10.0))))
+		} else if isSuccess {
+			ctx.CompletionTokens = 1
+		}
 	}
 
 	ctx.TPS = math.Round((float64(ctx.PromptTokens+ctx.CompletionTokens)/latSec)*10) / 10
 
 	// Calculate upstream API cost
 	ctx.Cost = db.CalculateCost(ctx.Provider, ctx.Model, ctx.PromptTokens, ctx.CompletionTokens, ctx.CachedTokens)
+	if ctx.Cost <= 0 && (ctx.PromptTokens > 0 || ctx.CompletionTokens > 0) && isSuccess {
+		ctx.Cost = float64(ctx.PromptTokens+ctx.CompletionTokens) * 0.000002
+	}
 
 	// --- Usage table (for charts / KPI sums) ---
 	metaMap := map[string]interface{}{
@@ -322,35 +336,85 @@ func extractResponsePreview(body []byte, maxLen int) string {
 	}
 	var resp map[string]interface{}
 	if err := json.Unmarshal(body, &resp); err != nil {
-		return ""
+		trimmed := strings.TrimSpace(string(body))
+		if len(trimmed) > maxLen {
+			return trimmed[:maxLen] + "...[TRUNCATED]"
+		}
+		return trimmed
 	}
+	// 1. OpenAI choices[0].message.content or delta or text
 	if choices, ok := resp["choices"].([]interface{}); ok && len(choices) > 0 {
 		if choice, ok := choices[0].(map[string]interface{}); ok {
 			if msg, ok := choice["message"].(map[string]interface{}); ok {
-				if content, ok := msg["content"].(string); ok {
-					trimmed := strings.TrimSpace(content)
-					if len(trimmed) > maxLen {
-						return trimmed[:maxLen] + "...[TRUNCATED]"
-					}
-					return trimmed
+				if content := extractTextFromContent(msg["content"]); content != "" {
+					return truncatePreview(content, maxLen)
+				}
+				if reasoning := extractTextFromContent(msg["reasoning_content"]); reasoning != "" {
+					return truncatePreview(reasoning, maxLen)
+				}
+				if reasoning := extractTextFromContent(msg["reasoning"]); reasoning != "" {
+					return truncatePreview(reasoning, maxLen)
+				}
+			}
+			if text, ok := choice["text"].(string); ok && text != "" {
+				return truncatePreview(text, maxLen)
+			}
+			if delta, ok := choice["delta"].(map[string]interface{}); ok {
+				if content := extractTextFromContent(delta["content"]); content != "" {
+					return truncatePreview(content, maxLen)
+				}
+				if reasoning := extractTextFromContent(delta["reasoning_content"]); reasoning != "" {
+					return truncatePreview(reasoning, maxLen)
 				}
 			}
 		}
 	}
-	// Handle error responses (e.g., 403, 401, etc.)
+	// 2. Anthropic native content
+	if contentArr, ok := resp["content"].([]interface{}); ok && len(contentArr) > 0 {
+		if text := extractTextFromContent(contentArr); text != "" {
+			return truncatePreview(text, maxLen)
+		}
+	}
+	// 3. Ollama native message.content or response
+	if msg, ok := resp["message"].(map[string]interface{}); ok {
+		if content := extractTextFromContent(msg["content"]); content != "" {
+			return truncatePreview(content, maxLen)
+		}
+	}
+	if responseStr, ok := resp["response"].(string); ok && responseStr != "" {
+		return truncatePreview(responseStr, maxLen)
+	}
+	// 4. Gemini native candidates
+	if candidates, ok := resp["candidates"].([]interface{}); ok && len(candidates) > 0 {
+		if cand, ok := candidates[0].(map[string]interface{}); ok {
+			if contentObj, ok := cand["content"].(map[string]interface{}); ok {
+				if text := extractTextFromContent(contentObj["parts"]); text != "" {
+					return truncatePreview(text, maxLen)
+				}
+			}
+		}
+	}
+	// 5. Handle error responses (e.g., 403, 401, etc.)
 	if errObj, ok := resp["error"].(map[string]interface{}); ok {
 		if msg, ok := errObj["message"].(string); ok && msg != "" {
-			trimmed := strings.TrimSpace(msg)
-			if len(trimmed) > maxLen {
-				return trimmed[:maxLen] + "...[TRUNCATED]"
-			}
-			return trimmed
+			return truncatePreview(msg, maxLen)
 		}
 		if code, ok := errObj["code"].(float64); ok {
 			return fmt.Sprintf("Error code: %.0f", code)
 		}
 	}
+	if errStr, ok := resp["error"].(string); ok && errStr != "" {
+		return truncatePreview(errStr, maxLen)
+	}
 	return ""
+}
+
+func truncatePreview(s string, maxLen int) string {
+	trimmed := strings.TrimSpace(s)
+	if len(trimmed) > maxLen {
+		return trimmed[:maxLen] + "...[TRUNCATED]"
+	}
+	return trimmed
 }
 
 func extractFinishReason(body []byte) string {
@@ -385,39 +449,32 @@ func extractMessagePreview(body map[string]interface{}, maxLen int) TracePreview
 	if body == nil {
 		return preview
 	}
-	msgs, ok := body["messages"].([]interface{})
-	if !ok || len(msgs) == 0 {
-		return preview
-	}
-
-	for _, m := range msgs {
-		msgMap, ok := m.(map[string]interface{})
-		if !ok {
-			continue
-		}
-		role, _ := msgMap["role"].(string)
-		content := extractTextFromContent(msgMap["content"])
-		if content == "" {
-			continue
-		}
-
-		if (role == "system" || role == "developer") && preview.System == "" {
-			if len(content) > maxLen {
-				preview.System = content[:maxLen] + "...[TRUNCATED]"
-			} else {
-				preview.System = content
+	if msgs, ok := body["messages"].([]interface{}); ok && len(msgs) > 0 {
+		for _, m := range msgs {
+			msgMap, ok := m.(map[string]interface{})
+			if !ok {
+				continue
 			}
-		} else if role == "user" && preview.User == "" {
-			if len(content) > maxLen {
-				preview.User = content[:maxLen] + "...[TRUNCATED]"
-			} else {
-				preview.User = content
+			role, _ := msgMap["role"].(string)
+			content := extractTextFromContent(msgMap["content"])
+			if content == "" {
+				continue
+			}
+
+			if (role == "system" || role == "developer") && preview.System == "" {
+				preview.System = truncatePreview(content, maxLen)
+			} else if role == "user" && preview.User == "" {
+				preview.User = truncatePreview(content, maxLen)
+			}
+
+			if preview.System != "" && preview.User != "" {
+				break
 			}
 		}
-
-		if preview.System != "" && preview.User != "" {
-			break
-		}
+	} else if prompt, ok := body["prompt"].(string); ok && prompt != "" {
+		preview.User = truncatePreview(prompt, maxLen)
+	} else if input, ok := body["input"].(string); ok && input != "" {
+		preview.User = truncatePreview(input, maxLen)
 	}
 
 	return preview

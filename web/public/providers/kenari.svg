@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40">
+  <!-- favicon = the k-mark: lowercase "k" (ink) + brick square accent (persegi),
+       baseline-aligned, same font as the kenari lockup. -->
+  <rect width="40" height="40" rx="9" fill="#FBF6EE"/>
+  <text x="9.5" y="30" font-family="Archivo, Helvetica, Arial, sans-serif" font-weight="800" font-size="27" letter-spacing="-1" fill="#241F1B">k</text>
+  <rect x="24.7" y="25.3" width="4.6" height="4.6" fill="#B5362A"/>
+</svg>

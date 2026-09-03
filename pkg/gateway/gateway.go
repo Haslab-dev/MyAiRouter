@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"strings"
 	"time"
@@ -135,26 +136,30 @@ func handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 			// Update the body model parameter for upstream executor
 			body["model"] = modelName
 
-			// Load settings for token savers
-			settings, _ := db.GetSettings()
-
-			// In-place RTK compression (Bolt)
-			if settings != nil {
-				rtk.CompressMessages(body, settings.RtkEnabled)
-			}
-
-			// In-place prompt injectors (Caveman / Ponytail)
 			format := provider
 			if provider != "anthropic" && provider != "gemini" {
 				format = "openai"
 			}
-			rtk.InjectSystemPrompts(body, format, settings)
 
-			// Headroom compression check
-			if settings != nil && settings.HeadroomEnabled && settings.HeadroomUrl != "" {
-				if msgs, ok := body["messages"].([]interface{}); ok {
-					compressed := rtk.CompressWithHeadroom(r.Context(), settings.HeadroomUrl, modelName, msgs)
-					body["messages"] = compressed
+			// Only apply compression & prompt transformations if explicitly enabled in Configure Model
+			modelCfg := db.GetModelConfigOrDefault(modelName)
+			if modelCfg != nil && modelCfg.Compression.Enabled {
+				settings, _ := db.GetSettings()
+
+				// In-place RTK compression (Bolt)
+				if settings != nil {
+					rtk.CompressMessages(body, settings.RtkEnabled)
+				}
+
+				// In-place prompt injectors (Caveman / Ponytail)
+				rtk.InjectSystemPrompts(body, format, settings)
+
+				// Headroom compression check
+				if settings != nil && settings.HeadroomEnabled && settings.HeadroomUrl != "" {
+					if msgs, ok := body["messages"].([]interface{}); ok {
+						compressed := rtk.CompressWithHeadroom(r.Context(), settings.HeadroomUrl, modelName, msgs)
+						body["messages"] = compressed
+					}
 				}
 			}
 
@@ -200,12 +205,22 @@ func handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 				var parsedResponse map[string]interface{}
 				if err := json.Unmarshal(res.Body, &parsedResponse); err == nil {
 					if usage, ok := parsedResponse["usage"].(map[string]interface{}); ok {
-						if pVal, ok := usage["prompt_tokens"].(float64); ok {
+						if pVal, ok := usage["prompt_tokens"].(float64); ok && pVal > 0 {
+							promptTokens = int(pVal)
+						} else if pVal, ok := usage["input_tokens"].(float64); ok && pVal > 0 {
+							promptTokens = int(pVal)
+						} else if pVal, ok := usage["prompt_eval_count"].(float64); ok && pVal > 0 {
 							promptTokens = int(pVal)
 						}
-						if cVal, ok := usage["completion_tokens"].(float64); ok {
+
+						if cVal, ok := usage["completion_tokens"].(float64); ok && cVal > 0 {
+							completionTokens = int(cVal)
+						} else if cVal, ok := usage["output_tokens"].(float64); ok && cVal > 0 {
+							completionTokens = int(cVal)
+						} else if cVal, ok := usage["eval_count"].(float64); ok && cVal > 0 {
 							completionTokens = int(cVal)
 						}
+
 						for _, key := range []string{"cache_creation_input_tokens", "cache_read_input_tokens", "cached_tokens"} {
 							if v, ok := usage[key].(float64); ok {
 								cachedTokens += int(v)
@@ -219,6 +234,55 @@ func handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 							}
 						}
 					}
+
+					// Root level checks (Ollama/Gemini)
+					if promptTokens == 0 {
+						if p, ok := parsedResponse["prompt_eval_count"].(float64); ok && p > 0 {
+							promptTokens = int(p)
+						}
+					}
+					if completionTokens == 0 {
+						if c, ok := parsedResponse["eval_count"].(float64); ok && c > 0 {
+							completionTokens = int(c)
+						}
+					}
+					if meta, ok := parsedResponse["usageMetadata"].(map[string]interface{}); ok {
+						if p, ok := meta["promptTokenCount"].(float64); ok && p > 0 && promptTokens == 0 {
+							promptTokens = int(p)
+						}
+						if c, ok := meta["candidatesTokenCount"].(float64); ok && c > 0 && completionTokens == 0 {
+							completionTokens = int(c)
+						}
+					}
+				}
+
+				if completionTokens <= 0 {
+					if len(res.Body) > 0 {
+						completionTokens = int(math.Max(1, math.Ceil(float64(len(res.Body))/10.0)))
+					} else {
+						completionTokens = 1
+					}
+				}
+			}
+
+			// Fallback prompt tokens from body if still 0
+			if promptTokens <= 0 {
+				var promptChars int
+				if msgs, ok := body["messages"].([]interface{}); ok {
+					for _, m := range msgs {
+						if msgMap, ok := m.(map[string]interface{}); ok {
+							if content, ok := msgMap["content"].(string); ok {
+								promptChars += len(content)
+							}
+						}
+					}
+				} else if prompt, ok := body["prompt"].(string); ok {
+					promptChars = len(prompt)
+				}
+				if promptChars > 0 {
+					promptTokens = int(math.Max(1, math.Ceil(float64(promptChars)/4.0)))
+				} else {
+					promptTokens = 1
 				}
 			}
 
@@ -292,58 +356,16 @@ func HandleListModels(w http.ResponseWriter, r *http.Request) {
 		"nvidia":     {"meta/llama-3.3-70b-instruct", "deepseek-ai/deepseek-r1", "nvidia/llama-3.1-nemotron-70b-instruct"},
 		"groq":       {"llama-3.3-70b-versatile", "llama-3.1-8b-instant", "mixtral-8x7b-32768", "deepseek-r1-distill-llama-70b"},
 		"openrouter": {"auto", "anthropic/claude-3.5-sonnet", "openai/gpt-4o", "deepseek/deepseek-r1"},
-		"commandcode": {
-			"claude-sonnet-5",
-			"claude-sonnet-4-6",
-			"claude-fable-5",
-			"claude-opus-5",
-			"claude-opus-4-8",
-			"claude-opus-4-7",
-			"claude-haiku-4-5-20251001",
-			"gpt-5.6-sol",
-			"gpt-5.6-terra",
-			"gpt-5.6-luna",
-			"gpt-5.5",
-			"gpt-5.4",
-			"gpt-5.3-codex",
-			"gpt-5.4-mini",
-			"deepseek/deepseek-v4-pro",
-			"deepseek/deepseek-v4-flash",
-			"moonshotai/Kimi-K3",
-			"moonshotai/Kimi-K2.7-Code",
-			"moonshotai/Kimi-K2.7-Code-Highspeed",
-			"moonshotai/Kimi-K2.6",
-			"moonshotai/Kimi-K2.5",
-			"zai-org/GLM-5.2",
-			"zai-org/GLM-5.2-Fast",
-			"zai-org/GLM-5.1",
-			"zai-org/GLM-5",
-			"MiniMaxAI/MiniMax-M3",
-			"MiniMaxAI/MiniMax-M2.7",
-			"MiniMaxAI/MiniMax-M2.5",
-			"xiaomi/mimo-v2.5-pro",
-			"xiaomi/mimo-v2.5",
-			"Qwen/Qwen3.6-Max-Preview",
-			"Qwen/Qwen3.6-Plus",
-			"Qwen/Qwen3.7-Max",
-			"Qwen/Qwen3.7-Plus",
-			"Qwen/Qwen3.7-Flash",
-			"stepfun/Step-3.7-Flash",
-			"stepfun/Step-3.5-Flash",
-			"tencent/hy3-paid",
-			"google/gemini-3.6-flash",
-			"google/gemini-3.5-flash",
-			"google/gemini-3.5-flash-lite",
-			"google/gemini-3.1-flash-lite",
-			"sakana/fugu-ultra",
-			"nvidia/nemotron-3-ultra-550b-a55b",
-			"thinkingmachines/inkling",
-			"thinkingmachines/inkling-small",
-			"poolside/laguna-s-2.1-free",
-			"inclusionai/ling-3.0-flash-free",
-			"meta/muse-spark-1.1",
-			"xai/grok-4.5",
-		},
+		"mistral":       {"mistral-large-latest", "mistral-small-latest", "codestral-latest", "pixtral-large-latest", "open-mistral-nemo"},
+		"meta":          {"llama-3.3-70b-instruct", "llama-3.1-405b-instruct", "llama-3.1-70b-instruct", "llama-3.1-8b-instruct"},
+		"kenari":        {"kenari-default"},
+		"sumopod":       {"deepseek-r1", "deepseek-v3", "qwen-2.5-72b-instruct"},
+		"ollama":        {"llama3.3", "qwen2.5-coder", "deepseek-r1"},
+		"qwen":          {"qwen-max", "qwen-plus", "qwen-turbo", "qwen-coder-plus"},
+		"tencent":       {"hunyuan-pro", "hunyuan-standard", "hunyuan-lite"},
+		"vercel":        {"openai/gpt-4o", "anthropic/claude-3-5-sonnet"},
+		"fireworks":      {"accounts/fireworks/models/deepseek-r1", "accounts/fireworks/models/llama-v3p3-70b-instruct"},
+		"cloudflare-ai":  {"@cf/meta/llama-3.3-70b-instruct", "@cf/deepseek-ai/deepseek-r1-distill-qwen-32b"},
 	}
 
 	seenProviders := make(map[string]bool)

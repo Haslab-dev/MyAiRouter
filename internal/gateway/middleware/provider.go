@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"strings"
 	"time"
@@ -48,9 +49,15 @@ func Provider(ctx *context.GatewayContext, next HandlerFunc) error {
 		ctx.Stream = res.Stream
 		pTokens, cTokens, cat, ttfb, preview, finishReason, err := handleSSEStream(ctx.ResponseWriter, res.Stream, format, ctx.StartTime)
 		if err == nil {
-			ctx.PromptTokens = pTokens
-			ctx.CompletionTokens = cTokens
-			ctx.CachedTokens = cat
+			if pTokens > 0 {
+				ctx.PromptTokens = pTokens
+			}
+			if cTokens > 0 {
+				ctx.CompletionTokens = cTokens
+			}
+			if cat > 0 {
+				ctx.CachedTokens = cat
+			}
 			ctx.TTFB = ttfb
 			synthBody, _ := json.Marshal(map[string]interface{}{
 				"choices": []interface{}{
@@ -62,9 +69,9 @@ func Provider(ctx *context.GatewayContext, next HandlerFunc) error {
 					},
 				},
 				"usage": map[string]interface{}{
-					"prompt_tokens":     pTokens,
-					"completion_tokens": cTokens,
-					"cached_tokens":     cat,
+					"prompt_tokens":     ctx.PromptTokens,
+					"completion_tokens": ctx.CompletionTokens,
+					"cached_tokens":     ctx.CachedTokens,
 				},
 			})
 			ctx.ResponseBody = synthBody
@@ -80,25 +87,15 @@ func Provider(ctx *context.GatewayContext, next HandlerFunc) error {
 
 		var parsedResponse map[string]interface{}
 		if err := json.Unmarshal(res.Body, &parsedResponse); err == nil {
-			if usage, ok := parsedResponse["usage"].(map[string]interface{}); ok {
-				if pVal, ok := usage["prompt_tokens"].(float64); ok {
-					ctx.PromptTokens = int(pVal)
-				}
-				if cVal, ok := usage["completion_tokens"].(float64); ok {
-					ctx.CompletionTokens = int(cVal)
-				}
-				for _, key := range []string{"cache_creation_input_tokens", "cache_read_input_tokens", "cached_tokens"} {
-					if v, ok := usage[key].(float64); ok {
-						ctx.CachedTokens += int(v)
-					}
-				}
-				if details, ok := usage["prompt_tokens_details"].(map[string]interface{}); ok {
-					for _, key := range []string{"cache_creation_input_tokens", "cache_read_input_tokens", "cached_tokens"} {
-						if v, ok := details[key].(float64); ok {
-							ctx.CachedTokens += int(v)
-						}
-					}
-				}
+			pt, ct, cat := extractTokensFromAnyResponse(parsedResponse)
+			if pt > 0 {
+				ctx.PromptTokens = pt
+			}
+			if ct > 0 {
+				ctx.CompletionTokens = ct
+			}
+			if cat > 0 {
+				ctx.CachedTokens = cat
 			}
 		}
 	}
@@ -127,6 +124,8 @@ func handleSSEStream(w http.ResponseWriter, stream io.ReadCloser, format string,
 	finishReason = "stop"
 	hasReceivedFirstToken := false
 	var textBuf strings.Builder
+	totalChars := 0
+	chunkCount := 0
 
 	scanner := bufio.NewScanner(stream)
 	for scanner.Scan() {
@@ -147,10 +146,14 @@ func handleSSEStream(w http.ResponseWriter, stream io.ReadCloser, format string,
 			hasReceivedFirstToken = true
 		}
 
-		if format == "openai" {
-			if pt, ct, cat := extractStreamUsage(line); pt > 0 || ct > 0 || cat > 0 {
+		if pt, ct, cat := extractStreamUsage(line); pt > 0 || ct > 0 || cat > 0 {
+			if pt > 0 {
 				promptTokens = pt
+			}
+			if ct > 0 {
 				completionTokens = ct
+			}
+			if cat > 0 {
 				cachedTokens = cat
 			}
 		}
@@ -175,20 +178,32 @@ func handleSSEStream(w http.ResponseWriter, stream io.ReadCloser, format string,
 			flusher.Flush()
 
 			chunkText, reason := extractDeltaFromChunk(outputLine)
-			if chunkText != "" && textBuf.Len() < 1024 {
-				textBuf.WriteString(chunkText)
+			if chunkText != "" {
+				totalChars += len(chunkText)
+				chunkCount++
+				if textBuf.Len() < 2048 {
+					textBuf.WriteString(chunkText)
+				}
 			}
 			if reason != "" {
 				finishReason = reason
-			}
-
-			if promptTokens == 0 && completionTokens == 0 {
-				completionTokens += 1
 			}
 		}
 
 		if done {
 			break
+		}
+	}
+
+	if completionTokens <= 0 {
+		if totalChars > 0 {
+			completionTokens = int(math.Max(1, math.Ceil(float64(totalChars)/4.0)))
+		} else if chunkCount > 0 {
+			completionTokens = chunkCount
+		} else if textBuf.Len() > 0 {
+			completionTokens = int(math.Max(1, math.Ceil(float64(textBuf.Len())/4.0)))
+		} else {
+			completionTokens = 1
 		}
 	}
 
@@ -224,9 +239,22 @@ func extractDeltaFromChunk(chunk []byte) (string, string) {
 						textBuf.WriteString(reasoning)
 					} else if reasoningContent, ok := delta["reasoning_content"].(string); ok && reasoningContent != "" {
 						textBuf.WriteString(reasoningContent)
+					} else if thought, ok := delta["thought"].(string); ok && thought != "" {
+						textBuf.WriteString(thought)
 					}
 				}
+				if text, ok := choice["text"].(string); ok && text != "" {
+					textBuf.WriteString(text)
+				}
 			}
+		}
+		if msg, ok := obj["message"].(map[string]interface{}); ok {
+			if content, ok := msg["content"].(string); ok && content != "" {
+				textBuf.WriteString(content)
+			}
+		}
+		if response, ok := obj["response"].(string); ok && response != "" {
+			textBuf.WriteString(response)
 		}
 	}
 	return textBuf.String(), lastReason
@@ -242,29 +270,93 @@ func extractStreamUsage(line string) (promptTokens, completionTokens, cachedToke
 		if err := json.Unmarshal([]byte(data), &chunk); err != nil {
 			return 0, 0, 0
 		}
-		if usage, ok := chunk["usage"].(map[string]interface{}); ok {
-			if p, ok := usage["prompt_tokens"].(float64); ok {
-				promptTokens = int(p)
+		return extractTokensFromAnyResponse(chunk)
+	}
+	return 0, 0, 0
+}
+
+func extractTokensFromAnyResponse(resp map[string]interface{}) (promptTokens, completionTokens, cachedTokens int) {
+	if resp == nil {
+		return 0, 0, 0
+	}
+
+	// 1. Check resp["usage"]
+	if usage, ok := resp["usage"].(map[string]interface{}); ok {
+		if p, ok := usage["prompt_tokens"].(float64); ok && p > 0 {
+			promptTokens = int(p)
+		} else if p, ok := usage["input_tokens"].(float64); ok && p > 0 {
+			promptTokens = int(p)
+		} else if p, ok := usage["prompt_eval_count"].(float64); ok && p > 0 {
+			promptTokens = int(p)
+		}
+
+		if c, ok := usage["completion_tokens"].(float64); ok && c > 0 {
+			completionTokens = int(c)
+		} else if c, ok := usage["output_tokens"].(float64); ok && c > 0 {
+			completionTokens = int(c)
+		} else if c, ok := usage["eval_count"].(float64); ok && c > 0 {
+			completionTokens = int(c)
+		}
+
+		for _, key := range []string{"cache_creation_input_tokens", "cache_read_input_tokens", "cached_tokens"} {
+			if v, ok := usage[key].(float64); ok {
+				cachedTokens += int(v)
 			}
-			if c, ok := usage["completion_tokens"].(float64); ok {
-				completionTokens = int(c)
-			}
+		}
+		if details, ok := usage["prompt_tokens_details"].(map[string]interface{}); ok {
 			for _, key := range []string{"cache_creation_input_tokens", "cache_read_input_tokens", "cached_tokens"} {
-				if v, ok := usage[key].(float64); ok {
+				if v, ok := details[key].(float64); ok {
 					cachedTokens += int(v)
 				}
 			}
-			if details, ok := usage["prompt_tokens_details"].(map[string]interface{}); ok {
-				for _, key := range []string{"cache_creation_input_tokens", "cache_read_input_tokens", "cached_tokens"} {
-					if v, ok := details[key].(float64); ok {
-						cachedTokens += int(v)
-					}
-				}
+		}
+	}
+
+	// 2. Check Anthropic streaming message.usage
+	if msg, ok := resp["message"].(map[string]interface{}); ok {
+		if usage, ok := msg["usage"].(map[string]interface{}); ok {
+			if p, ok := usage["input_tokens"].(float64); ok && p > 0 && promptTokens == 0 {
+				promptTokens = int(p)
 			}
-			if promptTokens > 0 || completionTokens > 0 || cachedTokens > 0 {
-				return promptTokens, completionTokens, cachedTokens
+			if c, ok := usage["output_tokens"].(float64); ok && c > 0 && completionTokens == 0 {
+				completionTokens = int(c)
 			}
 		}
 	}
-	return 0, 0, 0
+
+	// 3. Check root-level Ollama fields
+	if promptTokens == 0 {
+		if p, ok := resp["prompt_eval_count"].(float64); ok && p > 0 {
+			promptTokens = int(p)
+		}
+	}
+	if completionTokens == 0 {
+		if c, ok := resp["eval_count"].(float64); ok && c > 0 {
+			completionTokens = int(c)
+		}
+	}
+
+	// 4. Check Gemini usageMetadata
+	if meta, ok := resp["usageMetadata"].(map[string]interface{}); ok {
+		if p, ok := meta["promptTokenCount"].(float64); ok && p > 0 && promptTokens == 0 {
+			promptTokens = int(p)
+		}
+		if c, ok := meta["candidatesTokenCount"].(float64); ok && c > 0 && completionTokens == 0 {
+			completionTokens = int(c)
+		}
+	}
+
+	// 5. Total tokens fallback if one is missing
+	if usage, ok := resp["usage"].(map[string]interface{}); ok {
+		if tot, ok := usage["total_tokens"].(float64); ok && tot > 0 {
+			total := int(tot)
+			if promptTokens > 0 && completionTokens == 0 && total > promptTokens {
+				completionTokens = total - promptTokens
+			} else if completionTokens > 0 && promptTokens == 0 && total > completionTokens {
+				promptTokens = total - completionTokens
+			}
+		}
+	}
+
+	return promptTokens, completionTokens, cachedTokens
 }

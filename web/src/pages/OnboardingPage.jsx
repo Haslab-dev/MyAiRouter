@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
+import ProviderIcon from '../components/ProviderIcon';
 
 const STEPS = [
   { id: 'welcome', label: 'Welcome' },
@@ -239,7 +240,7 @@ function StepProvider({ onNext }) {
               fontFamily: 'Inter, sans-serif',
             }}
           >
-            <span className="material-symbols-outlined" style={{ fontSize: '18px', color: nodeType === p.id ? p.color : 'var(--text-muted)' }}>{p.icon}</span>
+            <ProviderIcon id={p.id} name={p.label} size={20} />
             <span style={{ fontSize: '13px', fontWeight: 600, color: nodeType === p.id ? 'var(--text-main)' : 'var(--text-muted)' }}>{p.label}</span>
           </button>
         ))}

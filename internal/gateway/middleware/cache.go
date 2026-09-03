@@ -5,17 +5,31 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 
 	"myAiRouter/internal/gateway/context"
 	"myAiRouter/pkg/db"
 )
 
 func Cache(ctx *context.GatewayContext, next HandlerFunc) error {
-	ctx.AddStep("Cache", "started", "Checking exact-match response cache")
+	// Bypass caching for streaming requests or when cache bypass headers are present
+	bypass := ctx.IsStream
+	if ctx.Request != nil {
+		cc := ctx.Request.Header.Get("Cache-Control")
+		pragma := ctx.Request.Header.Get("Pragma")
+		if strings.Contains(strings.ToLower(cc), "no-cache") || strings.Contains(strings.ToLower(cc), "no-store") || strings.ToLower(pragma) == "no-cache" {
+			bypass = true
+		}
+		if ctx.Request.Header.Get("X-No-Cache") == "true" || ctx.Request.Header.Get("X-Cache-Bypass") == "true" || ctx.Request.Header.Get("X-Skip-Cache") == "true" {
+			bypass = true
+		}
+	}
+	if bVal, ok := ctx.RequestBody["bypass_cache"].(bool); ok && bVal {
+		bypass = true
+	}
 
-	// Bypass caching for streaming requests
-	if ctx.IsStream {
-		ctx.AddStep("Cache", "skipped", "Streaming request, bypass cache")
+	if bypass {
+		ctx.AddStep("Cache", "skipped", "Bypass cache requested")
 		return next(ctx)
 	}
 

@@ -28,9 +28,9 @@ func InitDB() error {
 		return fmt.Errorf("opening sqlite DB: %w", err)
 	}
 
-	// Serialize all DB access — SQLite single-writer constraint
-	db.SetMaxOpenConns(1)
-	db.SetMaxIdleConns(1)
+	// Allow concurrent reads with WAL mode
+	db.SetMaxOpenConns(10)
+	db.SetMaxIdleConns(5)
 
 	// Optimize SQLite performance & RAM footprint
 	pragmas := []string{

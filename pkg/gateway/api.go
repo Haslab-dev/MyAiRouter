@@ -534,7 +534,11 @@ func handleUsageCharts(w http.ResponseWriter, r *http.Request) {
 		Cost   float64 `json:"cost"`
 	}
 
-	whereClause, args := db.BuildUsageWhere(provider, period, "", "")
+	chartPeriod := period
+	if chartPeriod == "" {
+		chartPeriod = "day"
+	}
+	whereClause, args := db.BuildUsageWhere(provider, chartPeriod, "", "")
 
 	if period == "week" || period == "7d" {
 		now := time.Now().UTC()

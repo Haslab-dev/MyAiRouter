@@ -55,6 +55,7 @@ func (p *RequestPreparer) Prepare(
 	// 2. Estimate input tokens to check if compression is needed
 	originalTokens := EstimateRequestTokens(req)
 	result.OriginalTokens = originalTokens
+	result.PreparedTokens = originalTokens
 
 	// 3. Determine if compression needs to be applied
 	hasCompression := false
@@ -246,9 +247,20 @@ func Prepare(ctx *gwContext.GatewayContext, next HandlerFunc) error {
 		return next(ctx)
 	}
 
+	// For streaming requests, request usage in stream if not explicitly set
+	if ctx.IsStream {
+		if stream, ok := preparedBody["stream"].(bool); stream && ok {
+			if _, hasOpts := preparedBody["stream_options"]; !hasOpts {
+				preparedBody["stream_options"] = map[string]interface{}{"include_usage": true}
+			}
+		}
+	}
+
 	// Update context with prepared body and execution details
 	ctx.RequestBody = preparedBody
-	ctx.PromptTokens = res.PreparedTokens
+	if res.PreparedTokens > 0 {
+		ctx.PromptTokens = res.PreparedTokens
+	}
 	ctx.Metadata["prepareResult"] = res
 
 	if res.CompressionApplied {

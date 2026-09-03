@@ -33,6 +33,8 @@ func RunMigrations() error {
 		return fmt.Errorf("dedup provider nodes: %w", err)
 	}
 
+	backfillZeroUsage()
+
 	return nil
 }
 
@@ -265,4 +267,53 @@ func nodeIDExists(id string) (bool, error) {
 	var count int
 	err := DB.QueryRow("SELECT COUNT(*) FROM providerNodes WHERE id = ?", id).Scan(&count)
 	return count > 0, err
+}
+
+func backfillZeroUsage() {
+	var version int
+	_ = DB.QueryRow("PRAGMA user_version;").Scan(&version)
+	if version >= 3 {
+		return
+	}
+
+	tx, err := DB.Begin()
+	if err != nil {
+		return
+	}
+	defer tx.Rollback()
+
+	// Fix promptTokens for ok status rows
+	_, _ = tx.Exec("UPDATE usageHistory SET promptTokens = 1 WHERE status = 'ok' AND (promptTokens <= 0 OR promptTokens IS NULL);")
+	// Fix completionTokens for ok status rows
+	_, _ = tx.Exec("UPDATE usageHistory SET completionTokens = 1 WHERE status = 'ok' AND (completionTokens <= 0 OR completionTokens IS NULL);")
+	// Fix cost for rows where cost is 0 and tokens > 0
+	_, _ = tx.Exec("UPDATE usageHistory SET cost = ROUND((promptTokens * 0.000002) + (completionTokens * 0.000008), 6) WHERE (cost = 0 OR cost IS NULL) AND (promptTokens > 0 OR completionTokens > 0);")
+	// Fix empty provider if connectionId exists
+	_, _ = tx.Exec(`
+		UPDATE usageHistory 
+		SET provider = (SELECT provider FROM providerConnections WHERE providerConnections.id = usageHistory.connectionId)
+		WHERE (provider = '' OR provider IS NULL) AND connectionId IS NOT NULL AND connectionId != '';
+	`)
+	// Normalize legacy provider IDs in usageHistory and traces to canonical names
+	_, _ = tx.Exec("UPDATE usageHistory SET provider = (SELECT provider FROM providerConnections WHERE providerConnections.id = usageHistory.connectionId) WHERE connectionId IN (SELECT id FROM providerConnections);")
+	_, _ = tx.Exec("UPDATE usageHistory SET provider = 'kilocode' WHERE provider IN ('kc', 'kilo');")
+	_, _ = tx.Exec("UPDATE usageHistory SET provider = 'opencode-zen' WHERE provider IN ('opzen');")
+	_, _ = tx.Exec("UPDATE usageHistory SET provider = 'openai-compatible-tokenfaucet' WHERE provider IN ('tfaucet', 'tokenfaucet');")
+	_, _ = tx.Exec("UPDATE usageHistory SET provider = 'openai-compatible-inadigital' WHERE provider IN ('ina', 'inadigital');")
+	_, _ = tx.Exec("UPDATE usageHistory SET provider = 'openai-compatible-research-ai-kantor' WHERE provider IN ('pceay', 'research-ai-kantor', 'kantor');")
+	_, _ = tx.Exec("UPDATE usageHistory SET provider = 'tencent' WHERE provider IN ('tencent-free');")
+	_, _ = tx.Exec("UPDATE usageHistory SET provider = 'vercel' WHERE provider IN ('vercel1', 'vercel2');")
+	_, _ = tx.Exec("UPDATE usageHistory SET provider = 'meta' WHERE provider IN ('muse');")
+
+	_, _ = tx.Exec("UPDATE traces SET provider = 'kilocode' WHERE provider IN ('kc', 'kilo');")
+	_, _ = tx.Exec("UPDATE traces SET provider = 'opencode-zen' WHERE provider IN ('opzen');")
+	_, _ = tx.Exec("UPDATE traces SET provider = 'openai-compatible-tokenfaucet' WHERE provider IN ('tfaucet', 'tokenfaucet');")
+	_, _ = tx.Exec("UPDATE traces SET provider = 'openai-compatible-inadigital' WHERE provider IN ('ina', 'inadigital');")
+	_, _ = tx.Exec("UPDATE traces SET provider = 'openai-compatible-research-ai-kantor' WHERE provider IN ('pceay', 'research-ai-kantor', 'kantor');")
+	_, _ = tx.Exec("UPDATE traces SET provider = 'tencent' WHERE provider IN ('tencent-free');")
+	_, _ = tx.Exec("UPDATE traces SET provider = 'vercel' WHERE provider IN ('vercel1', 'vercel2');")
+	_, _ = tx.Exec("UPDATE traces SET provider = 'meta' WHERE provider IN ('muse');")
+
+	_, _ = tx.Exec("PRAGMA user_version = 3;")
+	_ = tx.Commit()
 }

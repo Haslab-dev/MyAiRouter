@@ -1,4 +1,94 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import ProviderIcon from '../components/ProviderIcon';
+
+const CORE_PROVIDER_NAMES = {
+  'kilocode': 'Kilo Code',
+  'opencode-go': 'OpenCode Go',
+  'opencode-zen': 'OpenCode Zen',
+  'kenari': 'Kenari',
+  'sumopod': 'Sumopod',
+  'mistral': 'Mistral AI',
+  'meta': 'Meta AI',
+  'ollama': 'Ollama',
+  'qwen': 'Qwen',
+  'tencent': 'Tencent Hunyuan',
+  'vercel': 'Vercel AI',
+  'fireworks': 'Fireworks AI',
+  'cloudflare-ai': 'Cloudflare AI',
+  'glm': 'GLM API',
+  'glm-coding': 'GLM Coding Plan',
+  'openai': 'OpenAI',
+  'anthropic': 'Anthropic',
+  'gemini': 'Google AI',
+  'deepseek': 'DeepSeek',
+  'azure': 'Azure OpenAI',
+  'nvidia': 'NVIDIA NIM',
+  'groq': 'Groq',
+  'openrouter': 'OpenRouter',
+};
+
+const normalizeProviderId = (rawId, nodesList = []) => {
+  if (!rawId) return '';
+  let id = rawId.toLowerCase().trim();
+
+  // Strip model prefixes like "openai/gpt-4o" or "kilo-auto/free"
+  if (id.includes('/')) {
+    id = id.split('/')[0];
+  }
+
+  // Alias mappings
+  const aliasMap = {
+    'kc': 'kilocode',
+    'kilo': 'kilocode',
+    'opzen': 'opencode-zen',
+    'tfaucet': 'openai-compatible-tokenfaucet',
+    'tokenfaucet': 'openai-compatible-tokenfaucet',
+    'ina': 'openai-compatible-inadigital',
+    'inadigital': 'openai-compatible-inadigital',
+    'pceay': 'openai-compatible-research-ai-kantor',
+    'kantor': 'openai-compatible-research-ai-kantor',
+    'research-ai-kantor': 'openai-compatible-research-ai-kantor',
+    'db': 'openai-compatible-databyte',
+    'databyte': 'openai-compatible-databyte',
+    'conduit': 'openai-compatible-conduit',
+    'tencent-free': 'tencent',
+    'vercel1': 'vercel',
+    'vercel2': 'vercel',
+    'muse': 'meta',
+    'cc': 'commandcode',
+    'cmdcode2api': 'commandcode',
+    'command': 'commandcode',
+  };
+
+  if (aliasMap[id]) {
+    return aliasMap[id];
+  }
+
+  // Check if matches a custom node without openai-compatible- prefix
+  if (nodesList && nodesList.length > 0) {
+    const matchedNode = nodesList.find(n => 
+      n.id.toLowerCase() === id || 
+      n.id.toLowerCase() === `openai-compatible-${id}` ||
+      (n.name && n.name.toLowerCase() === id)
+    );
+    if (matchedNode) return matchedNode.id;
+  }
+
+  return id;
+};
+
+const getProviderDisplayName = (providerId, nodesList = []) => {
+  const norm = normalizeProviderId(providerId, nodesList);
+  if (CORE_PROVIDER_NAMES[norm]) return CORE_PROVIDER_NAMES[norm];
+  if (CORE_PROVIDER_NAMES[providerId]) return CORE_PROVIDER_NAMES[providerId];
+  const node = nodesList.find(n => n.id === norm || n.id === providerId);
+  if (node?.name) return node.name;
+  if (norm.startsWith('openai-compatible-')) {
+    const clean = norm.replace('openai-compatible-', '');
+    return clean.charAt(0).toUpperCase() + clean.slice(1);
+  }
+  return norm || providerId;
+};
 
 export default function UsagePage() {
   const [stats, setStats] = useState({
@@ -37,6 +127,34 @@ export default function UsagePage() {
     outputToken: '',
     totalCached: '',
   });
+
+  const providerSummaries = useMemo(() => {
+    const map = {};
+    modelSummaries.forEach(row => {
+      const p = normalizeProviderId(row.provider || 'unknown', nodesList);
+      if (!map[p]) {
+        map[p] = {
+          provider: p,
+          requests: 0,
+          promptTokens: 0,
+          completionTokens: 0,
+          cachedTokens: 0,
+          cost: 0,
+          models: new Set()
+        };
+      }
+      map[p].requests += row.requests || 0;
+      map[p].promptTokens += row.promptTokens || 0;
+      map[p].completionTokens += row.completionTokens || 0;
+      map[p].cachedTokens += row.cachedTokens || 0;
+      map[p].cost += row.cost || 0;
+      if (row.model) map[p].models.add(row.model);
+    });
+    return Object.values(map).map(p => ({
+      ...p,
+      modelsCount: p.models.size
+    })).sort((a, b) => b.cost - a.cost || b.requests - a.requests);
+  }, [modelSummaries, nodesList]);
 
   // Tree zoom state (no pan)
   const [treeScale, setTreeScale] = useState(1);
@@ -95,10 +213,11 @@ export default function UsagePage() {
     const range = getDateRange(filter);
     setCustomStartDate(range.startDate || '');
     setCustomEndDate(range.endDate || '');
-    if (filter === 'all') setSelectedPeriod('');
-    else if (filter === 'today') setSelectedPeriod('day');
-    else if (filter === 'week') setSelectedPeriod('week');
-    else if (filter === 'month') setSelectedPeriod('month');
+    let period = '';
+    if (filter === 'all') period = '';
+    else if (filter === 'today') period = 'day';
+    else if (filter === 'week') period = 'week';
+    else if (filter === 'month') period = 'month';
     setSelectedPeriod(period);
     fetchData(selectedProvider, period);
   };
@@ -107,37 +226,16 @@ export default function UsagePage() {
   const treeCenterY = 220;
 
   const hasTraffic = useCallback((providerId) => {
-    return detailedLogs.some(l => 
-      l.provider?.toLowerCase() === providerId.toLowerCase() || 
-      (l.model && l.model.toLowerCase().includes(providerId.toLowerCase()))
-    );
-  }, [detailedLogs]);
+    const canonical = normalizeProviderId(providerId, nodesList);
+    return detailedLogs.some(l => {
+      const lCanon = normalizeProviderId(l.provider, nodesList);
+      return lCanon === canonical || 
+        l.provider?.toLowerCase() === providerId.toLowerCase() || 
+        (l.model && l.model.toLowerCase().includes(providerId.toLowerCase()));
+    });
+  }, [detailedLogs, nodesList]);
 
-  const CORE_PROVIDER_NAMES = {
-  'kilocode': 'Kilo Code',
-  'opencode-go': 'OpenCode Go',
-  'opencode-zen': 'OpenCode Zen',
-  'commandcode': 'Command Code',
-  'glm': 'GLM API',
-  'glm-coding': 'GLM Coding Plan',
-  'openai': 'OpenAI',
-  'anthropic': 'Anthropic',
-  'gemini': 'Google AI',
-  'deepseek': 'DeepSeek',
-  'azure': 'Azure OpenAI',
-  'nvidia': 'NVIDIA NIM',
-  'groq': 'Groq',
-  'openrouter': 'OpenRouter',
-};
-
-const getProviderDisplayName = (providerId, nodesList) => {
-  if (CORE_PROVIDER_NAMES[providerId]) return CORE_PROVIDER_NAMES[providerId];
-  const node = nodesList.find(n => n.id === providerId);
-  if (node?.name) return node.name;
-  return providerId;
-};
-
-const [settings, setSettings] = useState(null);
+  const [settings, setSettings] = useState(null);
 
   const fetchData = useCallback(async (provider, period) => {
     try {
@@ -305,22 +403,55 @@ const [settings, setSettings] = useState(null);
 
   const providerOptions = useMemo(() => {
     const map = new Map();
+
+    // 1. Configured connections
     connections.forEach(c => {
       if (c.provider) {
-        map.set(c.provider, getProviderDisplayName(c.provider, nodesList));
+        const canonical = normalizeProviderId(c.provider, nodesList);
+        if (canonical && canonical !== 'commandcode') {
+          map.set(canonical, getProviderDisplayName(canonical, nodesList));
+        }
       }
     });
+
+    // 2. Configured provider nodes
     nodesList.forEach(n => {
-      if (n.id && !map.has(n.id)) {
-        map.set(n.id, n.name || getProviderDisplayName(n.id, nodesList));
+      if (n.id) {
+        const canonical = normalizeProviderId(n.id, nodesList);
+        if (canonical && canonical !== 'commandcode') {
+          map.set(canonical, n.name || getProviderDisplayName(canonical, nodesList));
+        }
       }
     });
+
+    // 3. Providers from logs (only if not already mapped and not internal sync markers or model prefixes)
     detailedLogs.forEach(l => {
-      if (l.provider && !map.has(l.provider)) {
-        map.set(l.provider, getProviderDisplayName(l.provider, nodesList));
+      if (l.provider) {
+        const canonical = normalizeProviderId(l.provider, nodesList);
+        if (
+          canonical &&
+          canonical !== 'commandcode' &&
+          canonical !== 'server_sync' &&
+          canonical !== 'manual' &&
+          !canonical.includes('/') &&
+          !map.has(canonical)
+        ) {
+          map.set(canonical, getProviderDisplayName(canonical, nodesList));
+        }
       }
     });
-    return Array.from(map.entries()).map(([value, label]) => ({ value, label }));
+
+    // Deduplicate by display label so no redundant entries exist
+    const seenLabels = new Set();
+    const result = [];
+    for (const [value, label] of map.entries()) {
+      if (!seenLabels.has(label.toLowerCase())) {
+        seenLabels.add(label.toLowerCase());
+        result.push({ value, label });
+      }
+    }
+
+    return result.sort((a, b) => a.label.localeCompare(b.label));
   }, [connections, nodesList, detailedLogs]);
 
   const getDynamicNodes = () => {
@@ -331,7 +462,16 @@ const [settings, setSettings] = useState(null);
       (isProviderActive('kilocode') ? 1 : 0) +
       (isProviderActive('opencode-go') ? 1 : 0) +
       (isProviderActive('opencode-zen') ? 1 : 0) +
-      (isProviderActive('commandcode') ? 1 : 0) +
+      (isProviderActive('kenari') ? 1 : 0) +
+      (isProviderActive('sumopod') ? 1 : 0) +
+      (isProviderActive('mistral') ? 1 : 0) +
+      (isProviderActive('meta') ? 1 : 0) +
+      (isProviderActive('ollama') ? 1 : 0) +
+      (isProviderActive('qwen') ? 1 : 0) +
+      (isProviderActive('tencent') ? 1 : 0) +
+      (isProviderActive('vercel') ? 1 : 0) +
+      (isProviderActive('fireworks') ? 1 : 0) +
+      (isProviderActive('cloudflare-ai') ? 1 : 0) +
       (isProviderActive('glm') ? 1 : 0) +
       (isProviderActive('glm-coding') ? 1 : 0) +
       (isProviderActive('nvidia') ? 1 : 0) +
@@ -347,7 +487,16 @@ const [settings, setSettings] = useState(null);
     if (isProviderActive('kilocode')) activeNodes.push({ id: 'kilocode', name: 'Kilo Code', icon: 'grid_view' });
     if (isProviderActive('opencode-go')) activeNodes.push({ id: 'opencode-go', name: 'OpenCode Go', icon: 'terminal' });
     if (isProviderActive('opencode-zen')) activeNodes.push({ id: 'opencode-zen', name: 'OpenCode Zen', icon: 'psychology' });
-    if (isProviderActive('commandcode')) activeNodes.push({ id: 'commandcode', name: 'Command Code', icon: 'smart_toy' });
+    if (isProviderActive('kenari')) activeNodes.push({ id: 'kenari', name: 'Kenari', icon: 'alt_route' });
+    if (isProviderActive('sumopod')) activeNodes.push({ id: 'sumopod', name: 'Sumopod', icon: 'cloud' });
+    if (isProviderActive('mistral')) activeNodes.push({ id: 'mistral', name: 'Mistral AI', icon: 'air' });
+    if (isProviderActive('meta')) activeNodes.push({ id: 'meta', name: 'Meta AI', icon: 'all_inclusive' });
+    if (isProviderActive('ollama')) activeNodes.push({ id: 'ollama', name: 'Ollama', icon: 'terminal' });
+    if (isProviderActive('qwen')) activeNodes.push({ id: 'qwen', name: 'Qwen', icon: 'psychology' });
+    if (isProviderActive('tencent')) activeNodes.push({ id: 'tencent', name: 'Tencent Hunyuan', icon: 'cloud_done' });
+    if (isProviderActive('vercel')) activeNodes.push({ id: 'vercel', name: 'Vercel AI', icon: 'change_history' });
+    if (isProviderActive('fireworks')) activeNodes.push({ id: 'fireworks', name: 'Fireworks AI', icon: 'local_fire_department' });
+    if (isProviderActive('cloudflare-ai')) activeNodes.push({ id: 'cloudflare-ai', name: 'Cloudflare AI', icon: 'cloud_queue' });
     if (isProviderActive('glm')) activeNodes.push({ id: 'glm', name: 'GLM API', icon: 'chat' });
     if (isProviderActive('glm-coding')) activeNodes.push({ id: 'glm-coding', name: 'GLM Coding', icon: 'code' });
     if (isProviderActive('nvidia')) activeNodes.push({ id: 'nvidia', name: 'NVIDIA NIM', icon: 'memory' });
@@ -1095,18 +1244,52 @@ const [settings, setSettings] = useState(null);
         /* Side-by-Side Tables Layout */
         <div style={{ display: 'grid', gridTemplateColumns: '4.5fr 5.5fr', gap: '24px', alignItems: 'start' }}>
           
-          {/* Left Table: Usage by Model / Provider */}
+          {/* Left Table: Usage by Provider / Model */}
           <div className="card" style={{ padding: '20px', margin: 0 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-              <h3 className="card-title" style={{ fontSize: '13px', textTransform: 'uppercase', letterSpacing: '0.5px', color: 'var(--text-subtle)', margin: 0 }}>
-                Usage by Provider/Model
-              </h3>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '8px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <h3 className="card-title" style={{ fontSize: '13px', textTransform: 'uppercase', letterSpacing: '0.5px', color: 'var(--text-subtle)', margin: 0 }}>
+                  Usage by {tableDropdown === 'provider' ? 'Provider' : 'Model'}
+                </h3>
+                <div style={{ display: 'inline-flex', background: 'var(--bg-sidebar)', borderRadius: '6px', border: '1px solid var(--border-color)', padding: '2px' }}>
+                  <button
+                    onClick={() => setTableDropdown('provider')}
+                    style={{
+                      padding: '2px 8px',
+                      fontSize: '10px',
+                      fontWeight: tableDropdown === 'provider' ? '700' : '500',
+                      border: 'none',
+                      borderRadius: '4px',
+                      background: tableDropdown === 'provider' ? 'var(--color-primary)' : 'transparent',
+                      color: tableDropdown === 'provider' ? '#fff' : 'var(--text-muted)',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    Provider
+                  </button>
+                  <button
+                    onClick={() => setTableDropdown('model')}
+                    style={{
+                      padding: '2px 8px',
+                      fontSize: '10px',
+                      fontWeight: tableDropdown === 'model' ? '700' : '500',
+                      border: 'none',
+                      borderRadius: '4px',
+                      background: tableDropdown === 'model' ? 'var(--color-primary)' : 'transparent',
+                      color: tableDropdown === 'model' ? '#fff' : 'var(--text-muted)',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    Model
+                  </button>
+                </div>
+              </div>
               <div style={{ fontSize: '11px', color: 'var(--text-subtle)', fontWeight: 600 }}>
-                {modelSummaries.length} entries
+                {(tableDropdown === 'provider' ? providerSummaries : modelSummaries).length} entries
               </div>
             </div>
 
-            {modelSummaries.length === 0 ? (
+            {(tableDropdown === 'provider' ? providerSummaries : modelSummaries).length === 0 ? (
               <div style={{ padding: '32px 0', textAlign: 'center', color: 'var(--text-subtle)', fontSize: '12px' }}>
                 No request data registered.
               </div>
@@ -1115,29 +1298,35 @@ const [settings, setSettings] = useState(null);
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '11px', textAlign: 'left' }}>
                   <thead>
                     <tr style={{ borderBottom: '1px solid var(--border-color)', color: 'var(--text-subtle)' }}>
-                      <th style={{ padding: '10px 8px' }}>PROVIDER / MODEL</th>
+                      <th style={{ padding: '10px 8px' }}>{tableDropdown === 'provider' ? 'PROVIDER' : 'PROVIDER / MODEL'}</th>
                       <th style={{ padding: '10px 8px' }}>REQ</th>
+                      <th style={{ padding: '10px 8px', textAlign: 'right' }}>TOKENS</th>
                       <th style={{ padding: '10px 8px', textAlign: 'right' }}>COST</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {modelSummaries.map((row, index) => {
-                      const label = row.provider ? row.provider + '/' + row.model : row.model;
+                    {(tableDropdown === 'provider' ? providerSummaries : modelSummaries).map((row, index) => {
+                      const totalTokens = (row.promptTokens || 0) + (row.completionTokens || 0);
+                      const effectiveCost = row.cost > 0 ? row.cost : (totalTokens > 0 ? totalTokens * 0.000002 : 0);
+                      const label = tableDropdown === 'provider'
+                        ? getProviderDisplayName(row.provider, nodesList) + (row.modelsCount > 1 ? ` (${row.modelsCount} models)` : '')
+                        : (row.provider ? `${row.provider}/${row.model}` : row.model);
+
                       return (
                         <tr key={index} style={{ borderBottom: '1px solid var(--border-color)', color: 'var(--text-main)' }}>
                           <td style={{ padding: '10px 8px', fontWeight: 600 }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                              <div style={{
-                                width: '18px', height: '18px', borderRadius: '3px',
-                                background: getProviderColor(row.provider), color: '#fff',
-                                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                fontSize: '9px', fontWeight: 700, textTransform: 'uppercase'
-                              }}>{row.provider ? row.provider.charAt(0) : '?'}</div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                              <ProviderIcon id={row.provider} size={18} />
                               <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{label}</span>
                             </div>
                           </td>
                           <td style={{ padding: '10px 8px', fontWeight: 700, color: 'var(--color-primary)' }}>{row.requests}</td>
-                          <td style={{ padding: '10px 8px', fontWeight: 700, color: 'var(--color-primary)', textAlign: 'right' }}>${row.cost.toFixed(4)}</td>
+                          <td style={{ padding: '10px 8px', fontFamily: 'var(--font-mono)', textAlign: 'right', color: 'var(--text-subtle)' }}>
+                            {totalTokens.toLocaleString()}
+                          </td>
+                          <td style={{ padding: '10px 8px', fontWeight: 700, color: 'var(--color-primary)', textAlign: 'right' }}>
+                            ${effectiveCost.toFixed(4)}
+                          </td>
                         </tr>
                       );
                     })}
@@ -1189,9 +1378,13 @@ const [settings, setSettings] = useState(null);
                           let parsedMeta = {};
                           try { parsedMeta = JSON.parse(row.meta); } catch(e) {}
                           const durationMs = parsedMeta.duration_ms || 0;
-                          const totalTokens = row.promptTokens + row.completionTokens;
-                          const tps = durationMs > 0 ? (totalTokens / (durationMs / 1000)).toFixed(1) : '—';
                           const isSuccess = row.status === 'ok';
+                          const effectivePrompt = row.promptTokens > 0 ? row.promptTokens : (isSuccess ? 1 : 0);
+                          const effectiveComp = row.completionTokens > 0 ? row.completionTokens : (isSuccess ? 1 : 0);
+                          const totalTokens = effectivePrompt + effectiveComp;
+                          const tps = durationMs > 0 ? (totalTokens / (durationMs / 1000)).toFixed(1) : '—';
+                          const effectiveCost = row.cost > 0 ? row.cost : (isSuccess && totalTokens > 0 ? totalTokens * 0.000002 : 0);
+
                           return (
                             <tr key={index} style={{ borderBottom: '1px solid var(--border-color)', color: 'var(--text-main)' }}>
                               <td style={{ padding: '10px 8px', color: 'var(--text-subtle)', whiteSpace: 'nowrap' }}>
@@ -1199,14 +1392,7 @@ const [settings, setSettings] = useState(null);
                               </td>
                               <td style={{ padding: '10px 8px', fontWeight: 600, maxWidth: '160px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                  <div style={{
-                                    width: '16px', height: '16px', borderRadius: '3px',
-                                    background: getProviderColor(row.provider), color: '#fff',
-                                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                    fontSize: '8px', fontWeight: 700, textTransform: 'uppercase', flexShrink: 0
-                                  }}>
-                                    {row.provider ? row.provider.charAt(0) : '?'}
-                                  </div>
+                                  <ProviderIcon id={row.provider} size={16} />
                                   <span>{row.model || '—'}</span>
                                 </div>
                               </td>
@@ -1226,13 +1412,13 @@ const [settings, setSettings] = useState(null);
                                 {row.apiKeyName || row.connectionId || '—'}
                               </td>
                               <td style={{ padding: '10px 8px', fontFamily: 'var(--font-mono)', textAlign: 'right', fontSize: '10px', color: 'var(--color-primary)' }}>
-                                {row.promptTokens.toLocaleString()}
+                                {effectivePrompt.toLocaleString()}
                               </td>
                               <td style={{ padding: '10px 8px', fontFamily: 'var(--font-mono)', textAlign: 'right', fontSize: '10px', color: 'var(--color-success)' }}>
-                                {row.completionTokens.toLocaleString()}
+                                {effectiveComp.toLocaleString()}
                               </td>
                               <td style={{ padding: '10px 8px', fontWeight: 600, textAlign: 'right', fontSize: '10px' }}>
-                                ${row.cost.toFixed(5)}
+                                ${effectiveCost.toFixed(5)}
                               </td>
                               <td style={{ padding: '10px 8px', fontFamily: 'var(--font-mono)', textAlign: 'right', fontWeight: 600, color: 'var(--color-primary)', fontSize: '10px' }}>
                                 {tps}{tps !== '—' ? ' t/s' : ''}
@@ -1358,7 +1544,16 @@ const getProviderColor = (prov) => {
     'gemini': '#2563eb',
     'deepseek': '#8b5cf6',
     'kilocode': '#eab308',
-    'commandcode': '#000000'
+    'kenari': '#f59e0b',
+    'sumopod': '#06b6d4',
+    'mistral': '#f97316',
+    'meta': '#0081fb',
+    'ollama': '#10b981',
+    'qwen': '#6366f1',
+    'tencent': '#0052d9',
+    'vercel': '#000000',
+    'fireworks': '#ef4444',
+    'cloudflare-ai': '#f38020',
   };
   return colors[prov] || '#6b7280';
 };

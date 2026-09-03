@@ -1,17 +1,27 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useSnackbar } from '../stores/snackbar';
+import ProviderIcon from '../components/ProviderIcon';
 
 const CORE_PROVIDERS = [
-  { id: 'kilocode', name: 'Kilo Code', type: 'oauth', icon: 'grid_view', color: '#eab308', desc: 'Secure authorization code login' },
-  { id: 'opencode-go', name: 'OpenCode Go', type: 'apikey', icon: 'terminal', color: '#2563eb', desc: 'Fast, secure open code credentials' },
-  { id: 'opencode-zen', name: 'OpenCode Zen', type: 'apikey', icon: 'psychology', color: '#06b6d4', desc: 'Custom code generation engine' },
-  { id: 'commandcode', name: 'Command Code', type: 'apikey', icon: 'smart_toy', color: '#000000', desc: 'Key from ~/.commandcode/auth.json or commandcode.ai/studio' },
-  { id: 'glm', name: 'GLM API', type: 'apikey', icon: 'chat', color: '#8b5cf6', desc: 'General LLM access keys' },
-  { id: 'glm-coding', name: 'GLM Coding Plan', type: 'apikey', icon: 'code', color: '#10b981', desc: 'Targeted coding intelligence' },
-  { id: 'nvidia', name: 'NVIDIA NIM', type: 'apikey', icon: 'memory', color: '#76b900', desc: 'NVIDIA API Catalog & NIM endpoints' },
-  { id: 'groq', name: 'Groq', type: 'apikey', icon: 'bolt', color: '#f97316', desc: 'LPU inference engine for fast LLMs' },
-  { id: 'openrouter', name: 'OpenRouter', type: 'apikey', icon: 'hub', color: '#6366f1', desc: 'Unified API for top AI models' },
-  { id: 'deepseek', name: 'DeepSeek', type: 'apikey', icon: 'auto_awesome', color: '#3b82f6', desc: 'DeepSeek AI reasoning & chat models' },
+  { id: 'kilocode', name: 'Kilo Code', type: 'oauth', color: '#eab308', desc: 'Secure authorization code login' },
+  { id: 'opencode-go', name: 'OpenCode Go', type: 'apikey', color: '#2563eb', desc: 'Fast, secure open code credentials' },
+  { id: 'opencode-zen', name: 'OpenCode Zen', type: 'apikey', color: '#06b6d4', desc: 'Custom code generation engine' },
+  { id: 'kenari', name: 'Kenari', type: 'apikey', color: '#f59e0b', desc: 'Kenari AI intelligent routing' },
+  { id: 'sumopod', name: 'Sumopod', type: 'apikey', color: '#06b6d4', desc: 'Sumopod high-performance endpoints' },
+  { id: 'mistral', name: 'Mistral AI', type: 'apikey', color: '#f97316', desc: 'Frontier AI models by Mistral' },
+  { id: 'meta', name: 'Meta AI', type: 'apikey', color: '#0081fb', desc: 'Meta Llama foundation models' },
+  { id: 'ollama', name: 'Ollama', type: 'apikey', color: '#10b981', desc: 'Local & server inference engine' },
+  { id: 'qwen', name: 'Qwen', type: 'apikey', color: '#6366f1', desc: 'Alibaba Cloud Tongyi Qianwen' },
+  { id: 'tencent', name: 'Tencent Hunyuan', type: 'apikey', color: '#0052d9', desc: 'Tencent Cloud Hunyuan LLMs' },
+  { id: 'vercel', name: 'Vercel AI', type: 'apikey', color: '#000000', desc: 'Vercel AI Gateway integration' },
+  { id: 'fireworks', name: 'Fireworks AI', type: 'apikey', color: '#ef4444', desc: 'Fast generative AI inference' },
+  { id: 'cloudflare-ai', name: 'Cloudflare AI', type: 'apikey', color: '#f38020', desc: 'Cloudflare Workers AI platform' },
+  { id: 'glm', name: 'GLM API', type: 'apikey', color: '#8b5cf6', desc: 'General LLM access keys' },
+  { id: 'glm-coding', name: 'GLM Coding Plan', type: 'apikey', color: '#10b981', desc: 'Targeted coding intelligence' },
+  { id: 'nvidia', name: 'NVIDIA NIM', type: 'apikey', color: '#76b900', desc: 'NVIDIA API Catalog & NIM endpoints' },
+  { id: 'groq', name: 'Groq', type: 'apikey', color: '#f97316', desc: 'LPU inference engine for fast LLMs' },
+  { id: 'openrouter', name: 'OpenRouter', type: 'apikey', color: '#6366f1', desc: 'Unified API for top AI models' },
+  { id: 'deepseek', name: 'DeepSeek', type: 'apikey', color: '#3b82f6', desc: 'DeepSeek AI reasoning & chat models' },
 ];
 
 export default function ProvidersPage() {
@@ -39,6 +49,7 @@ export default function ProvidersPage() {
   const [compatType, setCompatType] = useState('openai-compatible');
   const [nodeName, setNodeName] = useState('');
   const [nodeUrl, setNodeUrl] = useState('');
+  const [nodeApiKey, setNodeApiKey] = useState('');
 
   // Selected Custom Node (For credentials attachment)
   const [selectedNode, setSelectedNode] = useState(null);
@@ -470,7 +481,16 @@ export default function ProvidersPage() {
     const defaultUrls = {
       'opencode-go': 'https://opencode.ai/zen/go/v1',
       'opencode-zen': 'https://opencode.ai/zen/v1',
-      'commandcode': 'https://api.commandcode.ai/provider/v1',
+      'kenari': 'https://kenari.id/v1',
+      'sumopod': 'https://ai.sumopod.com/v1',
+      'mistral': 'https://api.mistral.ai/v1',
+      'meta': 'https://api.meta.ai/v1',
+      'ollama': 'http://localhost:11434/v1',
+      'qwen': 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+      'tencent': 'https://api.hunyuan.cloud.tencent.com/v1',
+      'vercel': 'https://api.vercel.ai/v1',
+      'fireworks': 'https://api.fireworks.ai/inference/v1',
+      'cloudflare-ai': 'https://api.cloudflare.com/client/v4/accounts/{account_id}/ai/v1',
       'glm': 'https://open.bigmodel.cn/api/paas/v4',
       'glm-coding': 'https://open.bigmodel.cn/api/coding/paas/v4',
       'nvidia': 'https://integrate.api.nvidia.com/v1',
@@ -544,7 +564,10 @@ export default function ProvidersPage() {
       id,
       type: compatType,
       name: nodeName,
-      data: { baseUrl: nodeUrl },
+      data: {
+        baseUrl: nodeUrl.trim(),
+        ...(nodeApiKey.trim() ? { apiKey: nodeApiKey.trim() } : {})
+      },
     };
 
     try {
@@ -554,8 +577,29 @@ export default function ProvidersPage() {
         body: JSON.stringify(payload),
       });
       if (res.ok) {
+        if (nodeApiKey.trim()) {
+          await fetch('/api/providers', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              id: `${id}-conn-${Date.now()}`,
+              provider: id,
+              authType: 'apikey',
+              name: 'Primary Key',
+              email: '',
+              priority: 1,
+              isActive: true,
+              data: {
+                apiKey: nodeApiKey.trim(),
+                baseUrl: nodeUrl.trim(),
+                headers: {}
+              }
+            })
+          });
+        }
         setNodeName('');
         setNodeUrl('');
+        setNodeApiKey('');
         setShowAddNode(false);
         await fetchData();
         notify('Provider node created successfully!', 'success');
@@ -585,56 +629,6 @@ export default function ProvidersPage() {
     }
   };
 
-  const handleAutoDetectCommandCode = async () => {
-    try {
-      const res = await fetch('/api/commandcode/token');
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        notify(data.error || 'No Command Code key found. Run `commandcode login` first.', 'error');
-        return;
-      }
-      const { apiKey } = await res.json();
-      if (!apiKey) {
-        notify('No Command Code key found in ~/.commandcode/auth.json.', 'error');
-        return;
-      }
-
-      const baseUrl = 'https://api.commandcode.ai/provider/v1';
-      const existing = connections.find(c => c.provider === 'commandcode');
-      let saveRes;
-      if (existing) {
-        saveRes = await fetch(`/api/providers/${existing.id}`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ name: 'Auto-detect', priority: 1, data: { apiKey, baseUrl } }),
-        });
-      } else {
-        saveRes = await fetch('/api/providers', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            id: `commandcode-conn-${Date.now()}`,
-            provider: 'commandcode',
-            authType: 'apikey',
-            name: 'Auto-detect',
-            email: '',
-            priority: 1,
-            isActive: true,
-            data: { apiKey, baseUrl, headers: {} },
-          }),
-        });
-      }
-      if (!saveRes.ok) {
-        notify(existing ? 'Failed to update Command Code credentials.' : 'Failed to save Command Code credentials.', 'error');
-        return;
-      }
-      await fetchData();
-      notify(existing ? 'Command Code key refreshed & saved.' : 'Command Code key auto-detected & saved.', 'success');
-    } catch (err) {
-      console.error(err);
-      notify('Error auto-detecting Command Code key.', 'error');
-    }
-  };
 
   const handleSetEnabledModels = async (ids) => {
     const providerId = viewingDetailProvider.id;
@@ -859,18 +853,12 @@ export default function ProvidersPage() {
 
           {/* 1. Header info */}
           <div className="card" style={{ padding: '24px', marginBottom: '24px', display: 'flex', alignItems: 'center', gap: '16px' }}>
-            <div style={{
-              width: '48px',
-              height: '48px',
-              borderRadius: '10px',
-              background: viewingDetailProvider.color || 'var(--color-primary)',
-              color: '#fff',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center'
-            }}>
-              <span className="material-symbols-outlined" style={{ fontSize: '24px' }}>smart_toy</span>
-            </div>
+            <ProviderIcon
+              id={viewingDetailProvider.id}
+              name={viewingDetailProvider.name}
+              type={viewingDetailProvider.type}
+              size={48}
+            />
             <div style={{ flexGrow: 1 }}>
               <h2 style={{ fontSize: '20px', fontWeight: 700, margin: 0 }}>{viewingDetailProvider.name}</h2>
               <div style={{ fontSize: '12px', color: 'var(--text-subtle)', marginTop: '4px' }}>
@@ -911,17 +899,6 @@ export default function ProvidersPage() {
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
               <h3 style={{ fontSize: '15px', fontWeight: 600, color: 'var(--text-main)', margin: 0 }}>Endpoint URL Configuration</h3>
               <div style={{ display: 'flex', gap: '8px' }}>
-                {viewingDetailProvider?.id === 'commandcode' && (
-                  <button
-                    onClick={handleAutoDetectCommandCode}
-                    className="btn btn-secondary"
-                    title="Read key from ~/.commandcode/auth.json (commandcode login)"
-                    style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', height: '28px' }}
-                  >
-                    <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>refresh</span>
-                    Auto-detect
-                  </button>
-                )}
                 {!activeConn && (
                   <button
                     onClick={() => isCustom ? setSelectedNode(viewingDetailProvider) : setSelectedStandard(viewingDetailProvider)}
@@ -1207,18 +1184,7 @@ export default function ProvidersPage() {
                   >
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <div style={{
-                          width: '28px',
-                          height: '28px',
-                          borderRadius: '6px',
-                          background: provider.color,
-                          color: '#fff',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center'
-                        }}>
-                          <span className="material-symbols-outlined" style={{ fontSize: '15px' }}>{provider.icon}</span>
-                        </div>
+                        <ProviderIcon id={provider.id} name={provider.name} type={provider.type} size={28} />
                         <span style={{ fontWeight: 700, fontSize: '14px', color: 'var(--text-main)' }}>{provider.name}</span>
                       </div>
                       <span style={{ fontSize: '10px', color: isConnected ? 'var(--color-success)' : 'var(--text-subtle)', background: isConnected ? 'rgba(46, 204, 113, 0.1)' : 'rgba(255, 255, 255, 0.03)', padding: '2px 8px', borderRadius: '10px' }}>
@@ -1266,6 +1232,9 @@ export default function ProvidersPage() {
                 <button
                   onClick={() => {
                     setCompatType('anthropic-compatible');
+                    setNodeName('');
+                    setNodeUrl('');
+                    setNodeApiKey('');
                     setShowAddNode(true);
                   }}
                   className="btn btn-primary"
@@ -1276,6 +1245,9 @@ export default function ProvidersPage() {
                 <button
                   onClick={() => {
                     setCompatType('openai-compatible');
+                    setNodeName('');
+                    setNodeUrl('');
+                    setNodeApiKey('');
                     setShowAddNode(true);
                   }}
                   className="btn btn-secondary"
@@ -1320,18 +1292,7 @@ export default function ProvidersPage() {
                     >
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                          <div style={{
-                            width: '28px',
-                            height: '28px',
-                            borderRadius: '6px',
-                            background: node.type === 'openai-compatible' ? 'rgba(0,200,255,0.1)' : 'rgba(234,88,12,0.1)',
-                            color: node.type === 'openai-compatible' ? 'var(--color-primary)' : '#ea580c',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center'
-                          }}>
-                            <span className="material-symbols-outlined" style={{ fontSize: '15px' }}>{node.type === 'openai-compatible' ? 'api' : 'bubble_chart'}</span>
-                          </div>
+                          <ProviderIcon id={node.id} name={node.name} type={node.type} size={28} />
                           <span style={{ fontWeight: 700, fontSize: '14px', color: 'var(--text-main)' }}>{node.name}</span>
                         </div>
                         <span style={{ fontSize: '10px', color: isConnected ? 'var(--color-success)' : 'var(--text-subtle)', background: isConnected ? 'rgba(46, 204, 113, 0.1)' : 'rgba(255, 255, 255, 0.03)', padding: '2px 8px', borderRadius: '10px' }}>
@@ -1389,7 +1350,10 @@ export default function ProvidersPage() {
       {showAddNode && (
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 999 }}>
           <form onSubmit={handleCreateNode} className="card" style={{ maxWidth: '500px', width: '100%', margin: '20px' }}>
-            <h3 className="card-title">Add {compatType === 'openai-compatible' ? 'OpenAI' : 'Anthropic'} Compatible Node</h3>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '16px' }}>
+              <ProviderIcon type={compatType} size={28} />
+              <h3 className="card-title" style={{ margin: 0 }}>Add {compatType === 'openai-compatible' ? 'OpenAI' : 'Anthropic'} Compatible Node</h3>
+            </div>
 
             <div className="form-group">
               <label className="form-label">Node Name</label>
@@ -1415,9 +1379,32 @@ export default function ProvidersPage() {
               />
             </div>
 
+            <div className="form-group">
+              <label className="form-label">API Key</label>
+              <input
+                type="password"
+                placeholder="sk-... (optional or credentials key)"
+                value={nodeApiKey}
+                onChange={(e) => setNodeApiKey(e.target.value)}
+                className="input-field"
+                autoComplete="off"
+              />
+            </div>
+
             <div style={{ display: 'flex', gap: '12px', marginTop: '16px' }}>
               <button type="submit" className="btn btn-primary">Create Node</button>
-              <button type="button" onClick={() => setShowAddNode(false)} className="btn btn-secondary">Cancel</button>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowAddNode(false);
+                  setNodeName('');
+                  setNodeUrl('');
+                  setNodeApiKey('');
+                }}
+                className="btn btn-secondary"
+              >
+                Cancel
+              </button>
             </div>
           </form>
         </div>
@@ -1427,7 +1414,10 @@ export default function ProvidersPage() {
       {selectedNode && (
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 999 }}>
           <form onSubmit={handleAddCustomCred} className="card" style={{ maxWidth: '500px', width: '100%', margin: '20px' }}>
-            <h3 className="card-title">Add Credentials to {selectedNode.name}</h3>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '16px' }}>
+              <ProviderIcon id={selectedNode.id} name={selectedNode.name} type={selectedNode.type} size={28} />
+              <h3 className="card-title" style={{ margin: 0 }}>Add Credentials to {selectedNode.name}</h3>
+            </div>
 
             <div className="form-group">
               <label className="form-label">Connection Name</label>
@@ -1449,17 +1439,6 @@ export default function ProvidersPage() {
                 onChange={(e) => setCredKey(e.target.value)}
                 className="input-field"
                 required
-              />
-            </div>
-
-            <div className="form-group">
-              <label className="form-label">Priority Order</label>
-              <input
-                type="number"
-                value={credPriority}
-                onChange={(e) => setCredPriority(e.target.value)}
-                className="input-field"
-                min="1"
               />
             </div>
 
@@ -1529,7 +1508,10 @@ export default function ProvidersPage() {
       {selectedStandard && (
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 999 }}>
           <form onSubmit={handleAddStandardCred} className="card" style={{ maxWidth: '500px', width: '100%', margin: '20px' }}>
-            <h3 className="card-title">Configure {selectedStandard.name} Credentials</h3>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '16px' }}>
+              <ProviderIcon id={selectedStandard.id} name={selectedStandard.name} type={selectedStandard.type} size={28} />
+              <h3 className="card-title" style={{ margin: 0 }}>Configure {selectedStandard.name} Credentials</h3>
+            </div>
 
             <div className="form-group">
               <label className="form-label">Connection Label Name</label>
@@ -1551,17 +1533,6 @@ export default function ProvidersPage() {
                 onChange={(e) => setCredKey(e.target.value)}
                 className="input-field"
                 required
-              />
-            </div>
-
-            <div className="form-group">
-              <label className="form-label">Priority</label>
-              <input
-                type="number"
-                value={credPriority}
-                onChange={(e) => setCredPriority(e.target.value)}
-                className="input-field"
-                min="1"
               />
             </div>
 
