@@ -1,7 +1,6 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import ProviderIcon from '../components/ProviderIcon';
 
-// Formatter for relative timestamps
 function formatRelativeTime(dateStr) {
   if (!dateStr) return '';
   const d = new Date(dateStr);
@@ -21,7 +20,6 @@ function formatRelativeTime(dateStr) {
   return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 }
 
-// Group sessions by date category
 function groupSessions(sessions) {
   const groups = {
     Today: [],
@@ -51,7 +49,6 @@ function groupSessions(sessions) {
   return groups;
 }
 
-// Fullscreen Image Lightbox Modal
 function ImageLightbox({ src, alt, onClose }) {
   if (!src) return null;
 
@@ -93,7 +90,7 @@ function ImageLightbox({ src, alt, onClose }) {
         position: 'fixed',
         inset: 0,
         zIndex: 9999,
-        background: 'rgba(0, 0, 0, 0.88)',
+        background: 'rgba(0, 0, 0, 0.9)',
         backdropFilter: 'blur(8px)',
         display: 'flex',
         flexDirection: 'column',
@@ -116,7 +113,7 @@ function ImageLightbox({ src, alt, onClose }) {
         <button
           onClick={handleCopy}
           className="btn btn-secondary btn-sm"
-          style={{ display: 'flex', alignItems: 'center', gap: '6px', background: 'rgba(255,255,255,0.1)', color: '#fff' }}
+          style={{ display: 'flex', alignItems: 'center', gap: '6px', background: 'rgba(255,255,255,0.12)', color: '#fff' }}
         >
           <span className="material-symbols-outlined" style={{ fontSize: '16px' }}>content_copy</span>
           Copy Image
@@ -124,7 +121,7 @@ function ImageLightbox({ src, alt, onClose }) {
         <button
           onClick={handleDownload}
           className="btn btn-secondary btn-sm"
-          style={{ display: 'flex', alignItems: 'center', gap: '6px', background: 'rgba(255,255,255,0.1)', color: '#fff' }}
+          style={{ display: 'flex', alignItems: 'center', gap: '6px', background: 'rgba(255,255,255,0.12)', color: '#fff' }}
         >
           <span className="material-symbols-outlined" style={{ fontSize: '16px' }}>download</span>
           Download
@@ -132,7 +129,7 @@ function ImageLightbox({ src, alt, onClose }) {
         <button
           onClick={onClose}
           className="btn btn-secondary btn-sm"
-          style={{ background: 'rgba(255,255,255,0.1)', color: '#fff' }}
+          style={{ background: 'rgba(255,255,255,0.12)', color: '#fff' }}
         >
           <span className="material-symbols-outlined" style={{ fontSize: '18px' }}>close</span>
         </button>
@@ -154,11 +151,9 @@ function ImageLightbox({ src, alt, onClose }) {
   );
 }
 
-// Markdown renderer with rich image cards, code block copy, and thinking tags
 function RenderMarkdown({ content, onImageClick }) {
   if (!content) return null;
 
-  // Split code blocks
   const parts = content.split(/(```[\s\S]*?```)/g);
 
   return (
@@ -237,7 +232,6 @@ function RenderMarkdown({ content, onImageClick }) {
           );
         }
 
-        // Check for markdown image syntax: ![alt](url)
         const imageRegex = /!\[(.*?)\]\((https?:\/\/[^\s)]+|data:image\/[^\s)]+)\)/g;
         const subParts = [];
         let lastIdx = 0;
@@ -360,7 +354,6 @@ function RenderMarkdown({ content, onImageClick }) {
           );
         }
 
-        // Standard text
         return (
           <span key={idx} style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
             {part}
@@ -371,7 +364,6 @@ function RenderMarkdown({ content, onImageClick }) {
   );
 }
 
-// Collapsible Thinking Accordion
 function ThinkingSection({ reasoning, isThinking, durationSec }) {
   const [isOpen, setIsOpen] = useState(isThinking);
 
@@ -459,7 +451,6 @@ function ThinkingSection({ reasoning, isThinking, durationSec }) {
 }
 
 export default function ChatPage() {
-  // Models & Config
   const [models, setModels] = useState([]);
   const [selectedModel, setSelectedModel] = useState('');
   const [systemPrompt, setSystemPrompt] = useState('');
@@ -467,7 +458,6 @@ export default function ChatPage() {
   const [isLoadingModels, setIsLoadingModels] = useState(true);
   const [systemApiKey, setSystemApiKey] = useState('');
 
-  // Mode: 'chat' | 'image'
   const [chatMode, setChatMode] = useState('chat');
 
   // Sessions
@@ -495,16 +485,17 @@ export default function ChatPage() {
   const fileInputRef = useRef(null);
   const textareaRef = useRef(null);
 
-  // Auto scroll
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, isStreaming]);
 
-  // Initial load
   useEffect(() => {
-    fetchModels();
-    fetchSystemApiKey();
-    loadSessions();
+    async function init() {
+      const key = await fetchSystemApiKey();
+      await fetchModels(key);
+      await loadSessions();
+    }
+    init();
   }, []);
 
   const fetchSystemApiKey = async () => {
@@ -512,36 +503,94 @@ export default function ChatPage() {
       const res = await fetch('/api/keys');
       if (res.ok) {
         const keys = await res.json();
-        const activeKey = keys.find(k => k.isActive);
+        const activeKey = keys.find(k => k.isActive) || keys[0];
         if (activeKey) {
           setSystemApiKey(activeKey.key);
+          return activeKey.key;
         }
       }
     } catch (err) {
       console.error('Error fetching system API key:', err);
     }
+    return '';
   };
 
-  const fetchModels = async () => {
+  const fetchModels = async (key) => {
     setIsLoadingModels(true);
+    let loaded = [];
+
+    // 1. Try /api/models (authenticated via local session / dashboard)
     try {
-      const res = await fetch('/v1/models');
+      const res = await fetch('/api/models');
       if (res.ok) {
         const data = await res.json();
-        const modelList = data.data || [];
-        setModels(modelList);
-        if (modelList.length > 0 && !selectedModel) {
-          setSelectedModel(modelList[0].id);
+        if (data.data && data.data.length > 0) {
+          loaded = data.data;
         }
       }
-    } catch (err) {
-      console.error('Error fetching models:', err);
-    } finally {
-      setIsLoadingModels(false);
+    } catch { }
+
+    // 2. Try /v1/models with bearer key if still empty
+    if (loaded.length === 0) {
+      try {
+        const headers = {};
+        if (key) headers['Authorization'] = `Bearer ${key}`;
+        const res = await fetch('/v1/models', { headers });
+        if (res.ok) {
+          const data = await res.json();
+          if (data.data && data.data.length > 0) {
+            loaded = data.data;
+          }
+        }
+      } catch { }
+    }
+
+    // 3. Try /api/models/policies if still empty
+    if (loaded.length === 0) {
+      try {
+        const res = await fetch('/api/models/policies');
+        if (res.ok) {
+          const policies = await res.json();
+          if (policies && policies.length > 0) {
+            loaded = policies.map(p => ({ id: p.id, owned_by: p.id.split('/')[0] || 'openai' }));
+          }
+        }
+      } catch { }
+    }
+
+    // 4. Default fallback list so select dropdown is NEVER empty
+    if (loaded.length === 0) {
+      loaded = [
+        { id: 'sumopod/deepseek-r1', owned_by: 'sumopod' },
+        { id: 'sumopod/deepseek-v4-flash', owned_by: 'sumopod' },
+        { id: 'kenari/kenari-default', owned_by: 'kenari' },
+        { id: 'gpt-4o', owned_by: 'openai' },
+        { id: 'gpt-4o-mini', owned_by: 'openai' },
+        { id: 'claude-3-5-sonnet-20241022', owned_by: 'anthropic' }
+      ];
+    }
+
+    setModels(loaded);
+    setSelectedModel(prev => {
+      if (prev && loaded.some(m => m.id === prev)) return prev;
+      return loaded[0].id;
+    });
+    setIsLoadingModels(false);
+  };
+
+  const handleModelChange = (newModel) => {
+    setSelectedModel(newModel);
+    if (activeSessionId) {
+      setSessions(prev => prev.map(s => s.id === activeSessionId ? { ...s, model: newModel } : s));
+      setActiveSession(prev => prev ? { ...prev, model: newModel } : null);
+      fetch(`/api/chat/sessions/${activeSessionId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model: newModel })
+      }).catch(() => {});
     }
   };
 
-  // Load session list from backend (or fallback to local storage)
   const loadSessions = async () => {
     try {
       const res = await fetch('/api/chat/sessions');
@@ -579,7 +628,6 @@ export default function ChatPage() {
     }
   };
 
-  // Select a session and load its JSONL messages
   const selectSession = async (id) => {
     setActiveSessionId(id);
     setMessages([]);
@@ -616,7 +664,6 @@ export default function ChatPage() {
     }
   };
 
-  // Create new session
   const handleNewChat = async () => {
     if (isStreaming) {
       abortControllerRef.current?.abort();
@@ -660,7 +707,6 @@ export default function ChatPage() {
     setTimeout(() => textareaRef.current?.focus(), 50);
   };
 
-  // Delete session
   const handleDeleteSession = async (e, id) => {
     e.stopPropagation();
     if (!confirm('Are you sure you want to delete this chat session?')) return;
@@ -683,13 +729,11 @@ export default function ChatPage() {
     }
   };
 
-  // Export session as JSONL file
   const handleExportSession = (e, id) => {
     e.stopPropagation();
     window.open(`/api/chat/sessions/${id}/export`, '_blank');
   };
 
-  // Inline rename session
   const handleStartRename = (e, s) => {
     e.stopPropagation();
     setEditingTitleId(s.id);
@@ -717,7 +761,6 @@ export default function ChatPage() {
     } catch { }
   };
 
-  // Append message to JSONL file
   const appendMessageToStorage = async (sessionId, msg) => {
     try {
       await fetch(`/api/chat/sessions/${sessionId}/append`, {
@@ -735,7 +778,6 @@ export default function ChatPage() {
     }
   };
 
-  // File & Image Upload (Max 5MB)
   const handleFileSelect = (e) => {
     const files = Array.from(e.target.files || []);
     addFiles(files);
@@ -743,11 +785,11 @@ export default function ChatPage() {
   };
 
   const addFiles = (files) => {
-    const MAX_SIZE = 5 * 1024 * 1024; // 5MB
+    const MAX_SIZE = 5 * 1024 * 1024;
 
     for (const file of files) {
       if (file.size > MAX_SIZE) {
-        showToast(`"${file.name}" exceeds the 5MB file limit.`);
+        showToast(`"${file.name}" exceeds the 5MB limit.`);
         continue;
       }
 
@@ -790,7 +832,6 @@ export default function ChatPage() {
     setAttachments(prev => prev.filter((_, i) => i !== index));
   };
 
-  // Drag and drop handlers
   const [isDragging, setIsDragging] = useState(false);
   const handleDragOver = (e) => {
     e.preventDefault();
@@ -807,7 +848,6 @@ export default function ChatPage() {
     }
   };
 
-  // Paste image handler from clipboard
   const handlePaste = (e) => {
     if (e.clipboardData && e.clipboardData.files.length > 0) {
       const files = Array.from(e.clipboardData.files);
@@ -824,7 +864,6 @@ export default function ChatPage() {
     setTimeout(() => setErrorToast(''), 4000);
   };
 
-  // Auto title generator
   const autoGenerateTitle = async (sessionId, promptText) => {
     const words = promptText.trim().replace(/\n+/g, ' ').split(' ');
     let fallbackTitle = words.slice(0, 5).join(' ');
@@ -843,7 +882,6 @@ export default function ChatPage() {
     } catch { }
   };
 
-  // Main Send Function
   const handleSend = async (customPrompt) => {
     const textToSend = customPrompt || input;
     if ((!textToSend.trim() && attachments.length === 0) || isStreaming) return;
@@ -862,13 +900,11 @@ export default function ChatPage() {
 
     const isFirstMessage = messages.length === 0;
 
-    // Check Image Generation Mode
     if (chatMode === 'image' || textToSend.trim().startsWith('/image ')) {
       await handleGenerateImage(textToSend.replace(/^\/image\s*/, ''));
       return;
     }
 
-    // Build User message
     let finalPrompt = textToSend.trim();
     attachments.filter(a => a.type === 'file').forEach(file => {
       finalPrompt = `[Attached Document: ${file.name} (${(file.size / 1024).toFixed(1)} KB)]\n\`\`\`\n${file.content}\n\`\`\`\n\n${finalPrompt}`;
@@ -1084,7 +1120,6 @@ export default function ChatPage() {
     }
   };
 
-  // Image Generation Handler
   const handleGenerateImage = async (prompt) => {
     const cleanPrompt = prompt.trim();
     if (!cleanPrompt) return;
@@ -1263,7 +1298,7 @@ export default function ChatPage() {
         </div>
       )}
 
-      {/* ================= LEFT SIDEBAR (ChatGPT Style) ================= */}
+      {/* ================= CHAT SESSIONS SIDEBAR ================= */}
       <div
         style={{
           width: isSidebarOpen ? '260px' : '0px',
@@ -1272,29 +1307,41 @@ export default function ChatPage() {
           background: 'var(--bg-sidebar)',
           display: 'flex',
           flexDirection: 'column',
-          transition: 'width 0.2s ease, min-width 0.2s ease',
+          transition: 'width 0.22s cubic-bezier(0.4, 0, 0.2, 1), min-width 0.22s cubic-bezier(0.4, 0, 0.2, 1)',
           overflow: 'hidden',
-          zIndex: 10
+          zIndex: 10,
+          position: 'relative'
         }}
       >
-        <div style={{ padding: '16px 12px 12px 12px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
-          <button
-            onClick={handleNewChat}
-            className="btn btn-primary"
-            style={{
-              width: '100%',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: '8px',
-              fontWeight: 600,
-              fontSize: '13px',
-              padding: '9px 14px'
-            }}
-          >
-            <span className="material-symbols-outlined" style={{ fontSize: '18px' }}>add</span>
-            New Chat
-          </button>
+        <div style={{ padding: '14px 12px 10px 12px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+          {/* Top Row: New Chat + Collapse Button */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <button
+              onClick={handleNewChat}
+              className="btn btn-primary"
+              style={{
+                flex: 1,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '8px',
+                fontWeight: 600,
+                fontSize: '13px',
+                padding: '8px 12px'
+              }}
+            >
+              <span className="material-symbols-outlined" style={{ fontSize: '18px' }}>add</span>
+              New Chat
+            </button>
+            <button
+              onClick={() => setIsSidebarOpen(false)}
+              className="btn btn-secondary btn-sm"
+              style={{ padding: '6px', borderRadius: '6px' }}
+              title="Collapse chat history"
+            >
+              <span className="material-symbols-outlined" style={{ fontSize: '18px' }}>dock_to_left</span>
+            </button>
+          </div>
 
           <div
             style={{
@@ -1464,7 +1511,7 @@ export default function ChatPage() {
 
         <div
           style={{
-            padding: '12px',
+            padding: '10px 12px',
             borderTop: '1px solid var(--border-color)',
             fontSize: '11px',
             color: 'var(--text-muted)',
@@ -1473,12 +1520,12 @@ export default function ChatPage() {
             alignItems: 'center'
           }}
         >
-          <span>Saved as JSONL</span>
-          <span style={{ fontFamily: 'var(--font-mono)' }}>v0.3.3</span>
+          <span>Sessions: JSONL Stream</span>
+          <span style={{ fontFamily: 'var(--font-mono)' }}>{sessions.length} chats</span>
         </div>
       </div>
 
-      {/* ================= MAIN CHAT AREA ================= */}
+      {/* ================= MAIN CHAT PANEL ================= */}
       <div
         style={{
           flex: 1,
@@ -1503,14 +1550,21 @@ export default function ChatPage() {
           }}
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            {/* Sidebar toggle button */}
             <button
               onClick={() => setIsSidebarOpen(!isSidebarOpen)}
               className="btn btn-secondary btn-sm"
-              style={{ padding: '6px' }}
+              style={{
+                padding: '6px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: isSidebarOpen ? 'var(--text-muted)' : 'var(--color-primary)'
+              }}
               title={isSidebarOpen ? 'Collapse sidebar' : 'Expand sidebar'}
             >
               <span className="material-symbols-outlined" style={{ fontSize: '18px' }}>
-                {isSidebarOpen ? 'chevron_left' : 'menu'}
+                {isSidebarOpen ? 'dock_to_left' : 'menu'}
               </span>
             </button>
 
@@ -1575,27 +1629,36 @@ export default function ChatPage() {
               </button>
             </div>
 
-            {/* Model Selector */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            {/* Model Selector Dropdown */}
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                background: 'var(--bg-surface)',
+                border: '1px solid var(--border-color)',
+                borderRadius: '6px',
+                padding: '3px 8px'
+              }}
+            >
               <ProviderIcon provider={selectedModel.includes('/') ? selectedModel.split('/')[0] : 'openai'} size={18} />
               <select
                 value={selectedModel}
-                onChange={e => setSelectedModel(e.target.value)}
+                onChange={e => handleModelChange(e.target.value)}
                 disabled={isLoadingModels}
                 style={{
-                  padding: '6px 10px',
-                  borderRadius: '6px',
-                  border: '1px solid var(--border-color)',
-                  background: 'var(--bg-surface)',
+                  border: 'none',
+                  background: 'transparent',
                   color: 'var(--text-main)',
                   fontSize: '12.5px',
-                  maxWidth: '220px',
+                  fontWeight: 500,
+                  maxWidth: '240px',
                   outline: 'none',
                   cursor: 'pointer'
                 }}
               >
                 {models.map(m => (
-                  <option key={m.id} value={m.id}>
+                  <option key={m.id} value={m.id} style={{ background: '#1c2128', color: '#fff' }}>
                     {m.id}
                   </option>
                 ))}
@@ -1609,7 +1672,7 @@ export default function ChatPage() {
                 color: systemPrompt.trim() ? 'var(--color-primary)' : 'var(--text-muted)',
                 borderColor: systemPrompt.trim() ? 'var(--color-primary)' : 'var(--border-color)'
               }}
-              title="Configure System Prompt"
+              title="System Prompt"
             >
               <span className="material-symbols-outlined" style={{ fontSize: '16px' }}>tune</span>
             </button>
@@ -1642,7 +1705,7 @@ export default function ChatPage() {
             <textarea
               value={systemPrompt}
               onChange={e => setSystemPrompt(e.target.value)}
-              placeholder="e.g. You are a senior software architect. Provide terse, accurate, and production-grade code examples."
+              placeholder="e.g. You are a senior software engineer. Provide terse, accurate code."
               rows={2}
               style={{
                 width: '100%',
@@ -1659,7 +1722,7 @@ export default function ChatPage() {
           </div>
         )}
 
-        {/* Messages List */}
+        {/* Message Thread */}
         <div
           style={{
             flex: 1,
@@ -1704,8 +1767,8 @@ export default function ChatPage() {
               </h2>
               <p style={{ fontSize: '13.5px', color: 'var(--text-muted)', maxWidth: '480px', margin: '0 0 28px 0' }}>
                 {chatMode === 'image'
-                  ? 'Describe an image prompt below to generate high-resolution images with copy, preview, and download support.'
-                  : 'Start a conversation with streaming thinking reasoning, file attachments (up to 5MB), and vision capabilities.'}
+                  ? 'Enter an image prompt below to generate high-resolution images with copy, preview, and download support.'
+                  : 'Chat with streaming reasoning / thinking, file attachments (up to 5MB), and automatic title generation.'}
               </p>
 
               <div
@@ -1955,7 +2018,7 @@ export default function ChatPage() {
           <div ref={messagesEndRef} />
         </div>
 
-        {/* Input Area */}
+        {/* Bottom Input Area */}
         <div
           style={{
             borderTop: '1px solid var(--border-color)',
