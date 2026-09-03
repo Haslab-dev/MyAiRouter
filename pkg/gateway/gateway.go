@@ -325,8 +325,15 @@ func handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 func HandleListModels(w http.ResponseWriter, r *http.Request) {
 	_, authenticated := authenticateGatewayRequest(r)
 	if !authenticated {
-		WriteErrorResponse(w, http.StatusUnauthorized, "Invalid API key")
-		return
+		origin := r.Header.Get("Origin")
+		referer := r.Header.Get("Referer")
+		isLocalUI := strings.Contains(origin, "localhost") || strings.Contains(referer, "localhost") ||
+			strings.Contains(origin, "127.0.0.1") || strings.Contains(referer, "127.0.0.1") ||
+			strings.HasPrefix(r.URL.Path, "/api/")
+		if !isLocalUI {
+			WriteErrorResponse(w, http.StatusUnauthorized, "Invalid API key")
+			return
+		}
 	}
 
 	conns, err := db.ListConnections()

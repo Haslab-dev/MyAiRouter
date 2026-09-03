@@ -111,6 +111,7 @@ func RegisterAdminRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/usage/export", handleUsageExport)
 	mux.HandleFunc("/api/usage/import", handleUsageImport)
 	mux.HandleFunc("/api/usage/inject", handleUsageInject)
+	mux.HandleFunc("/api/models", HandleListModels)
 	mux.HandleFunc("/api/models/disabled", handleModelsDisabled)
 	mux.HandleFunc("/api/models/enabled", handleModelsEnabled)
 	mux.HandleFunc("/api/models/custom", handleModelsCustom)
@@ -130,6 +131,11 @@ func RegisterAdminRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/auth/login", handleAuthLogin)
 	mux.HandleFunc("/api/auth/logout", handleAuthLogout)
 	mux.HandleFunc("/api/auth/change-password", handleAuthChangePassword)
+	// Chat Sessions (JSONL streaming append storage)
+	mux.HandleFunc("/api/chat/sessions", handleChatSessions)
+	mux.HandleFunc("/api/chat/sessions/", handleChatSessionDetail)
+	// Image Generation
+	mux.HandleFunc("/api/images/generations", HandleImagesGenerations)
 }
 
 func handleHealth(w http.ResponseWriter, r *http.Request) {

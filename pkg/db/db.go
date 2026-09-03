@@ -207,6 +207,19 @@ func createTables() error {
 			createdAt TEXT NOT NULL,
 			updatedAt TEXT NOT NULL
 		);`,
+
+		// Chat Sessions with JSONL streaming append storage
+		`CREATE TABLE IF NOT EXISTS chatSessions (
+			id TEXT PRIMARY KEY,
+			title TEXT NOT NULL,
+			model TEXT,
+			systemPrompt TEXT,
+			messageCount INTEGER DEFAULT 0,
+			filePath TEXT,
+			createdAt TEXT NOT NULL,
+			updatedAt TEXT NOT NULL
+		);`,
+		`CREATE INDEX IF NOT EXISTS idx_chatsessions_updated ON chatSessions(updatedAt DESC);`,
 	}
 
 	for _, query := range queries {

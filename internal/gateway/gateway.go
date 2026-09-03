@@ -14,6 +14,7 @@ import (
 func RegisterGatewayRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /v1/chat/completions", HandleChatCompletions)
 	mux.HandleFunc("GET /v1/models", pkgGateway.HandleListModels)
+	mux.HandleFunc("POST /v1/images/generations", pkgGateway.HandleImagesGenerations)
 }
 
 func HandleChatCompletions(w http.ResponseWriter, r *http.Request) {
