@@ -132,6 +132,7 @@ func RegisterAdminRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/auth/logout", handleAuthLogout)
 	mux.HandleFunc("/api/auth/change-password", handleAuthChangePassword)
 	// Chat Sessions (JSONL streaming append storage)
+	mux.HandleFunc("/api/system/metrics", HandleSystemMetrics)
 	mux.HandleFunc("/api/chat/sessions", handleChatSessions)
 	mux.HandleFunc("/api/chat/sessions/", handleChatSessionDetail)
 	// Image Generation

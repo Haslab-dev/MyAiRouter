@@ -356,11 +356,81 @@ body::before {
 }
 
 .sidebar-footer {
-  font-size: 10px;
+  font-size: 11px;
   color: var(--text-subtle);
-  padding-top: 12px;
+  padding-top: 14px;
   border-top: 1px solid var(--border-color);
+  text-align: left;
+  padding-left: 10px;
+  padding-right: 10px;
+}
+
+.sidebar.collapsed .sidebar-footer {
   text-align: center;
+  padding-left: 0;
+  padding-right: 0;
+}
+
+.metrics-container {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 6px;
+  padding: 8px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+}
+
+.metric-item {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.metric-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 10.5px;
+  line-height: 1.2;
+}
+
+.metric-label {
+  color: var(--text-muted);
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.metric-value {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--text-main);
+}
+
+.metric-subtext {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  color: var(--text-subtle);
+  text-align: right;
+  line-height: 1;
+}
+
+.metric-bar-bg {
+  width: 100%;
+  height: 4px;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.metric-bar-fill {
+  height: 100%;
+  border-radius: 2px;
+  transition: width 0.4s ease, background-color 0.4s ease;
 }
 
 .main-content {

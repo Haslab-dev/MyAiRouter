@@ -33,6 +33,18 @@ const NAV_ITEMS = [
   { to: "/console-log", label: "Traffic", icon: "insights" },
 ];
 
+function formatBytes(bytes) {
+  if (!bytes || bytes < 0) return "0 B";
+  const units = ["B", "KB", "MB", "GB", "TB"];
+  let val = bytes;
+  let unitIdx = 0;
+  while (val >= 1024 && unitIdx < units.length - 1) {
+    val /= 1024;
+    unitIdx++;
+  }
+  return val.toFixed(unitIdx === 0 ? 0 : 1) + " " + units[unitIdx];
+}
+
 function ThemeToggle() {
   const { theme, toggleTheme } = useTheme();
   const isDark = theme === "dark";
@@ -81,11 +93,7 @@ function AppShell() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
     return localStorage.getItem("sidebarCollapsed") === "true";
   });
-
-  useEffect(() => {
-    localStorage.setItem("sidebarCollapsed", String(sidebarCollapsed));
-  }, [sidebarCollapsed]);
-
+  const [systemMetrics, setSystemMetrics] = useState(null);
   useEffect(() => {
     const fetchCounts = async () => {
       try {
@@ -107,6 +115,21 @@ function AppShell() {
     fetchCounts();
   }, []);
 
+  useEffect(() => {
+    const fetchMetrics = async () => {
+      try {
+        const res = await fetch("/api/system/metrics");
+        if (res.ok) {
+          setSystemMetrics(await res.json());
+        }
+      } catch (err) {
+        console.error("Error fetching system metrics:", err);
+      }
+    };
+    fetchMetrics();
+    const interval = setInterval(fetchMetrics, 30000);
+    return () => clearInterval(interval);
+  }, []);
   // Loading state
   if (status === null) {
     return (
@@ -232,28 +255,152 @@ function AppShell() {
             style={{
               display: "flex",
               flexDirection: "column",
-              gap: "6px",
+              gap: "4px",
               textAlign: sidebarCollapsed ? "center" : "left",
-              fontSize: "10px",
-              color: "var(--text-muted)",
             }}
           >
             <div
               style={{
                 display: "flex",
                 alignItems: "center",
-                justifyContent: sidebarCollapsed ? "center" : "flex-start",
-                gap: "6px",
-                color: "var(--color-success)",
-                fontWeight: "600",
-                marginBottom: "2px",
+                justifyContent: sidebarCollapsed ? "center" : "space-between",
+                padding: "2px 2px",
               }}
             >
-              <span className="status-dot"></span>
-              {!sidebarCollapsed && "Gateway Online"}
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "6px",
+                  fontWeight: "600",
+                  fontSize: "11px",
+                  color:
+                    systemMetrics?.health?.status === "healthy"
+                      ? "var(--color-success)"
+                      : systemMetrics?.health?.status === "degraded"
+                      ? "var(--color-warning)"
+                      : "var(--color-danger)",
+                }}
+                title={`System Health: ${systemMetrics?.health?.status || "online"}`}
+              >
+                <span className="status-dot"></span>
+                {!sidebarCollapsed && (
+                  <span>
+                    Gateway{" "}
+                    {systemMetrics?.health?.status
+                      ? systemMetrics.health.status.charAt(0).toUpperCase() +
+                        systemMetrics.health.status.slice(1)
+                      : "Online"}
+                  </span>
+                )}
+              </div>
             </div>
-            {!sidebarCollapsed && <div>{providerCount} Active Providers</div>}
-            {!sidebarCollapsed && <div>{modelCount} Live Models</div>}
+
+            {!sidebarCollapsed && systemMetrics && (
+              <div className="metrics-container">
+                {/* Storage */}
+                <div className="metric-item">
+                  <div className="metric-header">
+                    <span className="metric-label">
+                      <span className="material-symbols-outlined" style={{ fontSize: "12px" }}>
+                        hard_drive
+                      </span>
+                      Storage
+                    </span>
+                    <span className="metric-value">
+                      {systemMetrics.storage?.used?.toFixed(0) || 0}%
+                    </span>
+                  </div>
+                  <div className="metric-bar-bg">
+                    <div
+                      className="metric-bar-fill"
+                      style={{
+                        width: `${Math.min(100, Math.max(0, systemMetrics.storage?.used || 0))}%`,
+                        backgroundColor:
+                          (systemMetrics.storage?.used || 0) > 90
+                            ? "var(--color-danger)"
+                            : (systemMetrics.storage?.used || 0) > 80
+                            ? "var(--color-warning)"
+                            : "var(--color-primary)",
+                      }}
+                    />
+                  </div>
+                  <div className="metric-subtext">
+                    {formatBytes(systemMetrics.storage?.used_bytes)} / {formatBytes(systemMetrics.storage?.total)}
+                  </div>
+                </div>
+
+                {/* Memory */}
+                <div className="metric-item">
+                  <div className="metric-header">
+                    <span className="metric-label">
+                      <span className="material-symbols-outlined" style={{ fontSize: "12px" }}>
+                        memory
+                      </span>
+                      Memory
+                    </span>
+                    <span className="metric-value">
+                      {systemMetrics.memory?.used?.toFixed(0) || 0}%
+                    </span>
+                  </div>
+                  <div className="metric-bar-bg">
+                    <div
+                      className="metric-bar-fill"
+                      style={{
+                        width: `${Math.min(100, Math.max(0, systemMetrics.memory?.used || 0))}%`,
+                        backgroundColor:
+                          (systemMetrics.memory?.used || 0) > 90
+                            ? "var(--color-danger)"
+                            : (systemMetrics.memory?.used || 0) > 80
+                            ? "var(--color-warning)"
+                            : "var(--color-primary)",
+                      }}
+                    />
+                  </div>
+                  <div className="metric-subtext">
+                    {formatBytes(systemMetrics.memory?.used_bytes)} / {formatBytes(systemMetrics.memory?.total)}
+                  </div>
+                </div>
+
+                {/* CPU */}
+                <div className="metric-item">
+                  <div className="metric-header">
+                    <span className="metric-label">
+                      <span className="material-symbols-outlined" style={{ fontSize: "12px" }}>
+                        speed
+                      </span>
+                      CPU
+                    </span>
+                    <span className="metric-value">
+                      {systemMetrics.cpu?.usage?.toFixed(0) || 0}%
+                    </span>
+                  </div>
+                  <div className="metric-bar-bg">
+                    <div
+                      className="metric-bar-fill"
+                      style={{
+                        width: `${Math.min(100, Math.max(0, systemMetrics.cpu?.usage || 0))}%`,
+                        backgroundColor:
+                          (systemMetrics.cpu?.usage || 0) > 90
+                            ? "var(--color-danger)"
+                            : (systemMetrics.cpu?.usage || 0) > 80
+                            ? "var(--color-warning)"
+                            : "var(--color-primary)",
+                      }}
+                    />
+                  </div>
+                  <div className="metric-subtext">
+                    {systemMetrics.cpu?.count || 1} Cores
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {!sidebarCollapsed && !systemMetrics && (
+              <div style={{ color: "var(--text-subtle)", fontSize: "10px", marginTop: "4px" }}>
+                Loading metrics...
+              </div>
+            )}
           </div>
         </aside>
 

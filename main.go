@@ -104,7 +104,7 @@ func startServer() {
 
 	internalGateway.RegisterGatewayRoutes(mux)
 	gateway.RegisterAdminRoutes(mux)
-
+	gateway.StartMetricsCollector(30 * time.Second)
 	skillsFS, err := fs.Sub(embedFS, "skills")
 	if err == nil {
 		mux.Handle("/skills/", http.StripPrefix("/skills/", http.FileServer(http.FS(skillsFS))))
