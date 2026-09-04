@@ -1,12 +1,11 @@
 import { useState, useEffect, useRef } from 'react';
 import ProviderIcon from '../components/ProviderIcon';
-import MarkdownRenderer from '../components/chat/MarkdownRenderer';
 import BenchmarkResult from '../components/chat/BenchmarkResult';
 
 export default function BenchmarkPage() {
   const [models, setModels] = useState([]);
   const [selectedModels, setSelectedModels] = useState([]);
-  const [isLoadingModels, setIsLoadingModels] = useState(true);
+  const [modelListExpanded, setModelListExpanded] = useState(true);
   const [prompt, setPrompt] = useState('');
   const [systemPrompt, setSystemPrompt] = useState('');
   const [showSystemPrompt, setShowSystemPrompt] = useState(false);
@@ -17,7 +16,6 @@ export default function BenchmarkPage() {
 
   useEffect(() => {
     async function fetchModels() {
-      setIsLoadingModels(true);
       let loaded = [];
       try {
         const res = await fetch('/api/models');
@@ -43,7 +41,6 @@ export default function BenchmarkPage() {
         return true;
       });
       setModels(deduped);
-      setIsLoadingModels(false);
     }
     fetchModels();
   }, []);
@@ -231,40 +228,56 @@ export default function BenchmarkPage() {
         </div>
 
         {/* Model Selector */}
-        <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '12px' }}>
-          {models.map(m => {
-            const selected = selectedModels.includes(m.id);
-            const atLimit = selectedModels.length >= 3 && !selected;
-            return (
-              <button
-                key={m.id}
-                onClick={() => !atLimit && toggleModel(m.id)}
-                style={{
-                  padding: '5px 12px',
-                  borderRadius: '6px',
-                  border: `1.5px solid ${selected ? 'var(--color-primary)' : 'var(--border-color)'}`,
-                  background: selected ? 'var(--color-primary)' : 'var(--bg-surface)',
-                  color: selected ? '#fff' : atLimit ? 'var(--text-subtle)' : 'var(--text-main)',
-                  fontSize: '12px',
-                  fontWeight: 600,
-                  cursor: atLimit ? 'not-allowed' : 'pointer',
-                  fontFamily: 'var(--font-mono)',
-                  opacity: atLimit ? 0.4 : 1,
-                  transition: 'all 0.15s ease',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '6px'
-                }}
-                title={m.id}
-              >
-                <ProviderIcon provider={m.id.includes('/') ? m.id.split('/')[0] : 'openai'} size={14} />
-                {selected && '✓ '}{m.id}
-              </button>
-            );
-          })}
-          <span style={{ fontSize: '12px', color: selectedModels.length >= 3 ? 'var(--color-warning)' : 'var(--text-muted)', fontWeight: 600, alignSelf: 'center', marginLeft: '4px' }}>
-            {selectedModels.length}/3
-          </span>
+        <div style={{ marginBottom: '12px', border: '1px solid var(--border-color)', borderRadius: '8px', background: 'var(--bg-surface)', overflow: 'hidden' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 12px', borderBottom: modelListExpanded ? '1px solid var(--border-color)' : 'none' }}>
+            <span className="material-symbols-outlined" style={{ fontSize: '14px', color: 'var(--text-muted)' }}>list</span>
+            <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-main)', flex: 1 }}>Model Selection</span>
+            <span style={{ fontSize: '11px', color: selectedModels.length >= 3 ? 'var(--color-warning)' : 'var(--text-muted)', fontWeight: 600 }}>{selectedModels.length}/3</span>
+            <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{models.length} models</span>
+            <button
+              onClick={() => setModelListExpanded(!modelListExpanded)}
+              style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: '2px' }}
+              title={modelListExpanded ? 'Collapse' : 'Expand'}
+            >
+              <span className="material-symbols-outlined" style={{ fontSize: '16px', transform: modelListExpanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s ease' }}>expand_more</span>
+            </button>
+          </div>
+
+          <div style={{ maxHeight: modelListExpanded ? '280px' : '0px', overflowY: 'auto', transition: 'maxHeight 0.2s ease' }}>
+            <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', padding: '10px 12px' }}>
+              {models.map(m => {
+                const selected = selectedModels.includes(m.id);
+                const atLimit = selectedModels.length >= 3 && !selected;
+                return (
+                  <button
+                    key={m.id}
+                    onClick={() => !atLimit && toggleModel(m.id)}
+                    style={{
+                      padding: '5px 12px',
+                      borderRadius: '6px',
+                      border: `1.5px solid ${selected ? 'var(--color-primary)' : 'var(--border-color)'}`,
+                      background: selected ? 'var(--color-primary)' : 'var(--bg-card)',
+                      color: selected ? '#fff' : atLimit ? 'var(--text-subtle)' : 'var(--text-main)',
+                      fontSize: '12px',
+                      fontWeight: 600,
+                      cursor: atLimit ? 'not-allowed' : 'pointer',
+                      fontFamily: 'var(--font-mono)',
+                      opacity: atLimit ? 0.4 : 1,
+                      transition: 'all 0.15s ease',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      whiteSpace: 'nowrap'
+                    }}
+                    title={m.id}
+                  >
+                    <ProviderIcon provider={m.id.includes('/') ? m.id.split('/')[0] : 'openai'} size={14} />
+                    {selected && '✓ '}{m.id}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
         </div>
 
         {/* System Prompt */}
