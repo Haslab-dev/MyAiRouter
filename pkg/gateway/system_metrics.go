@@ -1,7 +1,6 @@
 package gateway
 
 import (
-	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -153,10 +152,12 @@ func collectMemoryDarwin() (m struct {
 	Total     uint64  `json:"total"`
 	Free      uint64  `json:"free"`
 }) {
-	raw, err := unix.SysctlRaw("hw.memsize")
 	var total uint64
-	if err == nil && len(raw) >= 8 {
-		total = binary.LittleEndian.Uint64(raw[:8])
+	out, err := exec.Command("sysctl", "-n", "hw.memsize").Output()
+	if err == nil {
+		if v, e := parseUint(strings.TrimSpace(string(out))); e == nil {
+			total = v
+		}
 	}
 	if total == 0 {
 		total = 8 * 1024 * 1024 * 1024
