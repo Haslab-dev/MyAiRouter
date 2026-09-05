@@ -22,6 +22,7 @@ interface ChartPoint {
 
 interface ModelSummaryRow {
   model: string
+  provider: string
   requests: number
   promptTokens: number
   completionTokens: number
@@ -166,11 +167,31 @@ export default function UsagePage() {
     }
   }
 
-  const providerSummaries = useMemo(() => {
-    const map = new Map<string, ModelSummaryRow & { models: Set<string> }>()
+  // The API groups usage by (model, provider), so one model can appear in
+  // several rows. Merge per model for the model table, and roll up by the
+  // row's actual provider field for the provider table.
+  const modelSummariesMerged = useMemo(() => {
+    const map = new Map<string, ModelSummaryRow>()
     for (const row of modelSummaries) {
-      const p = row.model.includes('/') ? row.model.split('/')[0] : row.model.split('|')[0] || 'other'
-      if (!map.has(p)) map.set(p, { model: p, requests: 0, promptTokens: 0, completionTokens: 0, cachedTokens: 0, cost: 0, models: new Set() })
+      const acc = map.get(row.model)
+      if (!acc) {
+        map.set(row.model, { ...row })
+        continue
+      }
+      acc.requests += row.requests ?? 0
+      acc.promptTokens += row.promptTokens ?? 0
+      acc.completionTokens += row.completionTokens ?? 0
+      acc.cachedTokens += row.cachedTokens ?? 0
+      acc.cost += row.cost ?? 0
+    }
+    return Array.from(map.values()).sort((a, b) => b.cost - a.cost || b.requests - a.requests)
+  }, [modelSummaries])
+
+  const providerSummaries = useMemo(() => {
+    const map = new Map<string, { model: string; provider: string; requests: number; promptTokens: number; completionTokens: number; cachedTokens: number; cost: number; models: Set<string> }>()
+    for (const row of modelSummaries) {
+      const p = (row.provider ?? '').trim() || 'unknown'
+      if (!map.has(p)) map.set(p, { model: p, provider: p, requests: 0, promptTokens: 0, completionTokens: 0, cachedTokens: 0, cost: 0, models: new Set() })
       const acc = map.get(p)!
       acc.requests += row.requests ?? 0
       acc.promptTokens += row.promptTokens ?? 0
@@ -185,7 +206,7 @@ export default function UsagePage() {
   }, [modelSummaries])
 
   const totalTokens = stats.totalPromptTokens + stats.totalCompletionTokens
-  const rows = tableMode === 'models' ? modelSummaries : providerSummaries
+  const rows = tableMode === 'models' ? modelSummariesMerged : providerSummaries
 
   return (
     <PageContainer>
@@ -288,7 +309,7 @@ export default function UsagePage() {
           <table className="w-full text-[13px]">
             <thead>
               <tr className="border-b border-border">
-                <th className="px-4 py-2 text-left text-[11px] font-medium uppercase tracking-wide text-subtle">{tableMode === 'models' ? 'Model' : 'Provider'}</th>
+                <th className="px-4 py-2 text-left text-[11px] font-medium uppercase tracking-wide text-subtle">{tableMode === 'models' ? 'Model (provider)' : 'Provider'}</th>
                 <th className="px-4 py-2 text-right text-[11px] font-medium uppercase tracking-wide text-subtle">Requests</th>
                 <th className="px-4 py-2 text-right text-[11px] font-medium uppercase tracking-wide text-subtle">Prompt</th>
                 <th className="px-4 py-2 text-right text-[11px] font-medium uppercase tracking-wide text-subtle">Completion</th>
@@ -306,7 +327,12 @@ export default function UsagePage() {
               ) : (
                 rows.map((row, i) => (
                   <tr key={`${row.model}-${i}`} className={cn('border-b border-border/60', i % 2 === 1 && 'bg-surface-2/40')}>
-                    <td className="max-w-64 truncate px-4 py-2.5 font-mono text-xs">{row.model}</td>
+                    <td className="max-w-64 px-4 py-2.5">
+                      <code className="block truncate font-mono text-xs">{row.model}</code>
+                      {tableMode === 'models' && row.provider && (
+                        <span className="text-[10px] text-subtle">{row.provider}</span>
+                      )}
+                    </td>
                     <td className="tnum px-4 py-2.5 text-right">{formatNumber(row.requests)}</td>
                     <td className="tnum px-4 py-2.5 text-right text-muted">{formatNumber(row.promptTokens)}</td>
                     <td className="tnum px-4 py-2.5 text-right text-muted">{formatNumber(row.completionTokens)}</td>
