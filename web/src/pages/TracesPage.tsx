@@ -2,11 +2,15 @@ import { useEffect, useMemo, useState } from 'react'
 import { ScanSearch, Trash2 } from 'lucide-react'
 import { api } from '@/lib/api'
 import { useSnackbar } from '@/stores/snackbar'
-import { Badge, Button, Card, EmptyState, Input, PageContainer, PageHeader, Spinner, type BadgeTone } from '@/components/ui'
+import { Badge, Button, Card, EmptyState, Input, PageHeader, Spinner, type BadgeTone } from '@/components/ui'
 import { cn } from '@/lib/cn'
 import { formatCost, formatNumber, type FlatTrace, type TargetAttempt } from '@/lib/types'
 
 const fmtLatency = (ms: number) => (ms >= 1000 ? `${(ms / 1000).toFixed(2)}s` : `${ms}ms`)
+
+/** Output throughput in tokens per second for a trace. */
+const traceTokPerSec = (t: FlatTrace): number =>
+  t.latencyMs > 0 ? t.outputTokens / (t.latencyMs / 1000) : 0
 
 const routeTone: Record<string, BadgeTone> = {
   direct: 'neutral',
@@ -50,7 +54,7 @@ function RouteGraph({ trace }: { trace: FlatTrace }) {
 
 function TraceDetail({ trace, onClose }: { trace: FlatTrace; onClose: () => void }) {
   return (
-    <Card className="sticky top-0">
+    <Card className="h-fit">
       <div className="mb-4 flex items-start justify-between gap-3">
         <div className="min-w-0">
           <code className="block truncate font-mono text-[13px] font-semibold">{trace.model}</code>
@@ -71,12 +75,14 @@ function TraceDetail({ trace, onClose }: { trace: FlatTrace; onClose: () => void
         {trace.fallbackCount > 0 && <Badge tone="warning">{trace.fallbackCount} fallbacks</Badge>}
       </div>
 
-      <div className="tnum mb-4 grid grid-cols-4 gap-2 text-center">
+      <div className="tnum mb-4 grid grid-cols-3 gap-2 text-center">
         {[
           { label: 'Input', value: formatNumber(trace.inputTokens) },
           { label: 'Output', value: formatNumber(trace.outputTokens) },
           { label: 'Cached (upstream)', value: formatNumber(trace.cachedTokens) },
           { label: 'Cost', value: formatCost(trace.cost) },
+          { label: 'TTFB', value: `${trace.ttfbMs} ms` },
+          { label: 'Speed', value: `${traceTokPerSec(trace).toFixed(1)} tok/s` },
         ].map((s) => (
           <div key={s.label} className="rounded-md bg-surface-2 px-2 py-2">
             <div className="text-[10px] text-subtle">{s.label}</div>
@@ -178,60 +184,67 @@ export default function TracesPage() {
   }
 
   return (
-    <PageContainer>
-      <PageHeader
-        title="Traces"
-        description="Per-request routing detail: attempt chains, pipeline steps, and token usage."
-        actions={
-          <Button size="sm" onClick={handleReset}>
-            <Trash2 size={13} /> Clear all
-          </Button>
-        }
-      />
+    <div className="flex h-[calc(100vh-3rem)] flex-col">
+      <div className="shrink-0 px-6 pt-6">
+        <PageHeader
+          title="Traces"
+          description="Per-request routing detail: attempt chains, pipeline steps, and token usage."
+          actions={
+            <Button size="sm" onClick={handleReset}>
+              <Trash2 size={13} /> Clear all
+            </Button>
+          }
+        />
 
-      <div className="mb-4">
-        <Input placeholder="Filter by model, provider, route…" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="max-w-sm" />
+        <div className="mb-4">
+          <Input placeholder="Filter by model, provider, route…" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="max-w-sm" />
+        </div>
       </div>
 
-      <div className="grid items-start gap-4 lg:grid-cols-[1.2fr_1fr]">
-        <div className="flex flex-col gap-2">
-          {isLoading ? (
-            <div className="flex justify-center py-16">
-              <Spinner />
-            </div>
-          ) : filtered.length === 0 ? (
-            <Card>
-              <EmptyState icon={<ScanSearch size={28} />} title="No traces yet" hint="Requests through the gateway appear here with their full routing chain." />
-            </Card>
-          ) : (
-            filtered.map((trace) => (
-              <Card
-                key={trace.id}
-                interactive
-                onClick={() => setSelected(trace)}
-                className={cn(selected?.id === trace.id && 'border-accent')}
-                padded={false}
-              >
-                <div className="flex items-center gap-3 px-3.5 py-3">
-                  <span className={cn('h-1.5 w-1.5 shrink-0 rounded-full', trace.status === 'ok' ? 'bg-success' : 'bg-danger')} />
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
-                      <code className="truncate font-mono text-xs font-medium">{trace.model}</code>
-                      <Badge tone={routeTone[trace.route] ?? 'neutral'}>{trace.route}</Badge>
-                      {trace.fallbackCount > 0 && <Badge tone="warning">+{trace.fallbackCount} fallback</Badge>}
-                    </div>
-                    <div className="tnum mt-0.5 text-[10px] text-subtle">
-                      {new Date(trace.timestamp).toLocaleTimeString()} · {fmtLatency(trace.latencyMs)} · {formatNumber(trace.inputTokens)}→{formatNumber(trace.outputTokens)} tok
-                    </div>
-                  </div>
-                  <span className="tnum shrink-0 text-[11px] text-muted">{formatCost(trace.cost)}</span>
+      <div className="flex min-h-0 flex-1 gap-5 px-6 pb-5">
+        {/* Left: scrolling trace list */}
+        <div className="flex w-[42%] min-w-0 flex-col">
+          <div className="min-h-0 flex-1 overflow-y-auto pr-1">
+            <div className="flex flex-col gap-2">
+              {isLoading ? (
+                <div className="flex justify-center py-16">
+                  <Spinner />
                 </div>
-              </Card>
-            ))
-          )}
+              ) : filtered.length === 0 ? (
+                <Card>
+                  <EmptyState icon={<ScanSearch size={28} />} title="No traces yet" hint="Requests through the gateway appear here with their full routing chain." />
+                </Card>
+              ) : (
+                filtered.map((trace) => (
+                  <Card
+                    key={trace.id}
+                    interactive
+                    onClick={() => setSelected(trace)}
+                    className={cn(selected?.id === trace.id && 'border-accent')}
+                    padded={false}
+                  >
+                    <div className="flex items-center gap-3 px-3.5 py-3">
+                      <span className={cn('h-1.5 w-1.5 shrink-0 rounded-full', trace.status === 'ok' ? 'bg-success' : 'bg-danger')} />
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2">
+                          <code className="truncate font-mono text-xs font-medium">{trace.model}</code>
+                          <Badge tone={routeTone[trace.route] ?? 'neutral'}>{trace.route}</Badge>
+                          {trace.fallbackCount > 0 && <Badge tone="warning">+{trace.fallbackCount} fallback</Badge>}
+                        </div>
+                        <div className="tnum mt-0.5 text-[10px] text-subtle">
+                          {new Date(trace.timestamp).toLocaleTimeString()} · {fmtLatency(trace.latencyMs)} · {formatNumber(trace.inputTokens)}→{formatNumber(trace.outputTokens)} tok · {traceTokPerSec(trace).toFixed(1)} tok/s
+                        </div>
+                      </div>
+                      <span className="tnum shrink-0 text-[11px] text-muted">{formatCost(trace.cost)}</span>
+                    </div>
+                  </Card>
+                ))
+              )}
+            </div>
+          </div>
 
           {totalPages > 1 && (
-            <div className="flex items-center justify-center gap-1.5 pt-2">
+            <div className="flex shrink-0 items-center justify-center gap-1.5 border-t border-border pt-2">
               <Button size="sm" disabled={page <= 1} onClick={() => { setPage(page - 1); fetchTraces(page - 1) }}>
                 Prev
               </Button>
@@ -245,8 +258,17 @@ export default function TracesPage() {
           )}
         </div>
 
-        <div>{selected && <TraceDetail trace={selected} onClose={() => setSelected(null)} />}</div>
+        {/* Right: detail panel with its own scroll */}
+        <div className="min-h-0 flex-1 overflow-y-auto pl-1">
+          {selected ? (
+            <TraceDetail trace={selected} onClose={() => setSelected(null)} />
+          ) : (
+            <Card className="h-fit">
+              <EmptyState icon={<ScanSearch size={26} />} title="Select a trace" hint="Pick a request on the left to inspect its full routing chain." />
+            </Card>
+          )}
+        </div>
       </div>
-    </PageContainer>
+    </div>
   )
 }
