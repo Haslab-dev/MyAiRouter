@@ -19,6 +19,10 @@ func customKey(providerAlias, id, modelType string) string {
 }
 
 func GetCustomModels() ([]CustomModel, error) {
+	return getRoutingSnapshot().customModels, nil
+}
+
+func listCustomModelsFromDB() ([]CustomModel, error) {
 	rows, err := DB.Query("SELECT value FROM kv WHERE scope = ?", CustomModelsScope)
 	if err != nil {
 		return nil, fmt.Errorf("querying custom models: %w", err)
@@ -62,10 +66,21 @@ func AddCustomModel(cm *CustomModel) (bool, error) {
 		return false, err
 	}
 
+	InvalidateRoutingSnapshot()
 	return true, nil
 }
 
 func GetCustomModelsByProvider(providerAlias string) ([]CustomModel, error) {
+	var out []CustomModel
+	for _, cm := range getRoutingSnapshot().customModels {
+		if cm.ProviderAlias == providerAlias {
+			out = append(out, cm)
+		}
+	}
+	return out, nil
+}
+
+func getCustomModelsByProviderFromDB(providerAlias string) ([]CustomModel, error) {
 	all, err := GetCustomModels()
 	if err != nil {
 		return nil, err
@@ -82,5 +97,6 @@ func GetCustomModelsByProvider(providerAlias string) ([]CustomModel, error) {
 func DeleteCustomModel(providerAlias, id, modelType string) error {
 	k := customKey(providerAlias, id, modelType)
 	_, err := DB.Exec("DELETE FROM kv WHERE scope = ? AND key = ?", CustomModelsScope, k)
+	InvalidateRoutingSnapshot()
 	return err
 }

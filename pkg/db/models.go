@@ -3,7 +3,6 @@ package db
 import (
 	"database/sql"
 	"fmt"
-	"strings"
 	"time"
 )
 
@@ -61,6 +60,7 @@ func CreateModelConfig(cfg *ModelConfig) (*ModelConfig, error) {
 	if err != nil {
 		return nil, fmt.Errorf("creating model config: %w", err)
 	}
+	InvalidateRoutingSnapshot()
 
 	return cfg, nil
 }
@@ -105,32 +105,8 @@ func GetModelConfig(id string) (*ModelConfig, error) {
 }
 
 func GetModelConfigOrDefault(id string) *ModelConfig {
-	cfg, err := GetModelConfig(id)
-	if err == nil && cfg != nil {
-		return cfg
-	}
-
-	primaryProvider := "openai"
-	modelName := id
-	if idx := strings.Index(id, "/"); idx != -1 {
-		primaryProvider = id[:idx]
-		modelName = id[idx+1:]
-	}
-
-	return &ModelConfig{
-		ID:   id,
-		Name: modelName,
-		Routing: RoutingConfig{
-			PrimaryProvider: primaryProvider,
-		},
-		Compression: CompressionConfig{
-			Enabled:                false,
-			Strategy:               "balanced",
-			Trigger:                "threshold",
-			ThresholdTokens:        64000,
-			PreserveRecentMessages: 20,
-		},
-	}
+	// Hot path: served from the routing snapshot.
+	return getRoutingSnapshot().modelConfig(id)
 }
 
 func UpdateModelConfig(id string, cfg *ModelConfig) error {
@@ -161,6 +137,7 @@ func UpdateModelConfig(id string, cfg *ModelConfig) error {
 		compEnabled, cfg.Compression.Strategy, cfg.Compression.Trigger, cfg.Compression.ThresholdTokens, cfg.Compression.PreserveRecentMessages,
 		cfg.UpdatedAt, id,
 	)
+	InvalidateRoutingSnapshot()
 	return err
 }
 
@@ -179,10 +156,15 @@ func SaveModelConfig(cfg *ModelConfig) error {
 
 func DeleteModelConfig(id string) error {
 	_, err := DB.Exec("DELETE FROM models WHERE id = ?", id)
+	InvalidateRoutingSnapshot()
 	return err
 }
 
 func ListModelConfigs() ([]ModelConfig, error) {
+	return listModelConfigsFromDB()
+}
+
+func listModelConfigsFromDB() ([]ModelConfig, error) {
 	rows, err := DB.Query(
 		`SELECT 
 			id, name, primary_provider, fallback_provider, fallback_model, 

@@ -62,6 +62,10 @@ func GetPricingOverrides(provider string) (map[string]ModelRate, error) {
 }
 
 func GetPricingOverride(provider, model string) (ModelRate, bool) {
+	return getRoutingSnapshot().pricingOverride(provider, model)
+}
+
+func getPricingOverrideFromDB(provider, model string) (ModelRate, bool) {
 	p := strings.ToLower(strings.TrimSpace(provider))
 	m := strings.ToLower(strings.TrimSpace(model))
 	baseModel := m
@@ -124,6 +128,7 @@ func SetPricingOverride(provider, model string, rate ModelRate) error {
 		 ON CONFLICT(scope, key) DO UPDATE SET value = excluded.value`,
 		PricingOverridesScope, k, string(valBytes),
 	)
+	InvalidateRoutingSnapshot()
 	return err
 }
 
@@ -144,5 +149,6 @@ func DeletePricingOverride(provider, model string) error {
 	}
 	// Also delete un-prefixed key if present
 	_, _ = DB.Exec("DELETE FROM kv WHERE scope = ? AND key = ?", PricingOverridesScope, m)
+	InvalidateRoutingSnapshot()
 	return nil
 }

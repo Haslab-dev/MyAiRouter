@@ -57,11 +57,16 @@ func CreateConnection(conn *ProviderConnection) (*ProviderConnection, error) {
 	if err != nil {
 		return nil, err
 	}
+	InvalidateRoutingSnapshot()
 
 	return conn, nil
 }
 
 func ListConnections() ([]ProviderConnection, error) {
+	return listConnectionsFromDB()
+}
+
+func listConnectionsFromDB() ([]ProviderConnection, error) {
 	rows, err := DB.Query("SELECT id, provider, authType, name, email, priority, isActive, data, createdAt, updatedAt FROM providerConnections ORDER BY provider, priority")
 	if err != nil {
 		return nil, err
@@ -150,16 +155,22 @@ func UpdateConnection(id string, updates map[string]interface{}) (*ProviderConne
 	if err != nil {
 		return nil, err
 	}
+	InvalidateRoutingSnapshot()
 
 	return current, nil
 }
 
 func DeleteConnection(id string) error {
 	_, err := DB.Exec("DELETE FROM providerConnections WHERE id = ? OR provider = ?", id, id)
+	InvalidateRoutingSnapshot()
 	return err
 }
 
 func GetActiveConnectionsForProvider(provider string) ([]ProviderConnection, error) {
+	return getRoutingSnapshot().activeByProvider[provider], nil
+}
+
+func getActiveConnectionsForProviderFromDB(provider string) ([]ProviderConnection, error) {
 	rows, err := DB.Query(
 		"SELECT id, provider, authType, name, email, priority, isActive, data, createdAt, updatedAt FROM providerConnections WHERE provider = ? AND isActive = 1 ORDER BY priority ASC, id ASC",
 		provider,

@@ -1,6 +1,7 @@
 package db
 
 import (
+	"database/sql"
 	"encoding/json"
 )
 
@@ -22,15 +23,27 @@ type Settings struct {
 	PasswordHash    string `json:"passwordHash"`
 
 	// New prompt optimizer fields
-	OptimizerEnabled     bool           `json:"optimizerEnabled"`
-	OptimizationEngine   string         `json:"optimizationEngine"`
-	OptimizationProfile  string         `json:"optimizationProfile"`
-	OptimizationGoal     string         `json:"optimizationGoal"`
-	PipelineSteps        []PipelineStep `json:"pipelineSteps"`
-	TraceStorageMode     string         `json:"traceStorageMode"`
+	OptimizerEnabled    bool           `json:"optimizerEnabled"`
+	OptimizationEngine  string         `json:"optimizationEngine"`
+	OptimizationProfile string         `json:"optimizationProfile"`
+	OptimizationGoal    string         `json:"optimizationGoal"`
+	PipelineSteps       []PipelineStep `json:"pipelineSteps"`
+	TraceStorageMode    string         `json:"traceStorageMode"`
 }
 
 func GetSettings() (*Settings, error) {
+	// Hot path: serve from the routing snapshot (invalidated on every mutation).
+	if s := snapshotPtr.Load(); s != nil && s.settings != nil {
+		return s.settings, nil
+	}
+	if DB == nil {
+		return nil, sql.ErrConnDone
+	}
+	return loadSettingsFromDB()
+}
+
+// loadSettingsFromDB reads and normalizes the settings row directly.
+func loadSettingsFromDB() (*Settings, error) {
 	var dataStr string
 	err := DB.QueryRow("SELECT data FROM settings WHERE id = 1").Scan(&dataStr)
 	if err != nil {
@@ -106,6 +119,7 @@ func UpdateSettings(updates map[string]interface{}) (*Settings, error) {
 	if err != nil {
 		return nil, err
 	}
+	InvalidateRoutingSnapshot()
 
 	return &merged, nil
 }

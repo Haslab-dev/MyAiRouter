@@ -1,6 +1,8 @@
 package db
 
 import (
+	"strings"
+
 	"encoding/json"
 	"fmt"
 )
@@ -49,6 +51,7 @@ func DisableModels(provider string, ids []string) error {
 		 ON CONFLICT(scope, key) DO UPDATE SET value = excluded.value`,
 		DisabledModelsScope, provider, string(valBytes),
 	)
+	InvalidateRoutingSnapshot()
 	return err
 }
 
@@ -84,11 +87,16 @@ func EnableModels(provider string, ids []string) error {
 		 ON CONFLICT(scope, key) DO UPDATE SET value = excluded.value`,
 		DisabledModelsScope, provider, string(valBytes),
 	)
+	InvalidateRoutingSnapshot()
 	return err
 }
 
 // Whitelist: enabled models. If list is non-empty, only these model IDs are allowed.
 func GetEnabledModels(provider string) ([]string, error) {
+	return getRoutingSnapshot().enabledModels[strings.ToLower(strings.TrimSpace(provider))], nil
+}
+
+func getEnabledModelsFromDB(provider string) ([]string, error) {
 	var val string
 	err := DB.QueryRow(
 		"SELECT value FROM kv WHERE scope = ? AND key = ?",
@@ -114,6 +122,7 @@ func SetEnabledModels(provider string, ids []string) error {
 		 ON CONFLICT(scope, key) DO UPDATE SET value = excluded.value`,
 		EnabledModelsScope, provider, string(valBytes),
 	)
+	InvalidateRoutingSnapshot()
 	return err
 }
 

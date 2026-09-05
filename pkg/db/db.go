@@ -40,7 +40,7 @@ func InitDB() error {
 		"PRAGMA busy_timeout = 10000;",
 		"PRAGMA foreign_keys = ON;",
 		"PRAGMA cache_size = -4000;", // 4MB page cache instead of 64MB (-64000)
-		"PRAGMA mmap_size = 0;",     // Disable mmap allocations in c2go
+		"PRAGMA mmap_size = 0;",      // Disable mmap allocations in c2go
 	}
 	for _, pragma := range pragmas {
 		if _, err := db.Exec(pragma); err != nil {
@@ -176,21 +176,8 @@ func createTables() error {
 		`CREATE INDEX IF NOT EXISTS idx_traces_provider ON traces(provider);`,
 		`CREATE INDEX IF NOT EXISTS idx_traces_model ON traces(model);`,
 
-		// Session & Memory Store tables
-		`CREATE TABLE IF NOT EXISTS sessions (
-			id TEXT PRIMARY KEY,
-			workspace TEXT,
-			summary TEXT,
-			updated_at TEXT NOT NULL
-		);`,
-		`CREATE TABLE IF NOT EXISTS contentCache (
-			hash TEXT PRIMARY KEY,
-			file_path TEXT,
-			summary TEXT,
-			tokens INTEGER DEFAULT 0,
-			updated_at TEXT NOT NULL
-		);`,
-		`CREATE INDEX IF NOT EXISTS idx_cc_hash ON contentCache(hash);`,
+		// Session & Memory Store tables were removed: the gateway is a plain
+		// pass-through; caching belongs to the calling client/agent tools.
 
 		// Model-Centric Routing & Configuration table
 		`CREATE TABLE IF NOT EXISTS models (
@@ -233,6 +220,11 @@ func createTables() error {
 		"ALTER TABLE usageHistory ADD COLUMN cachedTokens INTEGER DEFAULT 0;",
 		"ALTER TABLE models ADD COLUMN compression_trigger TEXT DEFAULT 'threshold';",
 		"ALTER TABLE models ADD COLUMN fallback_model TEXT;",
+		"ALTER TABLE combos ADD COLUMN policy TEXT;",
+		// Gateway cache/content-dedup removal (pass-through by default)
+		"DROP TABLE IF EXISTS contentCache;",
+		"DROP TABLE IF EXISTS sessions;",
+		"DELETE FROM kv WHERE scope = 'cache';",
 	}
 	for _, m := range migrations {
 		_, _ = DB.Exec(m) // Ignore errors — column may already exist
@@ -249,7 +241,7 @@ func createTables() error {
 		return err
 	}
 	if count == 0 {
-		defaultSettingsJSON := `{"rtkEnabled":true,"headroomEnabled":false,"headroomUrl":"http://localhost:8787","cavemanEnabled":false,"cavemanLevel":"full","ponytailEnabled":false,"ponytailLevel":"full","optimizerEnabled":true,"optimizationEngine":"auto","optimizationProfile":"balanced","optimizationGoal":"balanced","pipelineSteps":[{"name":"tool","enabled":true},{"name":"structure","enabled":true},{"name":"dedup","enabled":true},{"name":"markdown","enabled":true}],"traceStorageMode":"summary"}`
+		defaultSettingsJSON := `{"rtkEnabled":false,"headroomEnabled":false,"headroomUrl":"http://localhost:8787","cavemanEnabled":false,"cavemanLevel":"full","ponytailEnabled":false,"ponytailLevel":"full","optimizerEnabled":false,"optimizationEngine":"auto","optimizationProfile":"balanced","optimizationGoal":"balanced","pipelineSteps":[{"name":"tool","enabled":true},{"name":"structure","enabled":true},{"name":"dedup","enabled":true},{"name":"markdown","enabled":true}],"traceStorageMode":"summary"}`
 		_, err = DB.Exec("INSERT INTO settings (id, data) VALUES (1, ?)", defaultSettingsJSON)
 		if err != nil {
 			return err
