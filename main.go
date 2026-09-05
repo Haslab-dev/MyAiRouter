@@ -25,7 +25,12 @@ var embedFS embed.FS
 
 const pidFile = "/tmp/myairouter.pid"
 
+// versionString is the single source of truth for the app version; the
+// Makefile's *-version targets rewrite this literal in place.
+const versionString = "myairouter v0.4.0"
+
 func main() {
+	gateway.AppVersion = strings.TrimPrefix(versionString, "myairouter ")
 	if len(os.Args) > 1 {
 		switch os.Args[1] {
 		case "start":
@@ -50,14 +55,13 @@ func main() {
 			printHelp()
 			return
 		case "version", "--version", "-v":
-			fmt.Println("myairouter v0.3.3")
+			fmt.Println(versionString)
 			return
 		}
 	}
 	stopExistingDuplicates()
 	startServer()
 }
-
 
 func printHelp() {
 	fmt.Print(`myairouter - AI model router and gateway

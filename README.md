@@ -21,17 +21,20 @@ This tutorial guides you through compiling, running, and configuring your **myAi
 
 ## Key Features
 
-1. **Cache Transparency & Verbatim Pass-Through**: By default, requests with compression disabled are passed to provider endpoints completely untouched (zero cloning, zero metadata injection, zero prompt mutation), preserving provider-native prompt caching invariants.
-2. **Model-Centric Routing Policies**: Routing, compression, and caching rules are configured per-model rather than globally.
-3. **Custom Fallback Models**: Fail over seamlessly to alternative model IDs (e.g. falling back from `deepseek/deepseek-v4-flash` to `opzen/mimo-v2.5-free`) when primary providers return errors or insufficient balance.
-4. **Dynamic Cache-Preserving Compression**:
+1. **Pure Pass-Through Gateway**: Requests are forwarded byte-for-byte to the selected upstream by default. The gateway never caches responses and never rewrites bodies unless you explicitly opt in — response caching belongs to your client or agent tooling, and provider-native prompt caching keeps working untouched.
+2. **Error-Classified Fallback Engine**: Fallback decisions are status-aware: `429/408/5xx` and network errors advance to the next target, `401/403` try remaining accounts of the same provider only, and terminal errors (`400/404/413/422`) return the upstream error immediately instead of burning tokens on other routes. Policy is tunable per route (`auto` / `aggressive` / `conservative`) with configurable attempt timeouts and fallback budgets.
+3. **Health-Aware Routing**: In-memory per-connection health (failure streaks with exponential cooldown, EWMA latency/TTFB) skips recently-failed upstreams and orders accounts by observed responsiveness, exposed at `GET /api/connections/health`.
+4. **Model-Centric Routing Policies**: Routing, fallback, and compression rules are configured per-model rather than globally.
+5. **Custom Fallback Models**: Fail over seamlessly to alternative model IDs (e.g. falling back from `deepseek/deepseek-v4-flash` to `opzen/mimo-v2.5-free`) when primary providers return retryable errors.
+6. **Opt-In Context Compression (off by default)**:
    * **Protected Prefix** (System prompts and tool definitions) — Preserved verbatim.
    * **Middle History** (Older conversation context) — Compressed dynamically using the AST optimizer or RTK fallback.
    * **Protected Suffix** (Last $N$ recent chat messages, default 20) — Preserved verbatim.
 5. **Explicit Compression Triggers**:
    * **Proactive (`threshold`)**: Compresses when request exceeds user-specified token threshold.
    * **Reactive (`context_limit`)**: Compresses only when request exceeds model context limits (OpenAI: 128k, Anthropic: 200k, Gemini: 1M).
-6. **Live Reloading Watcher**: Native file watching and recompilation of the Go backend using the integrated `air` dev server.
+7. **Streaming-Safe Concurrency**: `race` / `parallel` / `ensemble` strategies buffer child responses and replay exactly one winner to the socket; streaming (`stream:true`) requests always take the sequential path.
+8. **Live Reloading Watcher**: Native file watching and recompilation of the Go backend using the integrated `air` dev server.
 
 ---
 
@@ -113,10 +116,9 @@ Open `http://localhost:5173` in your browser. All API requests are automatically
 The **Request Traces** dashboard (`http://localhost:20128/traces`) displays routing-focused analytics organized into four distinct sections:
 
 1. **Summary**: High-level execution metrics (Latency, TTFB, Input/Output/Cached Tokens, Cost, Prompt Compression %, Streaming, Attempts count, Fallback & Retry counts).
-   * **Cache Hit Status**: Shows explicit gateway cache status (`Yes (Gateway)` / `Yes (Memory)`).
-   * **Cached Token Ratio**: Shows the ratio of provider-cached reuse (`Cached Token Ratio: X.Y%`) calculated on the backend.
+   * **Cached Tokens**: Upstream-reported provider prompt-cache reuse (the gateway itself does not cache responses).
 2. **Route Graph**: Visual node tree for Fallback and Load Balance routing strategies showing per-node execution status (✔ Success, ✖ Failed).
-3. **Pipeline**: Clean routing-focused steps (`Resolve Model`, `Request Preparation` (unified rewrite + dynamic compression), `Cache`, `Route`, `Provider`).
+3. **Pipeline**: Routing-focused steps (`Resolve Model`, `Request Preparation` (only when compression is opted in), `Route`, `Provider`).
 4. **Request / Response Preview**: Request metadata (`system`, `user`, `messages`, `chars`, `tokens`, plus detailed compression telemetry) and Response metadata (`preview`, `finish_reason`).
 
 ---
