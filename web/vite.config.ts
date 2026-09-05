@@ -1,5 +1,6 @@
 import { defineConfig, loadEnv } from 'vite'
 import react from '@vitejs/plugin-react'
+import path from 'node:path'
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '')
@@ -7,10 +8,16 @@ export default defineConfig(({ mode }) => {
 
   return {
     plugins: [react()],
+    resolve: {
+      alias: {
+        '@': path.resolve(__dirname, 'src'),
+      },
+    },
     build: {
       target: 'esnext',
       cssMinify: true,
       sourcemap: false,
+      chunkSizeWarningLimit: 400,
       rollupOptions: {
         output: {
           manualChunks(id) {
@@ -18,7 +25,7 @@ export default defineConfig(({ mode }) => {
               if (id.includes('react') || id.includes('react-dom') || id.includes('react-router-dom')) {
                 return 'vendor-react'
               }
-              if (id.includes('zustand')) {
+              if (id.includes('zustand') || id.includes('lucide-react')) {
                 return 'vendor-state'
               }
             }
