@@ -147,7 +147,8 @@ function AppShell() {
   if (!onboardingDone) return <OnboardingPage />
   if (status.requireLogin && !status.authenticated) return <LoginPage />
 
-  const version = status.version ? `v${status.version}` : ''
+  // /api/auth/status returns the version already prefixed with "v".
+  const version = status.version ?? ''
 
   return (
     <div className="flex h-screen flex-col bg-bg">
