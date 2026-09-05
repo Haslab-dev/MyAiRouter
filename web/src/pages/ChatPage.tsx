@@ -4,6 +4,7 @@ import {
   Bot,
   Copy,
   Download,
+  FileText,
   Image as ImageIcon,
   MessageSquarePlus,
   Paperclip,
@@ -945,6 +946,17 @@ export default function ChatPage() {
             >
               <ImageIcon size={12} />
               {chatMode === 'image' ? 'Image mode' : 'Image'}
+            </button>
+            <button
+              onClick={() => setShowSystemPrompt((v) => !v)}
+              className={cn(
+                'inline-flex h-7 items-center gap-1.5 rounded-md border px-2 text-xs font-medium transition-colors',
+                showSystemPrompt ? 'border-accent bg-accent-subtle text-accent' : 'border-border text-muted hover:text-text',
+              )}
+              title={showSystemPrompt ? 'Hide system prompt' : 'Set a system prompt'}
+            >
+              <FileText size={12} />
+              System
             </button>
           </div>
 
