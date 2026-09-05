@@ -128,6 +128,9 @@ func handleSSEStream(w http.ResponseWriter, stream io.ReadCloser, format string,
 	chunkCount := 0
 
 	scanner := bufio.NewScanner(stream)
+	// Upstream SSE data lines can be large (inline images, long tool args);
+	// the default 64KB cap silently truncates them.
+	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 	for scanner.Scan() {
 		line := scanner.Text()
 		if len(line) == 0 {

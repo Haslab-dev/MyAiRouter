@@ -142,6 +142,12 @@ func (c *GatewayContext) WriteJSON(code int, data interface{}) {
 
 func (c *GatewayContext) CloneForTarget(ctx context.Context, conn *db.ProviderConnection, model string, provider string, body map[string]interface{}) *GatewayContext {
 	body["model"] = model
+	// Shallow-copy metadata so concurrent child attempts never race on the
+	// parent's map; winners merge selected keys back explicitly.
+	metadataCopy := make(map[string]any, len(c.Metadata))
+	for k, v := range c.Metadata {
+		metadataCopy[k] = v
+	}
 	return &GatewayContext{
 		Context:        ctx,
 		RequestID:      c.RequestID,
@@ -153,7 +159,8 @@ func (c *GatewayContext) CloneForTarget(ctx context.Context, conn *db.ProviderCo
 		ResponseWriter: c.ResponseWriter,
 		Request:        c.Request,
 		RequestBody:    body,
-		Metadata:       c.Metadata,
+		IsStream:       c.IsStream,
+		Metadata:       metadataCopy,
 		StartTime:      time.Now(),
 		LastStepTime:   time.Now(),
 		Steps:          make([]TraceStep, 0),

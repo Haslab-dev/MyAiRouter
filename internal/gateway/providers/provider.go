@@ -3,6 +3,7 @@ package providers
 import (
 	"context"
 	"io"
+	"net"
 	"net/http"
 	"time"
 
@@ -10,9 +11,14 @@ import (
 )
 
 var SharedTransport = &http.Transport{
-	MaxIdleConns:        50,
-	MaxIdleConnsPerHost: 10,
+	MaxIdleConns:        200,
+	MaxIdleConnsPerHost: 100,
 	IdleConnTimeout:     90 * time.Second,
+	ForceAttemptHTTP2:   true,
+	DialContext: (&net.Dialer{
+		Timeout:   5 * time.Second,
+		KeepAlive: 30 * time.Second,
+	}).DialContext,
 }
 
 var SharedHTTPClient = &http.Client{

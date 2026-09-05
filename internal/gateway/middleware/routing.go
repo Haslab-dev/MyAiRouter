@@ -2,10 +2,12 @@ package middleware
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 	"sync/atomic"
 
 	"myAiRouter/internal/gateway/context"
+	"myAiRouter/internal/gateway/health"
 	"myAiRouter/pkg/db"
 )
 
@@ -88,6 +90,7 @@ func Routing(ctx *context.GatewayContext, next HandlerFunc) error {
 			}
 		}
 	}
+	targets = orderTargetsByHealth(targets)
 	if len(targets) == 0 {
 		ctx.WriteError(503, "No active upstream connections found for requested models")
 		ctx.AddStep("Routing", "failed", "No connections available")
@@ -97,6 +100,42 @@ func Routing(ctx *context.GatewayContext, next HandlerFunc) error {
 	ctx.Metadata["routingTargets"] = targets
 	ctx.AddStep("Routing", "success", fmt.Sprintf("Routed to %d target connection(s)", len(targets)))
 	return next(ctx)
+}
+
+// orderTargetsByHealth applies the health tracker to the flattened target
+// list: connections serving a cooldown are dropped when healthy alternatives
+// exist, and accounts are ordered within each (model, provider) group by
+// admin-configured priority first, then by observed EWMA latency.
+func orderTargetsByHealth(targets []ConnectionModel) []ConnectionModel {
+	healthy := make([]ConnectionModel, 0, len(targets))
+	for _, t := range targets {
+		if !health.Get().InCooldown(t.Connection.ID) {
+			healthy = append(healthy, t)
+		}
+	}
+	if len(healthy) > 0 {
+		targets = healthy
+	}
+
+	// Stable re-order *within* each contiguous (model, provider) group so the
+	// combo's model-level order is preserved.
+	start := 0
+	for start < len(targets) {
+		end := start + 1
+		for end < len(targets) && targets[end].Provider == targets[start].Provider && targets[end].ModelName == targets[start].ModelName {
+			end++
+		}
+		group := targets[start:end]
+		sort.SliceStable(group, func(i, j int) bool {
+			pi, pj := group[i].Connection.Priority, group[j].Connection.Priority
+			if pi != pj {
+				return pi < pj
+			}
+			return health.Get().LatencyMs(group[i].Connection.ID) < health.Get().LatencyMs(group[j].Connection.ID)
+		})
+		start = end
+	}
+	return targets
 }
 
 func classifyAndRankModels(body map[string]interface{}, models []string) []string {
@@ -175,10 +214,7 @@ func getActiveConnectionsForPrefix(providerPrefix string) ([]db.ProviderConnecti
 		return conns, nil
 	}
 
-	allConns, err := db.ListConnections()
-	if err != nil {
-		return nil, err
-	}
+	allConns := db.SnapshotAllConnections()
 
 	for _, c := range allConns {
 		if !c.IsActive {

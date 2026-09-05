@@ -9,26 +9,21 @@ import (
 )
 
 type userLimiter struct {
+	mu        sync.Mutex
 	tokens    float64
 	lastCheck time.Time
 }
 
-var (
-	limitersMu sync.Mutex
-	limiters   = make(map[string]*userLimiter)
-)
+// Per-user limiters live in a sharded map so the hot path never serializes on
+// one global mutex; each bucket has its own lock.
+var limiters sync.Map // string -> *userLimiter
 
 func RateLimit(ctx *context.GatewayContext, next HandlerFunc) error {
-	limitersMu.Lock()
-	lim, exists := limiters[ctx.UserID]
-	if !exists {
-		lim = &userLimiter{
-			tokens:    60.0, // 60 requests max capacity
-			lastCheck: time.Now(),
-		}
-		limiters[ctx.UserID] = lim
-	}
+	val, _ := limiters.LoadOrStore(ctx.UserID, &userLimiter{tokens: 60.0, lastCheck: time.Now()})
+	lim := val.(*userLimiter)
 
+	allowed := true
+	lim.mu.Lock()
 	// Replenish: 1 token per second (up to 60)
 	now := time.Now()
 	elapsed := now.Sub(lim.lastCheck).Seconds()
@@ -39,14 +34,17 @@ func RateLimit(ctx *context.GatewayContext, next HandlerFunc) error {
 	lim.lastCheck = now
 
 	if lim.tokens < 1.0 {
-		limitersMu.Unlock()
+		allowed = false
+	} else {
+		lim.tokens -= 1.0
+	}
+	lim.mu.Unlock()
+
+	if !allowed {
 		ctx.WriteError(http.StatusTooManyRequests, "Rate limit exceeded (max 60/min).")
 		ctx.AddStep("Rate Limit", "failed", "Rate limit exceeded")
 		return nil
 	}
-
-	lim.tokens -= 1.0
-	limitersMu.Unlock()
 
 	ctx.AddStep("Rate Limit", "success", "Rate limit checked")
 	return next(ctx)

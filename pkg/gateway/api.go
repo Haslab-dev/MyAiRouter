@@ -15,14 +15,15 @@ import (
 	"sync"
 	"time"
 
+	"myAiRouter/internal/gateway/health"
 	"myAiRouter/pkg/db"
 	"myAiRouter/pkg/logger"
 	"myAiRouter/pkg/optimizer"
+	_ "myAiRouter/pkg/optimizer/passes"
 	"myAiRouter/pkg/optimizer/planner"
+	_ "myAiRouter/pkg/optimizer/profiles"
 	"myAiRouter/pkg/optimizer/registry"
 	"myAiRouter/pkg/optimizer/runner"
-	_ "myAiRouter/pkg/optimizer/passes"
-	_ "myAiRouter/pkg/optimizer/profiles"
 	_ "myAiRouter/pkg/optimizer/validators"
 )
 
@@ -120,6 +121,7 @@ func RegisterAdminRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/models/pricing", handleModelPricing)
 	mux.HandleFunc("/api/logs", handleServerLogs)
 	mux.HandleFunc("/api/health", handleHealth)
+	mux.HandleFunc("/api/connections/health", handleConnectionsHealth)
 	mux.HandleFunc("/api/traces", handleTraces)
 	mux.HandleFunc("/api/traces/", handleTraceDetail)
 	// Prompt Optimizer
@@ -142,6 +144,39 @@ func RegisterAdminRoutes(mux *http.ServeMux) {
 func handleHealth(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true})
+}
+
+// handleConnectionsHealth exposes the in-memory per-connection health state
+// (failure streaks, cooldowns, EWMA latency) for the admin UI.
+func handleConnectionsHealth(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	statuses := health.Get().Snapshot()
+	byID := make(map[string]db.ProviderConnection)
+	if conns, err := db.ListConnections(); err == nil {
+		for _, c := range conns {
+			byID[c.ID] = c
+		}
+	}
+
+	enriched := make([]map[string]interface{}, 0, len(statuses))
+	for _, s := range statuses {
+		entry := map[string]interface{}{
+			"connectionId":        s.ConnectionID,
+			"healthy":             s.Healthy,
+			"consecutiveFailures": s.ConsecutiveFailures,
+			"cooldownSecondsLeft": s.CooldownSecondsLeft,
+			"ewmaLatencyMs":       s.EwmaLatencyMs,
+			"ewmaTtfbMs":          s.EwmaTTFBMs,
+			"samples":             s.Samples,
+		}
+		if c, ok := byID[s.ConnectionID]; ok {
+			entry["name"] = c.Name
+			entry["provider"] = c.Provider
+		}
+		enriched = append(enriched, entry)
+	}
+	_ = json.NewEncoder(w).Encode(enriched)
 }
 
 func handleSettings(w http.ResponseWriter, r *http.Request) {
@@ -461,7 +496,7 @@ func handleCombos(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		if err := db.UpdateCombo(id, combo.Name, combo.Kind, combo.Models); err != nil {
+		if err := db.UpdateCombo(id, combo.Name, combo.Kind, combo.Models, combo.Policy); err != nil {
 			WriteErrorResponse(w, http.StatusInternalServerError, err.Error())
 			return
 		}
@@ -1376,8 +1411,11 @@ func handleTraceDetail(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(trace)
 }
 
-
 // ──────────────────── Auth handlers ────────────────────
+
+// AppVersion is set by main() from the CLI version string and exposed to the
+// admin UI through /api/auth/status.
+var AppVersion string
 
 func handleAuthStatus(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
@@ -1392,8 +1430,9 @@ func handleAuthStatus(w http.ResponseWriter, r *http.Request) {
 	}
 	authed := validateSession(r)
 	_ = json.NewEncoder(w).Encode(map[string]interface{}{
-		"requireLogin": settings.RequireLogin,
+		"requireLogin":  settings.RequireLogin,
 		"authenticated": authed,
+		"version":       AppVersion,
 	})
 }
 
@@ -1507,11 +1546,11 @@ func handleOptimizerEngines(w http.ResponseWriter, r *http.Request) {
 }
 
 type PreviewRequest struct {
-	Prompt        string             `json:"prompt"`
-	Engine        string             `json:"engine"`
-	Power         string             `json:"power"`
-	Goal          string             `json:"goal"`
-	PipelineSteps []db.PipelineStep  `json:"pipelineSteps"`
+	Prompt        string            `json:"prompt"`
+	Engine        string            `json:"engine"`
+	Power         string            `json:"power"`
+	Goal          string            `json:"goal"`
+	PipelineSteps []db.PipelineStep `json:"pipelineSteps"`
 }
 
 func handleOptimizerPreview(w http.ResponseWriter, r *http.Request) {
@@ -1862,4 +1901,3 @@ func handleModelsThinking(w http.ResponseWriter, r *http.Request) {
 
 	w.WriteHeader(http.StatusMethodNotAllowed)
 }
-

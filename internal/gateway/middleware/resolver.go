@@ -26,6 +26,7 @@ func ModelResolver(ctx *context.GatewayContext, next HandlerFunc) error {
 		ctx.Metadata["comboKind"] = combo.Kind
 		ctx.Metadata["comboName"] = combo.Name
 		ctx.Metadata["isCombo"] = true
+		ctx.Metadata["attemptPolicy"] = combo.Policy.Normalized()
 		ctx.AddStep("Model Resolver", "success", fmt.Sprintf("Resolved combo route '%s' (kind: %s) with %d models", combo.Name, combo.Kind, len(combo.Models)))
 	} else {
 		ctx.Metadata["modelsToTry"] = []string{modelStr}
