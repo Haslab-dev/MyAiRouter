@@ -47,14 +47,12 @@ func HandleChatCompletions(w http.ResponseWriter, r *http.Request) {
 	pipe.Use(middleware.Observability)
 	pipe.Use(middleware.Auth)
 	pipe.Use(middleware.RateLimit)
-	pipe.Use(middleware.SessionManager)
 	pipe.Use(middleware.ModelResolver)
 	pipe.Use(middleware.Routing)
 
 	// Retry acts as loop coordinator over connection targets
 	pipe.Use(middleware.Retry)
 	pipe.Use(middleware.Prepare)
-	pipe.Use(middleware.Cache)
 	pipe.Use(middleware.Guardrail)
 	pipe.Use(middleware.Provider)
 

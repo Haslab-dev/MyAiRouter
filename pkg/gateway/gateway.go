@@ -2,21 +2,12 @@ package gateway
 
 import (
 	"encoding/json"
-	"fmt"
-	"io"
-	"math"
 	"net/http"
 	"strings"
 	"time"
 
 	"myAiRouter/pkg/db"
-	"myAiRouter/pkg/rtk"
 )
-
-func RegisterGatewayRoutes(mux *http.ServeMux) {
-	mux.HandleFunc("POST /v1/chat/completions", handleChatCompletions)
-	mux.HandleFunc("GET /v1/models", HandleListModels)
-}
 
 func authenticateGatewayRequest(r *http.Request) (string, bool) {
 	settings, err := db.GetSettings()
@@ -46,280 +37,6 @@ func authenticateGatewayRequest(r *http.Request) (string, bool) {
 	}
 
 	return key, true
-}
-
-func getActiveConnectionsForPrefix(providerPrefix string) ([]db.ProviderConnection, error) {
-	// 1. Try directly with the prefix as the provider name
-	conns, err := db.GetActiveConnectionsForProvider(providerPrefix)
-	if err == nil && len(conns) > 0 {
-		return conns, nil
-	}
-
-	// 2. If not found, list all connections and check their modelPrefix
-	allConns, err := db.ListConnections()
-	if err != nil {
-		return nil, err
-	}
-
-	for _, c := range allConns {
-		if !c.IsActive {
-			continue
-		}
-		prefix, _ := c.Data["modelPrefix"].(string)
-		prefix = strings.TrimSuffix(prefix, "/")
-		if prefix == providerPrefix {
-			// Found matching provider connection! Return active connections for this provider
-			return db.GetActiveConnectionsForProvider(c.Provider)
-		}
-	}
-
-	return nil, nil
-}
-
-func handleChatCompletions(w http.ResponseWriter, r *http.Request) {
-	apiKey, authenticated := authenticateGatewayRequest(r)
-	if !authenticated {
-		WriteErrorResponse(w, http.StatusUnauthorized, "Invalid API key")
-		return
-	}
-
-	// Read request body
-	bodyBytes, err := io.ReadAll(r.Body)
-	if err != nil {
-		WriteErrorResponse(w, http.StatusBadRequest, "Failed to read request body")
-		return
-	}
-
-	var body map[string]interface{}
-	if err := json.Unmarshal(bodyBytes, &body); err != nil {
-		WriteErrorResponse(w, http.StatusBadRequest, "Invalid JSON body")
-		return
-	}
-
-	modelStr, _ := body["model"].(string)
-	if modelStr == "" {
-		WriteErrorResponse(w, http.StatusBadRequest, "Missing model parameter")
-		return
-	}
-
-	// 1. Resolve fallback combo or single model
-	var modelsToTry []string
-	combo, err := db.GetComboByName(modelStr)
-	if err == nil && combo != nil && len(combo.Models) > 0 {
-		modelsToTry = combo.Models
-	} else {
-		modelsToTry = []string{modelStr}
-	}
-
-	// 2. Fallback execution loops
-	var lastErr error
-	var lastStatus int = http.StatusServiceUnavailable
-
-	for _, currentModel := range modelsToTry {
-		// Determine provider
-		provider := "openai"
-		modelName := currentModel
-		if idx := strings.Index(currentModel, "/"); idx != -1 {
-			provider = currentModel[:idx]
-			modelName = currentModel[idx+1:]
-		}
-
-		// Retrieve active accounts
-		accounts, err := getActiveConnectionsForPrefix(provider)
-		if err != nil || len(accounts) == 0 {
-			lastErr = fmt.Errorf("no active accounts for provider %s", provider)
-			continue
-		}
-
-		// Run request across accounts
-		for _, account := range accounts {
-			// Update the body model parameter for upstream executor
-			body["model"] = modelName
-
-			format := provider
-			if provider != "anthropic" && provider != "gemini" {
-				format = "openai"
-			}
-
-			// Only apply compression & prompt transformations if explicitly enabled in Configure Model
-			modelCfg := db.GetModelConfigOrDefault(modelName)
-			if modelCfg != nil && modelCfg.Compression.Enabled {
-				settings, _ := db.GetSettings()
-
-				// In-place RTK compression (Bolt)
-				if settings != nil {
-					rtk.CompressMessages(body, settings.RtkEnabled)
-				}
-
-				// In-place prompt injectors (Caveman / Ponytail)
-				rtk.InjectSystemPrompts(body, format, settings)
-
-				// Headroom compression check
-				if settings != nil && settings.HeadroomEnabled && settings.HeadroomUrl != "" {
-					if msgs, ok := body["messages"].([]interface{}); ok {
-						compressed := rtk.CompressWithHeadroom(r.Context(), settings.HeadroomUrl, modelName, msgs)
-						body["messages"] = compressed
-					}
-				}
-			}
-
-			startTime := time.Now()
-			// Execute request
-			res := ExecuteProviderRequest(r.Context(), &account, body)
-			if res.Err != nil {
-				lastErr = res.Err
-				lastStatus = http.StatusInternalServerError
-				continue
-			}
-
-			if res.ResponseCode >= 400 {
-				lastStatus = res.ResponseCode
-				lastErr = fmt.Errorf("upstream provider error: status %d", res.ResponseCode)
-				// 400 Bad Request usually means client mistake (e.g. invalid parameter), don't fallback
-				if res.ResponseCode == http.StatusBadRequest {
-					w.Header().Set("Content-Type", "application/json")
-					w.WriteHeader(res.ResponseCode)
-					_, _ = w.Write(res.Body)
-					return
-				}
-				continue // Fallback to next account
-			}
-
-			// Request succeeded! Handle stream or JSON response
-			promptTokens := 0
-			completionTokens := 0
-			cachedTokens := 0
-
-			if res.IsStream {
-				pTokens, cTokens, cat, err := HandleSSEStream(w, r, res.Stream, format)
-				if err == nil {
-					promptTokens = pTokens
-					completionTokens = cTokens
-					cachedTokens = cat
-				}
-			} else {
-				w.Header().Set("Content-Type", "application/json")
-				w.WriteHeader(res.ResponseCode)
-				_, _ = w.Write(res.Body)
-
-				var parsedResponse map[string]interface{}
-				if err := json.Unmarshal(res.Body, &parsedResponse); err == nil {
-					if usage, ok := parsedResponse["usage"].(map[string]interface{}); ok {
-						if pVal, ok := usage["prompt_tokens"].(float64); ok && pVal > 0 {
-							promptTokens = int(pVal)
-						} else if pVal, ok := usage["input_tokens"].(float64); ok && pVal > 0 {
-							promptTokens = int(pVal)
-						} else if pVal, ok := usage["prompt_eval_count"].(float64); ok && pVal > 0 {
-							promptTokens = int(pVal)
-						}
-
-						if cVal, ok := usage["completion_tokens"].(float64); ok && cVal > 0 {
-							completionTokens = int(cVal)
-						} else if cVal, ok := usage["output_tokens"].(float64); ok && cVal > 0 {
-							completionTokens = int(cVal)
-						} else if cVal, ok := usage["eval_count"].(float64); ok && cVal > 0 {
-							completionTokens = int(cVal)
-						}
-
-						for _, key := range []string{"cache_creation_input_tokens", "cache_read_input_tokens", "cached_tokens"} {
-							if v, ok := usage[key].(float64); ok {
-								cachedTokens += int(v)
-							}
-						}
-						if details, ok := usage["prompt_tokens_details"].(map[string]interface{}); ok {
-							for _, key := range []string{"cache_creation_input_tokens", "cache_read_input_tokens", "cached_tokens"} {
-								if v, ok := details[key].(float64); ok {
-									cachedTokens += int(v)
-								}
-							}
-						}
-					}
-
-					// Root level checks (Ollama/Gemini)
-					if promptTokens == 0 {
-						if p, ok := parsedResponse["prompt_eval_count"].(float64); ok && p > 0 {
-							promptTokens = int(p)
-						}
-					}
-					if completionTokens == 0 {
-						if c, ok := parsedResponse["eval_count"].(float64); ok && c > 0 {
-							completionTokens = int(c)
-						}
-					}
-					if meta, ok := parsedResponse["usageMetadata"].(map[string]interface{}); ok {
-						if p, ok := meta["promptTokenCount"].(float64); ok && p > 0 && promptTokens == 0 {
-							promptTokens = int(p)
-						}
-						if c, ok := meta["candidatesTokenCount"].(float64); ok && c > 0 && completionTokens == 0 {
-							completionTokens = int(c)
-						}
-					}
-				}
-
-				if completionTokens <= 0 {
-					if len(res.Body) > 0 {
-						completionTokens = int(math.Max(1, math.Ceil(float64(len(res.Body))/10.0)))
-					} else {
-						completionTokens = 1
-					}
-				}
-			}
-
-			// Fallback prompt tokens from body if still 0
-			if promptTokens <= 0 {
-				var promptChars int
-				if msgs, ok := body["messages"].([]interface{}); ok {
-					for _, m := range msgs {
-						if msgMap, ok := m.(map[string]interface{}); ok {
-							if content, ok := msgMap["content"].(string); ok {
-								promptChars += len(content)
-							}
-						}
-					}
-				} else if prompt, ok := body["prompt"].(string); ok {
-					promptChars = len(prompt)
-				}
-				if promptChars > 0 {
-					promptTokens = int(math.Max(1, math.Ceil(float64(promptChars)/4.0)))
-				} else {
-					promptTokens = 1
-				}
-			}
-
-			duration := time.Since(startTime)
-			metaJSON, _ := json.Marshal(map[string]interface{}{
-				"duration_ms": duration.Milliseconds(),
-			})
-
-			// Save usage tracking
-			_ = db.SaveRequestUsage(&db.UsageEntry{
-				Provider:         provider,
-				Model:            modelName,
-				ConnectionID:     account.ID,
-				APIKey:           apiKey,
-				Endpoint:         "/v1/chat/completions",
-				PromptTokens:     promptTokens,
-				CompletionTokens: completionTokens,
-				CachedTokens:     cachedTokens,
-				Status:           "ok",
-				Tokens: db.TokenUsage{
-					PromptTokens:     promptTokens,
-					CompletionTokens: completionTokens,
-					CachedTokens:     cachedTokens,
-				},
-				Meta:             string(metaJSON),
-			})
-
-			return // Request completed successfully
-		}
-	}
-
-	// If we exhausted all combos and accounts without success
-	errMsg := "All provider accounts and fallbacks exhausted"
-	if lastErr != nil {
-		errMsg = fmt.Sprintf("%s: %v", errMsg, lastErr)
-	}
-	WriteErrorResponse(w, lastStatus, errMsg)
 }
 
 func HandleListModels(w http.ResponseWriter, r *http.Request) {
@@ -353,16 +70,16 @@ func HandleListModels(w http.ResponseWriter, r *http.Request) {
 
 	// Default model catalogs per provider
 	defaultModels := map[string][]string{
-		"openai":     {"gpt-4o", "gpt-4o-mini", "o1", "o1-mini"},
-		"anthropic":  {"claude-3-5-sonnet-20241022", "claude-haiku-4.5"},
-		"gemini":     {"gemini-2.5-flash", "gemini-2.5-pro"},
-		"deepseek":   {"deepseek-chat", "deepseek-reasoner"},
-		"kilocode":   {"gpt-4o", "claude-sonnet-4-20250514", "gemini-2.5-pro", "deepseek-chat"},
-		"glm":        {"glm-5.2", "glm-5.1", "glm-5", "glm-4.7", "glm-4.6v", "glm-4.6", "glm-4.5-flash"},
-		"glm-coding": {"glm-5.2", "glm-5.1", "glm-5", "glm-4.7", "glm-4.6v", "glm-4.6", "glm-4.5-flash"},
-		"nvidia":     {"meta/llama-3.3-70b-instruct", "deepseek-ai/deepseek-r1", "nvidia/llama-3.1-nemotron-70b-instruct"},
-		"groq":       {"llama-3.3-70b-versatile", "llama-3.1-8b-instant", "mixtral-8x7b-32768", "deepseek-r1-distill-llama-70b"},
-		"openrouter": {"auto", "anthropic/claude-3.5-sonnet", "openai/gpt-4o", "deepseek/deepseek-r1"},
+		"openai":        {"gpt-4o", "gpt-4o-mini", "o1", "o1-mini"},
+		"anthropic":     {"claude-3-5-sonnet-20241022", "claude-haiku-4.5"},
+		"gemini":        {"gemini-2.5-flash", "gemini-2.5-pro"},
+		"deepseek":      {"deepseek-chat", "deepseek-reasoner"},
+		"kilocode":      {"gpt-4o", "claude-sonnet-4-20250514", "gemini-2.5-pro", "deepseek-chat"},
+		"glm":           {"glm-5.2", "glm-5.1", "glm-5", "glm-4.7", "glm-4.6v", "glm-4.6", "glm-4.5-flash"},
+		"glm-coding":    {"glm-5.2", "glm-5.1", "glm-5", "glm-4.7", "glm-4.6v", "glm-4.6", "glm-4.5-flash"},
+		"nvidia":        {"meta/llama-3.3-70b-instruct", "deepseek-ai/deepseek-r1", "nvidia/llama-3.1-nemotron-70b-instruct"},
+		"groq":          {"llama-3.3-70b-versatile", "llama-3.1-8b-instant", "mixtral-8x7b-32768", "deepseek-r1-distill-llama-70b"},
+		"openrouter":    {"auto", "anthropic/claude-3.5-sonnet", "openai/gpt-4o", "deepseek/deepseek-r1"},
 		"mistral":       {"mistral-large-latest", "mistral-small-latest", "codestral-latest", "pixtral-large-latest", "open-mistral-nemo"},
 		"meta":          {"llama-3.3-70b-instruct", "llama-3.1-405b-instruct", "llama-3.1-70b-instruct", "llama-3.1-8b-instruct"},
 		"kenari":        {"kenari-default"},
@@ -371,9 +88,9 @@ func HandleListModels(w http.ResponseWriter, r *http.Request) {
 		"qwen":          {"qwen-max", "qwen-plus", "qwen-turbo", "qwen-coder-plus"},
 		"tencent":       {"hunyuan-pro", "hunyuan-standard", "hunyuan-lite"},
 		"vercel":        {"openai/gpt-4o", "anthropic/claude-3-5-sonnet"},
-		"fireworks":      {"accounts/fireworks/models/deepseek-r1", "accounts/fireworks/models/llama-v3p3-70b-instruct"},
-		"cloudflare-ai":  {"@cf/meta/llama-3.3-70b-instruct", "@cf/deepseek-ai/deepseek-r1-distill-qwen-32b"},
-		"cerebras":       {"llama-3.3-70b", "llama-3.1-8b", "qwen-2.5-32b", "deepseek-r1-distill-llama-70b"},
+		"fireworks":     {"accounts/fireworks/models/deepseek-r1", "accounts/fireworks/models/llama-v3p3-70b-instruct"},
+		"cloudflare-ai": {"@cf/meta/llama-3.3-70b-instruct", "@cf/deepseek-ai/deepseek-r1-distill-qwen-32b"},
+		"cerebras":      {"llama-3.3-70b", "llama-3.1-8b", "qwen-2.5-32b", "deepseek-r1-distill-llama-70b"},
 	}
 
 	seenProviders := make(map[string]bool)

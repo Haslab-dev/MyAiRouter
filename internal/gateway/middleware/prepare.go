@@ -3,6 +3,7 @@ package middleware
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	gwContext "myAiRouter/internal/gateway/context"
 	"myAiRouter/internal/gateway/providers"
@@ -39,6 +40,12 @@ func (p *RequestPreparer) Prepare(
 		Modified:           false,
 		CompressionApplied: false,
 		Strategy:           modelCfg.Compression.Strategy,
+	}
+
+	// Pass-through fast path: without an explicit per-model compression policy
+	// the request is forwarded untouched — no settings lookup, no token estimation.
+	if !modelCfg.Compression.Enabled {
+		return req, result, nil
 	}
 
 	settings, err := db.GetSettings()
@@ -193,7 +200,7 @@ func (p *RequestPreparer) Prepare(
 				if !result.CompressionApplied {
 					tempBody := map[string]interface{}{"messages": olderMsgs}
 					rtk.CompressMessages(tempBody, settings.RtkEnabled)
-					
+
 					olderCompressed := tempBody["messages"].([]interface{})
 					if settings.HeadroomEnabled && settings.HeadroomUrl != "" {
 						olderCompressed = rtk.CompressWithHeadroom(ctx, settings.HeadroomUrl, modelCfg.ID, olderCompressed)
@@ -235,6 +242,12 @@ func Prepare(ctx *gwContext.GatewayContext, next HandlerFunc) error {
 	ctx.AddStep("Request Preparation", "started", "Executing request preparation & dynamic compression")
 
 	modelCfg := db.GetModelConfigOrDefault(ctx.Model)
+
+	// X-No-Compress: per-request opt-out guarantees a byte-identical pass-through.
+	if ctx.Request != nil && strings.EqualFold(ctx.Request.Header.Get("X-No-Compress"), "true") {
+		modelCfg.Compression.Enabled = false
+	}
+
 	p := providers.Get(ctx.Provider)
 	if p == nil {
 		p = providers.Get("openai")

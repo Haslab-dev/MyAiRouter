@@ -96,7 +96,6 @@ func Observability(ctx *context.GatewayContext, next HandlerFunc) error {
 		"ttfb_ms":     ttfbMs,
 		"retry_count": ctx.RetryCount,
 		"fallback":    ctx.FallbackCount,
-		"cache_hit":   ctx.Metadata["cacheHit"] == true,
 		"rps":         ctx.RPS,
 		"tps":         ctx.TPS,
 	}
@@ -169,13 +168,9 @@ func Observability(ctx *context.GatewayContext, next HandlerFunc) error {
 
 	attempt := 1 + ctx.FallbackCount
 
-	// --- Cache status ---
-	cacheStatus := "bypass"
-	if ctx.Metadata["memoryCacheHit"] == true {
-		cacheStatus = "memory_hit"
-	} else if ctx.Metadata["cacheHit"] == true {
-		cacheStatus = "hit"
-	}
+	// --- Response caching was removed: the gateway is a plain pass-through.
+	// The traces.cache column records "off" for schema stability.
+	cacheStatus := "off"
 
 	// --- Compression ---
 	compressionPct := 0
@@ -193,8 +188,6 @@ func Observability(ctx *context.GatewayContext, next HandlerFunc) error {
 	} else if reqPreview.User != "" {
 		requestStr = reqPreview.User
 	}
-
-
 
 	// --- Construct 6 clean routing-focused pipeline steps ---
 	// 1. Resolve Model
@@ -225,20 +218,10 @@ func Observability(ctx *context.GatewayContext, next HandlerFunc) error {
 		optDetails = fmt.Sprintf("saved %d%%", compressionPct)
 	}
 
-	cacheStepStatus := "skipped"
-	cacheStepDetails := cacheStatus
-	if cacheStatus == "hit" {
-		cacheStepStatus = "success"
-		cacheStepDetails = "hit"
-	} else if ctx.IsStream {
-		cacheStepDetails = "skipped (stream)"
-	}
-
 	pipelineSteps := []db.TracePipelineStep{
 		{Name: "Resolve Model", Status: "success", Details: modelName},
 		{Name: "Prompt Rewrite", Status: rewriteStatus, Details: rewriteDetails},
 		{Name: "Optimizer", Status: optStatus, Details: optDetails},
-		{Name: "Cache", Status: cacheStepStatus, Details: cacheStepDetails},
 		{Name: "Route", Status: "success", Details: fmt.Sprintf("%s (%s)", providerName, comboKind)},
 		{Name: "Provider", Status: statusStr, Details: fmt.Sprintf("%.1f s", float64(latMs)/1000.0), DurationMs: latMs},
 	}
