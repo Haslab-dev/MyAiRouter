@@ -146,11 +146,11 @@ export default function BenchmarkPage() {
     }`
 
   return (
-    <div className="mx-auto max-w-[1500px] px-6 py-6">
-      <div className="mb-5 flex items-start justify-between gap-4">
+    <div className="mx-auto max-w-[1500px] px-3 sm:px-6 py-4 sm:py-6">
+      <div className="mb-4 sm:mb-5 flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 sm:gap-4">
         <div>
-          <h1 className="text-lg font-semibold tracking-tight text-text">Benchmark</h1>
-          <p className="mt-1 max-w-2xl text-[13px] text-muted">
+          <h1 className="text-base sm:text-lg font-semibold tracking-tight text-text">Benchmark</h1>
+          <p className="mt-1 max-w-2xl text-xs sm:text-[13px] text-muted">
             Run the same prompt against up to {MAX_MODELS} models and compare latency, throughput, and output.
           </p>
         </div>

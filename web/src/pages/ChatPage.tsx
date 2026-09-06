@@ -167,7 +167,7 @@ export default function ChatPage() {
   // Sessions
   const [sessions, setSessions] = useState<ChatSession[]>([])
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null)
-  const [isSidebarOpen, setIsSidebarOpen] = useState(true)
+  const [isSidebarOpen, setIsSidebarOpen] = useState(() => typeof window !== 'undefined' && window.innerWidth >= 768)
   const [searchQuery, setSearchQuery] = useState('')
   const [editingTitleId, setEditingTitleId] = useState<string | null>(null)
   const [editTitleValue, setEditTitleValue] = useState('')
@@ -844,8 +844,20 @@ export default function ChatPage() {
         <div className="absolute left-1/2 top-4 z-50 -translate-x-1/2 rounded-md bg-danger px-4 py-2 text-[13px] font-medium text-on-accent">{errorToast}</div>
       )}
 
-      {/* Sessions sidebar */}
-      <div className={cn('flex flex-col border-r border-border bg-surface transition-[width] duration-200', isSidebarOpen ? 'w-64' : 'w-0 overflow-hidden')}>
+      {/* Sessions sidebar / drawer */}
+      {isSidebarOpen && (
+        <div
+          onClick={() => setIsSidebarOpen(false)}
+          className="fixed inset-0 z-30 bg-black/40 md:hidden"
+        />
+      )}
+      <div
+        className={cn(
+          'flex flex-col border-r border-border bg-surface transition-[width] duration-200 z-40',
+          'md:static fixed inset-y-0 left-0 h-full',
+          isSidebarOpen ? 'w-72 md:w-64' : 'w-0 overflow-hidden',
+        )}
+      >
         <div className="flex flex-col gap-2 p-2.5">
           <div className="flex gap-1.5">
             <Button variant="primary" size="sm" className="flex-1" onClick={handleNewChat}>
@@ -873,7 +885,10 @@ export default function ChatPage() {
               {group.items.map((s) => (
                 <div
                   key={s.id}
-                  onClick={() => selectSession(s.id)}
+                  onClick={() => {
+                    selectSession(s.id)
+                    if (window.innerWidth < 768) setIsSidebarOpen(false)
+                  }}
                   className={cn(
                     'group flex cursor-pointer items-center gap-1.5 rounded-md px-2 py-1.5 text-[13px] transition-colors',
                     activeSessionId === s.id ? 'bg-accent-subtle text-accent' : 'text-muted hover:bg-surface-2 hover:text-text',
@@ -931,7 +946,7 @@ export default function ChatPage() {
       <div className="flex min-w-0 flex-1 flex-col">
         {/* Chat header */}
         <div className="flex h-12 shrink-0 items-center justify-between gap-2 border-b border-border bg-surface px-3">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5 sm:gap-2">
             {!isSidebarOpen && (
               <button className="text-muted hover:text-text" onClick={() => setIsSidebarOpen(true)} aria-label="Show sessions">
                 <PanelLeftOpen size={15} />
@@ -945,7 +960,7 @@ export default function ChatPage() {
               )}
             >
               <ImageIcon size={12} />
-              {chatMode === 'image' ? 'Image mode' : 'Image'}
+              <span className="hidden sm:inline">{chatMode === 'image' ? 'Image mode' : 'Image'}</span>
             </button>
             <button
               onClick={() => setShowSystemPrompt((v) => !v)}
@@ -956,15 +971,15 @@ export default function ChatPage() {
               title={showSystemPrompt ? 'Hide system prompt' : 'Set a system prompt'}
             >
               <FileText size={12} />
-              System
+              <span className="hidden sm:inline">System</span>
             </button>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex min-w-0 items-center gap-1.5 sm:gap-2">
             <select
               value={selectedModel}
               onChange={(e) => handleModelChange(e.target.value)}
-              className="h-8 max-w-64 rounded-md border border-border bg-bg px-2 text-xs outline-none focus:border-accent"
+              className="h-8 max-w-36 sm:max-w-64 rounded-md border border-border bg-bg px-2 text-xs outline-none focus:border-accent truncate"
             >
               {models.map((m) => (
                 <option key={m.id} value={m.id}>

@@ -378,18 +378,18 @@ export function Td({ className = '', children, colSpan }: { className?: string; 
 
 /* -------------------------------- Page shell ------------------------------- */
 
-export function PageContainer({ children }: { children: ReactNode }) {
-  return <div className="mx-auto max-w-6xl px-6 py-6">{children}</div>
+export function PageContainer({ children, className = '' }: { children: ReactNode; className?: string }) {
+  return <div className={`mx-auto max-w-6xl px-3 sm:px-6 py-4 sm:py-6 ${className}`}>{children}</div>
 }
 
 export function PageHeader({ title, description, actions }: { title: string; description?: string; actions?: ReactNode }) {
   return (
-    <div className="mb-6 flex items-start justify-between gap-4">
-      <div>
-        <h1 className="text-lg font-semibold tracking-tight text-text">{title}</h1>
-        {description && <p className="mt-1 max-w-2xl text-[13px] text-muted">{description}</p>}
+    <div className="mb-4 sm:mb-6 flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 sm:gap-4">
+      <div className="min-w-0">
+        <h1 className="text-base sm:text-lg font-semibold tracking-tight text-text">{title}</h1>
+        {description && <p className="mt-1 max-w-2xl text-xs sm:text-[13px] text-muted">{description}</p>}
       </div>
-      {actions && <div className="flex shrink-0 items-center gap-2">{actions}</div>}
+      {actions && <div className="flex shrink-0 flex-wrap items-center gap-2">{actions}</div>}
     </div>
   )
 }

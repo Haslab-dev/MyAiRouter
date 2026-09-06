@@ -201,10 +201,10 @@ export default function TracesPage() {
         </div>
       </div>
 
-      <div className="flex min-h-0 flex-1 gap-5 px-6 pb-5">
+      <div className="flex min-h-0 flex-1 flex-col md:flex-row gap-4 sm:gap-5 px-3 sm:px-6 pb-4 sm:pb-5">
         {/* Left: scrolling trace list */}
-        <div className="flex w-[42%] min-w-0 flex-col">
-          <div className="min-h-0 flex-1 overflow-y-auto pr-1">
+        <div className={cn('flex w-full md:w-[42%] min-w-0 flex-col', selected && 'hidden md:flex')}>
+          <div className="min-h-0 flex-1 overflow-y-auto pr-0 md:pr-1">
             <div className="flex flex-col gap-2">
               {isLoading ? (
                 <div className="flex justify-center py-16">
@@ -259,9 +259,17 @@ export default function TracesPage() {
         </div>
 
         {/* Right: detail panel with its own scroll */}
-        <div className="min-h-0 flex-1 overflow-y-auto pl-1">
+        <div className={cn('min-h-0 flex-1 overflow-y-auto pl-0 md:pl-1', !selected && 'hidden md:block')}>
           {selected ? (
-            <TraceDetail trace={selected} onClose={() => setSelected(null)} />
+            <div className="flex flex-col gap-2">
+              <button
+                onClick={() => setSelected(null)}
+                className="inline-flex md:hidden items-center gap-1 text-xs font-medium text-accent self-start py-1"
+              >
+                ← Back to list
+              </button>
+              <TraceDetail trace={selected} onClose={() => setSelected(null)} />
+            </div>
           ) : (
             <Card className="h-fit">
               <EmptyState icon={<ScanSearch size={26} />} title="Select a trace" hint="Pick a request on the left to inspect its full routing chain." />

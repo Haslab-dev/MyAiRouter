@@ -102,15 +102,15 @@ export default function EndpointPage() {
           subtitle="Authenticate requests with Authorization: Bearer <key>."
         />
 
-        <form onSubmit={handleCreateKey} className="mb-5 flex gap-2">
+        <form onSubmit={handleCreateKey} className="mb-5 flex flex-col sm:flex-row gap-2">
           <Input
             placeholder="Key label (e.g. VS Code, Cline, Cursor)"
             value={newKeyName}
             onChange={(e) => setNewKeyName(e.target.value)}
             disabled={loading}
-            className="max-w-sm"
+            className="w-full sm:max-w-sm"
           />
-          <Button type="submit" variant="primary" loading={loading}>
+          <Button type="submit" variant="primary" loading={loading} className="shrink-0">
             Generate key
           </Button>
         </form>

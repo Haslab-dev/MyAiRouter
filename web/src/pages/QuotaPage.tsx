@@ -91,7 +91,7 @@ export default function QuotaPage() {
           />
         </Card>
       ) : (
-        <div className="grid gap-4 [grid-template-columns:repeat(auto-fill,minmax(380px,1fr))]">
+        <div className="grid gap-4 grid-cols-1 sm:[grid-template-columns:repeat(auto-fill,minmax(340px,1fr))]">
           {connections.map((conn) => {
             const h = health[conn.id]
             const tone = healthTone(conn)

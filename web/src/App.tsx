@@ -1,9 +1,11 @@
-import { Suspense, lazy, useEffect, useState } from 'react'
-import { NavLink, Navigate, Route, Routes } from 'react-router-dom'
+import { Suspense, lazy, useEffect, useRef, useState } from 'react'
+import { NavLink, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import {
   Activity,
   ChevronsLeft,
+  ChevronDown,
   CircuitBoard,
+  Download,
   GitCompare,
   Gauge,
   HardDrive,
@@ -15,6 +17,7 @@ import {
   Sun,
   Moon,
   Workflow,
+  X,
 } from 'lucide-react'
 import { useAuth, AuthProvider } from '@/contexts/AuthContext'
 import { useTheme, ThemeProvider } from '@/contexts/ThemeContext'
@@ -53,6 +56,11 @@ const NAV_ITEMS = [
   { to: '/console-log', label: 'Traffic', icon: Activity },
 ] as const
 
+interface BeforeInstallPromptEvent extends Event {
+  prompt: () => Promise<void>
+  userChoice: Promise<{ outcome: 'accepted' | 'dismissed'; platform: string }>
+}
+
 function ThemeToggle() {
   const { theme, toggleTheme } = useTheme()
   const isDark = theme === 'dark'
@@ -60,6 +68,64 @@ function ThemeToggle() {
     <IconButton label={isDark ? 'Switch to light mode' : 'Switch to dark mode'} onClick={toggleTheme}>
       {isDark ? <Sun size={15} /> : <Moon size={15} />}
     </IconButton>
+  )
+}
+
+function PwaInstallButton() {
+  const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null)
+  const [isInstalled, setIsInstalled] = useState(false)
+
+  useEffect(() => {
+    // Check if already in standalone display mode
+    const isStandalone =
+      window.matchMedia('(display-mode: standalone)').matches ||
+      ('standalone' in window.navigator && Boolean((window.navigator as unknown as { standalone?: boolean }).standalone))
+    if (isStandalone) {
+      setIsInstalled(true)
+      return
+    }
+
+    const handleBeforeInstall = (e: Event) => {
+      e.preventDefault()
+      setDeferredPrompt(e as BeforeInstallPromptEvent)
+    }
+
+    const handleAppInstalled = () => {
+      setIsInstalled(true)
+      setDeferredPrompt(null)
+    }
+
+    window.addEventListener('beforeinstallprompt', handleBeforeInstall)
+    window.addEventListener('appinstalled', handleAppInstalled)
+
+    return () => {
+      window.removeEventListener('beforeinstallprompt', handleBeforeInstall)
+      window.removeEventListener('appinstalled', handleAppInstalled)
+    }
+  }, [])
+
+  if (isInstalled || !deferredPrompt) return null
+
+  const handleInstallClick = async () => {
+    if (!deferredPrompt) return
+    await deferredPrompt.prompt()
+    const choice = await deferredPrompt.userChoice
+    if (choice.outcome === 'accepted') {
+      setIsInstalled(true)
+    }
+    setDeferredPrompt(null)
+  }
+
+  return (
+    <button
+      onClick={handleInstallClick}
+      title="Install standalone app viewer"
+      aria-label="Install standalone app viewer"
+      className="inline-flex h-8 items-center gap-1.5 rounded-md border border-accent bg-accent-subtle px-2.5 text-xs font-medium text-accent transition-colors hover:brightness-105"
+    >
+      <Download size={13} />
+      <span className="hidden xs:inline">Install App</span>
+    </button>
   )
 }
 
@@ -132,8 +198,36 @@ function useSystemMetrics() {
 
 function AppShell() {
   const { status, onboardingDone } = useAuth()
+  const location = useLocation()
+  const navigate = useNavigate()
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => localStorage.getItem('sidebarCollapsed') === 'true')
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+  const mobileMenuRef = useRef<HTMLDivElement>(null)
   const metrics = useSystemMetrics()
+
+  // Close mobile dropdown menu whenever route changes
+  useEffect(() => {
+    setMobileMenuOpen(false)
+  }, [location.pathname])
+
+  // Close mobile menu on outside click or escape key
+  useEffect(() => {
+    if (!mobileMenuOpen) return
+    const handleClickOutside = (e: MouseEvent) => {
+      if (mobileMenuRef.current && !mobileMenuRef.current.contains(e.target as Node)) {
+        setMobileMenuOpen(false)
+      }
+    }
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setMobileMenuOpen(false)
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    document.addEventListener('keydown', handleKeyDown)
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside)
+      document.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [mobileMenuOpen])
 
   if (status === null) {
     return (
@@ -150,27 +244,88 @@ function AppShell() {
   // /api/auth/status returns the version already prefixed with "v".
   const version = status.version ?? ''
 
+  const currentNav = NAV_ITEMS.find((item) => location.pathname === item.to || location.pathname.startsWith(`${item.to}/`)) ?? NAV_ITEMS[0]
+  const CurrentNavIcon = currentNav.icon
+
   return (
-    <div className="flex h-screen flex-col bg-bg">
-      <header className="flex h-12 shrink-0 items-center justify-between border-b border-border bg-surface px-3">
+    <div className="flex h-dvh flex-col bg-bg">
+      <header className="flex h-12 shrink-0 items-center justify-between border-b border-border bg-surface px-3 pt-safe">
         <div className="flex items-center gap-2">
-          <div className="flex h-7 w-7 items-center justify-center rounded-md bg-accent text-on-accent">
-            <RouteIcon size={15} />
+          {/* Mobile menu dropdown trigger */}
+          <button
+            type="button"
+            onClick={() => setMobileMenuOpen((v) => !v)}
+            className="flex h-8 items-center gap-1.5 rounded-md border border-border bg-surface-2 px-2 text-xs font-medium text-text md:hidden transition-colors hover:bg-surface"
+            aria-label="Navigation menu"
+            aria-expanded={mobileMenuOpen}
+          >
+            {mobileMenuOpen ? <X size={15} /> : <CurrentNavIcon size={15} className="text-accent" />}
+            <span className="max-w-[85px] truncate font-medium">{currentNav.label}</span>
+            <ChevronDown size={13} className={cn('text-muted transition-transform duration-200', mobileMenuOpen && 'rotate-180')} />
+          </button>
+
+          {/* Brand Logo & Name */}
+          <div
+            onClick={() => navigate('/usage')}
+            className="flex cursor-pointer items-center gap-2 select-none"
+          >
+            <div className="flex h-7 w-7 items-center justify-center rounded-md bg-accent text-on-accent shadow-xs">
+              <RouteIcon size={15} />
+            </div>
+            <span className="text-sm font-semibold tracking-tight">myAiRouter</span>
+            {version && <span className="tnum hidden text-[10px] text-subtle sm:inline">{version}</span>}
           </div>
-          <span className="text-sm font-semibold tracking-tight">myAiRouter</span>
-          {version && <span className="tnum text-[10px] text-subtle">{version}</span>}
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5 sm:gap-2">
+          <PwaInstallButton />
           <ThemeToggle />
           <UserMenu />
         </div>
       </header>
 
-      <div className="flex min-h-0 flex-1">
+      {/* Mobile navigation dropdown menu */}
+      {mobileMenuOpen && (
+        <div
+          ref={mobileMenuRef}
+          className="border-b border-border bg-surface shadow-xl md:hidden z-50 animate-[slide-up_150ms_ease-out]"
+        >
+          <div className="p-2 border-b border-border bg-surface-2/40">
+            <div className="text-[10px] font-semibold uppercase tracking-wider text-subtle px-2 py-1">
+              Select page
+            </div>
+            <div className="grid grid-cols-2 gap-1 mt-1">
+              {NAV_ITEMS.map(({ to, label, icon: Icon }) => (
+                <NavLink
+                  key={to}
+                  to={to}
+                  onClick={() => setMobileMenuOpen(false)}
+                  className={({ isActive }) =>
+                    cn(
+                      'flex items-center gap-2 rounded-md px-2.5 py-2 text-xs transition-colors',
+                      isActive ? 'bg-accent-subtle font-semibold text-accent' : 'text-muted hover:bg-surface hover:text-text',
+                    )
+                  }
+                >
+                  <Icon size={15} className="shrink-0" />
+                  <span className="truncate">{label}</span>
+                </NavLink>
+              ))}
+            </div>
+          </div>
+
+          {/* Mobile metrics footer */}
+          <div className="p-3 bg-surface">
+            <SidebarFooter metrics={metrics} collapsed={false} />
+          </div>
+        </div>
+      )}
+
+      <div className="flex min-h-0 flex-1 overflow-hidden">
+        {/* Desktop sidebar */}
         <aside
           className={cn(
-            'flex shrink-0 flex-col justify-between border-r border-border bg-surface py-3 transition-[width] duration-200',
+            'hidden md:flex shrink-0 flex-col justify-between border-r border-border bg-surface py-3 transition-[width] duration-200',
             sidebarCollapsed ? 'w-14 items-center' : 'w-48',
           )}
         >
@@ -209,7 +364,8 @@ function AppShell() {
           </div>
         </aside>
 
-        <main className="min-w-0 flex-1 overflow-y-auto">
+        {/* Main page content area */}
+        <main className="min-w-0 flex-1 overflow-y-auto pb-safe">
           <Suspense
             fallback={
               <div className="flex items-center gap-2 p-6 text-sm text-muted">

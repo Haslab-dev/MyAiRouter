@@ -155,7 +155,7 @@ export default function ConsoleLogPage() {
 
   return (
     <div className="flex h-full flex-col">
-      <div className="px-6 pt-6">
+      <div className="px-3 sm:px-6 pt-4 sm:pt-6">
         <PageHeader
           title="Traffic"
           description={`${total.toLocaleString()} log entries — live request capture with full bodies on click.`}
@@ -164,12 +164,12 @@ export default function ConsoleLogPage() {
               <Tabs tabs={FILTERS.map((f) => ({ id: f.id, label: f.label }))} active={filter} onChange={(id) => setFilter(id as Filter)} />
               <Button size="sm" onClick={() => setIsPaused(!isPaused)}>
                 {isPaused ? <Play size={13} /> : <Pause size={13} />}
-                {isPaused ? 'Resume' : 'Pause'}
+                <span className="hidden sm:inline">{isPaused ? 'Resume' : 'Pause'}</span>
               </Button>
-              <Button size="sm" onClick={handleClearLogs}>
+              <Button size="sm" onClick={handleClearLogs} title="Clear all logs">
                 <Trash2 size={13} />
               </Button>
-              <Button size="sm" variant="primary" onClick={handleCopy}>
+              <Button size="sm" variant="primary" onClick={handleCopy} title="Copy logs">
                 <Copy size={13} />
               </Button>
             </>
@@ -177,7 +177,7 @@ export default function ConsoleLogPage() {
         />
       </div>
 
-      <div className="mx-6 mb-4 flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-border bg-surface">
+      <div className="mx-3 sm:mx-6 mb-4 flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-border bg-surface">
         {filtered.length === 0 ? (
           <EmptyState icon={<Activity size={26} />} title="No log entries" hint="Traffic through the gateway is captured here in real time." />
         ) : (

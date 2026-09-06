@@ -729,7 +729,7 @@ export default function ProvidersPage() {
         <Input placeholder="Search providers…" value={providerSearchQuery} onChange={(e) => setProviderSearchQuery(e.target.value)} className="max-w-sm" />
       </div>
 
-      <div className="grid gap-3 [grid-template-columns:repeat(auto-fill,minmax(320px,1fr))]">
+      <div className="grid gap-3 grid-cols-1 sm:[grid-template-columns:repeat(auto-fill,minmax(300px,1fr))]">
         {allProviderEntries.map((p) => {
           const conn = getConnectionFor(p.id)
           const metrics = getProviderMetrics(p.id)
