@@ -347,7 +347,14 @@ export default function ChatPage() {
     }
   }, [selectSession, handleNewChat])
 
+  const didInitRef = useRef(false)
   useEffect(() => {
+    // Run once per mount. The callbacks below change identity whenever
+    // selectedModel / systemPrompt change (fetchModels sets selectedModel,
+    // selectSession may set it again), so depending on them directly would
+    // re-trigger init — refetching models and creating new sessions in a loop.
+    if (didInitRef.current) return
+    didInitRef.current = true
     async function init() {
       const key = await fetchSystemApiKey()
       await fetchModels(key)
