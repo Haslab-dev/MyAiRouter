@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"myAiRouter/internal/gateway/providers"
 	"myAiRouter/pkg/db"
 )
 
@@ -53,51 +54,6 @@ func ExecuteProviderRequest(ctx context.Context, conn *db.ProviderConnection, bo
 		// Default to OpenAI compatible format
 		return executeOpenAI(ctx, conn, apiKey, body, stream)
 	}
-}
-
-// providerRestrictedFields lists request body fields that specific providers
-// reject because they use strict ("extra inputs are not permitted") validation.
-// These are stripped before forwarding, so clients built for OpenAI-compatible
-// APIs don't break against stricter providers.
-var providerRestrictedFields = map[string]map[string]bool{
-	"mistral": {"store": true},
-}
-
-// sanitizeRequestBody removes fields the target provider does not accept.
-func sanitizeRequestBody(provider string, body map[string]interface{}) {
-	if restricted, ok := providerRestrictedFields[provider]; ok {
-		for field := range restricted {
-			delete(body, field)
-		}
-	}
-}
-
-// rejectedFieldsFrom422 parses a FastAPI-style 422 validation error and returns
-// the top-level body fields that were rejected as "extra_forbidden".
-func rejectedFieldsFrom422(respBody []byte) []string {
-	var parsed struct {
-		Detail []struct {
-			Type string `json:"type"`
-			Loc  []any  `json:"loc"`
-		} `json:"detail"`
-	}
-	if err := json.Unmarshal(respBody, &parsed); err != nil {
-		return nil
-	}
-	var fields []string
-	for _, d := range parsed.Detail {
-		if d.Type != "extra_forbidden" || len(d.Loc) < 2 {
-			continue
-		}
-		// loc looks like ["body", "store"] (possibly nested: ["body","a","b"])
-		if loc0, ok := d.Loc[0].(string); !ok || loc0 != "body" {
-			continue
-		}
-		if field, ok := d.Loc[1].(string); ok && field != "" {
-			fields = append(fields, field)
-		}
-	}
-	return fields
 }
 
 func executeOpenAI(ctx context.Context, conn *db.ProviderConnection, apiKey string, body map[string]interface{}, stream bool) *ExecutionResult {
@@ -147,7 +103,7 @@ func executeOpenAI(ctx context.Context, conn *db.ProviderConnection, apiKey stri
 	url := strings.TrimSuffix(baseUrl, "/") + "/chat/completions"
 
 	// Strip fields this provider is known to reject (strict validation).
-	sanitizeRequestBody(conn.Provider, body)
+	providers.SanitizeRequestBody(conn.Provider, body)
 
 	doRequest := func(bodyBytes []byte) (*http.Response, error) {
 		req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(bodyBytes))
@@ -183,7 +139,7 @@ func executeOpenAI(ctx context.Context, conn *db.ProviderConnection, apiKey stri
 		respBody, readErr := io.ReadAll(resp.Body)
 		_ = resp.Body.Close()
 		if readErr == nil {
-			if rejected := rejectedFieldsFrom422(respBody); len(rejected) > 0 {
+			if rejected := providers.RejectedFieldsFrom422(respBody); len(rejected) > 0 {
 				for _, field := range rejected {
 					delete(body, field)
 				}

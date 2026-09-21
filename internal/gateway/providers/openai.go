@@ -66,39 +66,68 @@ func (p *OpenAIProvider) Execute(ctx context.Context, conn *db.ProviderConnectio
 	}
 
 	url := strings.TrimSuffix(baseUrl, "/") + "/chat/completions"
+
+	// Strip fields this provider is known to reject (strict validation).
+	SanitizeRequestBody(conn.Provider, body)
+
+	doRequest := func(bodyBytes []byte) (*http.Response, error) {
+		req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(bodyBytes))
+		if err != nil {
+			return nil, err
+		}
+
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", "Bearer "+apiKey)
+		if conn.Provider == "opencode" || conn.Provider == "opencode-go" {
+			req.Header.Set("x-opencode-client", "desktop")
+		}
+		if conn.Provider == "kilocode" {
+			if orgId, ok := conn.Data["orgId"].(string); ok && orgId != "" {
+				req.Header.Set("X-Kilocode-OrganizationID", orgId)
+			}
+		}
+
+		// Inject custom headers
+		if headers, ok := conn.Data["headers"].(map[string]interface{}); ok {
+			for k, v := range headers {
+				if valStr, ok := v.(string); ok {
+					req.Header.Set(k, valStr)
+				}
+			}
+		}
+
+		return SharedHTTPClient.Do(req)
+	}
+
 	bodyBytes, err := json.Marshal(body)
 	if err != nil {
 		return &ExecutionResult{Err: fmt.Errorf("marshalling body: %w", err)}
 	}
 
-	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(bodyBytes))
+	resp, err := doRequest(bodyBytes)
 	if err != nil {
 		return &ExecutionResult{Err: err}
 	}
 
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+apiKey)
-	if conn.Provider == "opencode" || conn.Provider == "opencode-go" {
-		req.Header.Set("x-opencode-client", "desktop")
-	}
-	if conn.Provider == "kilocode" {
-		if orgId, ok := conn.Data["orgId"].(string); ok && orgId != "" {
-			req.Header.Set("X-Kilocode-OrganizationID", orgId)
-		}
-	}
-
-	// Inject custom headers
-	if headers, ok := conn.Data["headers"].(map[string]interface{}); ok {
-		for k, v := range headers {
-			if valStr, ok := v.(string); ok {
-				req.Header.Set(k, valStr)
+	// Future-proofing: if a provider still rejects unknown extra fields,
+	// strip them from the body and retry once.
+	if resp.StatusCode == http.StatusUnprocessableEntity {
+		respBody, readErr := io.ReadAll(resp.Body)
+		_ = resp.Body.Close()
+		if readErr == nil {
+			if rejected := RejectedFieldsFrom422(respBody); len(rejected) > 0 {
+				for _, field := range rejected {
+					delete(body, field)
+				}
+				if retryBytes, mErr := json.Marshal(body); mErr == nil {
+					if retryResp, dErr := doRequest(retryBytes); dErr == nil {
+						resp = retryResp
+					}
+				}
+			} else {
+				return &ExecutionResult{ResponseCode: resp.StatusCode, Body: respBody, IsStream: false}
 			}
 		}
-	}
-
-	resp, err := SharedHTTPClient.Do(req)
-	if err != nil {
-		return &ExecutionResult{Err: err}
 	}
 
 	if stream && resp.StatusCode == http.StatusOK {

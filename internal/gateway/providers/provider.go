@@ -2,6 +2,7 @@ package providers
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"net"
 	"net/http"
@@ -59,4 +60,52 @@ func Register(p Provider) {
 
 func Get(name string) Provider {
 	return Registry[name]
+}
+
+// providerRestrictedFields lists request body fields that specific providers
+// reject because they use strict ("extra inputs are not permitted") validation.
+// These are stripped before forwarding, so clients built for OpenAI-compatible
+// APIs don't break against stricter providers.
+var providerRestrictedFields = map[string]map[string]bool{
+	"mistral": {"store": true},
+}
+
+// SanitizeRequestBody removes fields the target provider does not accept.
+func SanitizeRequestBody(provider string, body map[string]interface{}) {
+	if body == nil {
+		return
+	}
+	if restricted, ok := providerRestrictedFields[provider]; ok {
+		for field := range restricted {
+			delete(body, field)
+		}
+	}
+}
+
+// RejectedFieldsFrom422 parses a FastAPI-style 422 validation error and returns
+// the top-level body fields that were rejected as "extra_forbidden".
+func RejectedFieldsFrom422(respBody []byte) []string {
+	var parsed struct {
+		Detail []struct {
+			Type string `json:"type"`
+			Loc  []any  `json:"loc"`
+		} `json:"detail"`
+	}
+	if err := json.Unmarshal(respBody, &parsed); err != nil {
+		return nil
+	}
+	var fields []string
+	for _, d := range parsed.Detail {
+		if d.Type != "extra_forbidden" || len(d.Loc) < 2 {
+			continue
+		}
+		// loc looks like ["body", "store"] (possibly nested: ["body","a","b"])
+		if loc0, ok := d.Loc[0].(string); !ok || loc0 != "body" {
+			continue
+		}
+		if field, ok := d.Loc[1].(string); ok && field != "" {
+			fields = append(fields, field)
+		}
+	}
+	return fields
 }
