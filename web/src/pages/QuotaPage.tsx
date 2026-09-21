@@ -3,6 +3,7 @@ import { RefreshCw, ShieldCheck } from 'lucide-react'
 import { api } from '@/lib/api'
 import { useSnackbar } from '@/stores/snackbar'
 import { Badge, Button, Card, PageContainer, PageHeader, Spinner, Toggle, EmptyState } from '@/components/ui'
+import ProviderIcon from '@/components/ProviderIcon'
 import type { ConnectionHealth, ProviderConnection } from '@/lib/types'
 
 export default function QuotaPage() {
@@ -99,9 +100,7 @@ export default function QuotaPage() {
               <Card key={conn.id}>
                 <div className="mb-4 flex items-center justify-between">
                   <div className="flex items-center gap-3">
-                    <span className="flex h-8 w-8 items-center justify-center rounded-md border border-border bg-surface-2 text-sm font-semibold text-muted">
-                      {conn.provider.charAt(0).toUpperCase()}
-                    </span>
+                    <ProviderIcon id={conn.provider} name={conn.provider} size={32} />
                     <div>
                       <div className="text-sm font-semibold capitalize">{conn.provider}</div>
                       <div className="text-xs text-muted">{conn.name || conn.email || 'Unnamed key'}</div>

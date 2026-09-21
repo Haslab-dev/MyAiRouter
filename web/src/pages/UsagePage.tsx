@@ -208,6 +208,36 @@ export default function UsagePage() {
   const totalTokens = stats.totalPromptTokens + stats.totalCompletionTokens
   const rows = tableMode === 'models' ? modelSummariesMerged : providerSummaries
 
+  // Column sorting (click a header to sort, click again to flip direction)
+  type SortKey = 'name' | 'requests' | 'promptTokens' | 'completionTokens' | 'cachedTokens' | 'cost'
+  const [sortKey, setSortKey] = useState<SortKey>('cost')
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc')
+
+  const sortedRows = useMemo(() => {
+    const arr = [...rows]
+    arr.sort((a, b) => {
+      const rec = (o: (typeof rows)[number]) => o as unknown as Record<SortKey, string | number>
+      const av = rec(a)[sortKey]
+      const bv = rec(b)[sortKey]
+      const cmp = typeof av === 'string' || typeof bv === 'string'
+        ? String(av).localeCompare(String(bv))
+        : (av as number) - (bv as number)
+      return sortDir === 'asc' ? cmp : -cmp
+    })
+    return arr
+  }, [rows, sortKey, sortDir])
+
+  const toggleSort = (key: SortKey) => {
+    if (sortKey === key) setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'))
+    else {
+      setSortKey(key)
+      setSortDir(key === 'name' ? 'asc' : 'desc')
+    }
+  }
+
+  const sortIndicator = (key: SortKey) =>
+    sortKey === key ? (sortDir === 'asc' ? ' ↑' : ' ↓') : ''
+
   return (
     <PageContainer>
       <PageHeader
@@ -263,7 +293,12 @@ export default function UsagePage() {
         <StatCard label="Requests" value={formatNumber(stats.totalRequests)} />
         <StatCard label="Prompt tokens" value={formatNumber(stats.totalPromptTokens)} />
         <StatCard label="Completion tokens" value={formatNumber(stats.totalCompletionTokens)} />
-        <StatCard label="Cached (upstream)" value={formatNumber(stats.totalCachedTokens)} hint="Reported by providers" tone="success" />
+        <StatCard
+          label="Cached (upstream)"
+          value={formatNumber(stats.totalCachedTokens)}
+          hint={stats.totalPromptTokens > 0 ? `${((stats.totalCachedTokens / stats.totalPromptTokens) * 100).toFixed(1)}% of prompt` : 'Reported by providers'}
+          tone="success"
+        />
         <StatCard label="Cost" value={formatCost(stats.totalCost)} />
       </div>
 
@@ -309,37 +344,60 @@ export default function UsagePage() {
           <table className="w-full text-[13px]">
             <thead>
               <tr className="border-b border-border">
-                <th className="px-4 py-2 text-left text-[11px] font-medium uppercase tracking-wide text-subtle">{tableMode === 'models' ? 'Model (provider)' : 'Provider'}</th>
-                <th className="px-4 py-2 text-right text-[11px] font-medium uppercase tracking-wide text-subtle">Requests</th>
-                <th className="px-4 py-2 text-right text-[11px] font-medium uppercase tracking-wide text-subtle">Prompt</th>
-                <th className="px-4 py-2 text-right text-[11px] font-medium uppercase tracking-wide text-subtle">Completion</th>
-                <th className="px-4 py-2 text-right text-[11px] font-medium uppercase tracking-wide text-subtle">Cached</th>
-                <th className="px-4 py-2 text-right text-[11px] font-medium uppercase tracking-wide text-subtle">Cost</th>
+                {([
+                  { key: 'name' as const, label: tableMode === 'models' ? 'Model (provider)' : 'Provider', align: 'text-left' },
+                  { key: 'requests' as const, label: 'Requests', align: 'text-right' },
+                  { key: 'promptTokens' as const, label: 'Prompt', align: 'text-right' },
+                  { key: 'completionTokens' as const, label: 'Completion', align: 'text-right' },
+                  { key: 'cachedTokens' as const, label: 'Cached', align: 'text-right' },
+                  { key: 'cost' as const, label: 'Cost', align: 'text-right' },
+                ]).map((col) => (
+                  <th key={col.key} className={`px-4 py-2 ${col.align}`}>
+                    <button
+                      type="button"
+                      onClick={() => toggleSort(col.key)}
+                      className={cn(
+                        'text-[11px] font-medium uppercase tracking-wide transition-colors hover:text-text',
+                        sortKey === col.key ? 'text-accent' : 'text-subtle',
+                      )}
+                      title="Click to sort, click again to flip direction"
+                    >
+                      {col.label}
+                      <span className="tnum">{sortIndicator(col.key)}</span>
+                    </button>
+                  </th>
+                ))}
               </tr>
             </thead>
             <tbody>
-              {rows.length === 0 ? (
+              {sortedRows.length === 0 ? (
                 <tr>
                   <td colSpan={6} className="px-4 py-8 text-center text-subtle">
                     No usage recorded for this period.
                   </td>
                 </tr>
               ) : (
-                rows.map((row, i) => (
-                  <tr key={`${row.model}-${i}`} className={cn('border-b border-border/60', i % 2 === 1 && 'bg-surface-2/40')}>
-                    <td className="max-w-64 px-4 py-2.5">
-                      <code className="block truncate font-mono text-xs">{row.model}</code>
-                      {tableMode === 'models' && row.provider && (
-                        <span className="text-[10px] text-subtle">{row.provider}</span>
-                      )}
-                    </td>
-                    <td className="tnum px-4 py-2.5 text-right">{formatNumber(row.requests)}</td>
-                    <td className="tnum px-4 py-2.5 text-right text-muted">{formatNumber(row.promptTokens)}</td>
-                    <td className="tnum px-4 py-2.5 text-right text-muted">{formatNumber(row.completionTokens)}</td>
-                    <td className="tnum px-4 py-2.5 text-right text-muted">{formatNumber(row.cachedTokens)}</td>
-                    <td className="tnum px-4 py-2.5 text-right font-medium">{formatCost(row.cost)}</td>
-                  </tr>
-                ))
+                sortedRows.map((row, i) => {
+                  const cachedPct = row.promptTokens > 0 ? ((row.cachedTokens / row.promptTokens) * 100).toFixed(1) : null
+                  return (
+                    <tr key={`${row.model}-${i}`} className={cn('border-b border-border/60', i % 2 === 1 && 'bg-surface-2/40')}>
+                      <td className="max-w-64 px-4 py-2.5">
+                        <code className="block truncate font-mono text-xs">{row.model}</code>
+                        {tableMode === 'models' && row.provider && (
+                          <span className="text-[10px] text-subtle">{row.provider}</span>
+                        )}
+                      </td>
+                      <td className="tnum px-4 py-2.5 text-right">{formatNumber(row.requests)}</td>
+                      <td className="tnum px-4 py-2.5 text-right text-muted">{formatNumber(row.promptTokens)}</td>
+                      <td className="tnum px-4 py-2.5 text-right text-muted">{formatNumber(row.completionTokens)}</td>
+                      <td className="tnum px-4 py-2.5 text-right text-muted">
+                        {formatNumber(row.cachedTokens)}
+                        {cachedPct && <span className="ml-1 text-[10px] text-success">({cachedPct}%)</span>}
+                      </td>
+                      <td className="tnum px-4 py-2.5 text-right font-medium">{formatCost(row.cost)}</td>
+                    </tr>
+                  )
+                })
               )}
             </tbody>
           </table>
