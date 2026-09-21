@@ -275,6 +275,23 @@ func Observability(ctx *context.GatewayContext, next HandlerFunc) error {
 		FinishReason: finishReason,
 	}
 
+	// --- Error code / message for failed (4xx/5xx) requests ---
+	var errorCode int
+	var errorMessage string
+	if ctx.ResponseCode >= 400 || err != nil {
+		errorCode = ctx.ResponseCode
+		if errorCode == 0 {
+			errorCode = 500
+		}
+		errorMessage = extractErrorMessage(ctx.ResponseBody)
+		if errorMessage == "" && err != nil {
+			errorMessage = err.Error()
+		}
+		if len(errorMessage) > 1024 {
+			errorMessage = errorMessage[:1024] + "...[TRUNCATED]"
+		}
+	}
+
 	totalAttempts := len(routeNodes)
 	if totalAttempts < 1 {
 		totalAttempts = 1
@@ -306,6 +323,8 @@ func Observability(ctx *context.GatewayContext, next HandlerFunc) error {
 		Pipeline:       pipelineSteps,
 		RequestMeta:    reqMeta,
 		ResponseMeta:   respMeta,
+		ErrorCode:      errorCode,
+		ErrorMessage:   errorMessage,
 		Request:        requestStr,
 		Response:       respPreview,
 	})
@@ -388,6 +407,33 @@ func extractResponsePreview(body []byte, maxLen int) string {
 	}
 	if errStr, ok := resp["error"].(string); ok && errStr != "" {
 		return truncatePreview(errStr, maxLen)
+	}
+	return ""
+}
+
+// extractErrorMessage pulls a human-readable error message out of an error
+// response body (OpenAI, Anthropic, Gemini, FastAPI/validation styles).
+func extractErrorMessage(body []byte) string {
+	if len(body) == 0 {
+		return ""
+	}
+	var resp map[string]interface{}
+	if err := json.Unmarshal(body, &resp); err != nil {
+		return truncatePreview(strings.TrimSpace(string(body)), 512)
+	}
+	if errObj, ok := resp["error"].(map[string]interface{}); ok {
+		if msg, ok := errObj["message"].(string); ok && msg != "" {
+			return truncatePreview(msg, 512)
+		}
+		if detail := extractTextFromContent(errObj["detail"]); detail != "" {
+			return truncatePreview(detail, 512)
+		}
+	}
+	if errStr, ok := resp["error"].(string); ok && errStr != "" {
+		return truncatePreview(errStr, 512)
+	}
+	if msg, ok := resp["message"].(string); ok && msg != "" {
+		return truncatePreview(msg, 512)
 	}
 	return ""
 }

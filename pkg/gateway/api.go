@@ -527,7 +527,9 @@ func handleUsageStats(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	provider := r.URL.Query().Get("provider")
 	period := r.URL.Query().Get("period")
-	stats, err := db.GetUsageStats(provider, period, "", "")
+	startDate := r.URL.Query().Get("startDate")
+	endDate := r.URL.Query().Get("endDate")
+	stats, err := db.GetUsageStats(provider, period, startDate, endDate)
 	if err != nil {
 		WriteErrorResponse(w, http.StatusInternalServerError, err.Error())
 		return
@@ -551,7 +553,8 @@ func handleUsageLogs(w http.ResponseWriter, r *http.Request) {
 		perPage = 20
 	}
 
-	logs, total, err := db.GetRecentLogsPaginated(page, perPage, provider, period, "", "")
+	logs, total, err := db.GetRecentLogsPaginated(page, perPage, provider, period,
+		r.URL.Query().Get("startDate"), r.URL.Query().Get("endDate"))
 	if err != nil {
 		WriteErrorResponse(w, http.StatusInternalServerError, err.Error())
 		return
@@ -580,7 +583,8 @@ func handleUsageCharts(w http.ResponseWriter, r *http.Request) {
 	if chartPeriod == "" {
 		chartPeriod = "day"
 	}
-	whereClause, args := db.BuildUsageWhere(provider, chartPeriod, "", "")
+	whereClause, args := db.BuildUsageWhere(provider, chartPeriod,
+		r.URL.Query().Get("startDate"), r.URL.Query().Get("endDate"))
 
 	if period == "week" || period == "7d" {
 		now := time.Now().UTC()
@@ -937,7 +941,8 @@ func handleUsageModels(w http.ResponseWriter, r *http.Request) {
 	}
 	provider := r.URL.Query().Get("provider")
 	period := r.URL.Query().Get("period")
-	summaries, err := db.GetModelUsageSummary(provider, period, "", "")
+	summaries, err := db.GetModelUsageSummary(provider, period,
+		r.URL.Query().Get("startDate"), r.URL.Query().Get("endDate"))
 	if err != nil {
 		WriteErrorResponse(w, http.StatusInternalServerError, err.Error())
 		return

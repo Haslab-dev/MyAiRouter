@@ -212,6 +212,19 @@ func HandleListModels(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
+	// Deduplicate by model ID so providers with overlapping catalogs
+	// (e.g. default + custom entries) don't register the same model twice.
+	seen := make(map[string]bool)
+	deduped := data[:0]
+	for _, entry := range data {
+		if seen[entry.ID] {
+			continue
+		}
+		seen[entry.ID] = true
+		deduped = append(deduped, entry)
+	}
+	data = deduped
+
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"object": "list",

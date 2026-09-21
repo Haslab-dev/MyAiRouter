@@ -31,7 +31,7 @@ interface ModelSummaryRow {
 }
 
 const PERIODS = [
-  { value: '', label: 'Today' },
+  { value: 'today', label: 'Today' },
   { value: '7d', label: '7 days' },
   { value: '30d', label: '30 days' },
   { value: 'all', label: 'All time' },
@@ -84,7 +84,7 @@ export default function UsagePage() {
   const [modelSummaries, setModelSummaries] = useState<ModelSummaryRow[]>([])
   const [connections, setConnections] = useState<ProviderConnection[]>([])
   const [providerFilter, setProviderFilter] = useState('')
-  const [period, setPeriod] = useState('')
+  const [period, setPeriod] = useState('today')
   const [chartMode, setChartMode] = useState<'tokens' | 'cost'>('tokens')
   const [tableMode, setTableMode] = useState<'models' | 'providers'>('models')
   const [isRefreshing, setIsRefreshing] = useState(false)

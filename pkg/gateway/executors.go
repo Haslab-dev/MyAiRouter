@@ -55,6 +55,51 @@ func ExecuteProviderRequest(ctx context.Context, conn *db.ProviderConnection, bo
 	}
 }
 
+// providerRestrictedFields lists request body fields that specific providers
+// reject because they use strict ("extra inputs are not permitted") validation.
+// These are stripped before forwarding, so clients built for OpenAI-compatible
+// APIs don't break against stricter providers.
+var providerRestrictedFields = map[string]map[string]bool{
+	"mistral": {"store": true},
+}
+
+// sanitizeRequestBody removes fields the target provider does not accept.
+func sanitizeRequestBody(provider string, body map[string]interface{}) {
+	if restricted, ok := providerRestrictedFields[provider]; ok {
+		for field := range restricted {
+			delete(body, field)
+		}
+	}
+}
+
+// rejectedFieldsFrom422 parses a FastAPI-style 422 validation error and returns
+// the top-level body fields that were rejected as "extra_forbidden".
+func rejectedFieldsFrom422(respBody []byte) []string {
+	var parsed struct {
+		Detail []struct {
+			Type string `json:"type"`
+			Loc  []any  `json:"loc"`
+		} `json:"detail"`
+	}
+	if err := json.Unmarshal(respBody, &parsed); err != nil {
+		return nil
+	}
+	var fields []string
+	for _, d := range parsed.Detail {
+		if d.Type != "extra_forbidden" || len(d.Loc) < 2 {
+			continue
+		}
+		// loc looks like ["body", "store"] (possibly nested: ["body","a","b"])
+		if loc0, ok := d.Loc[0].(string); !ok || loc0 != "body" {
+			continue
+		}
+		if field, ok := d.Loc[1].(string); ok && field != "" {
+			fields = append(fields, field)
+		}
+	}
+	return fields
+}
+
 func executeOpenAI(ctx context.Context, conn *db.ProviderConnection, apiKey string, body map[string]interface{}, stream bool) *ExecutionResult {
 	baseUrl, _ := conn.Data["baseUrl"].(string)
 	if baseUrl == "" {
@@ -100,30 +145,57 @@ func executeOpenAI(ctx context.Context, conn *db.ProviderConnection, apiKey stri
 	}
 
 	url := strings.TrimSuffix(baseUrl, "/") + "/chat/completions"
+
+	// Strip fields this provider is known to reject (strict validation).
+	sanitizeRequestBody(conn.Provider, body)
+
+	doRequest := func(bodyBytes []byte) (*http.Response, error) {
+		req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(bodyBytes))
+		if err != nil {
+			return nil, err
+		}
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", "Bearer "+apiKey)
+		if conn.Provider == "opencode" || conn.Provider == "opencode-go" {
+			req.Header.Set("x-opencode-client", "desktop")
+		}
+		if conn.Provider == "kilocode" {
+			if orgId, ok := conn.Data["orgId"].(string); ok && orgId != "" {
+				req.Header.Set("X-Kilocode-OrganizationID", orgId)
+			}
+		}
+		return sharedHTTPClient.Do(req)
+	}
+
 	bodyBytes, err := json.Marshal(body)
 	if err != nil {
 		return &ExecutionResult{Err: fmt.Errorf("marshalling body: %w", err)}
 	}
 
-	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(bodyBytes))
+	resp, err := doRequest(bodyBytes)
 	if err != nil {
 		return &ExecutionResult{Err: err}
 	}
 
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+apiKey)
-	if conn.Provider == "opencode" || conn.Provider == "opencode-go" {
-		req.Header.Set("x-opencode-client", "desktop")
-	}
-	if conn.Provider == "kilocode" {
-		if orgId, ok := conn.Data["orgId"].(string); ok && orgId != "" {
-			req.Header.Set("X-Kilocode-OrganizationID", orgId)
+	// Future-proofing: if a provider still rejects unknown extra fields,
+	// strip them from the body and retry once.
+	if resp.StatusCode == http.StatusUnprocessableEntity {
+		respBody, readErr := io.ReadAll(resp.Body)
+		_ = resp.Body.Close()
+		if readErr == nil {
+			if rejected := rejectedFieldsFrom422(respBody); len(rejected) > 0 {
+				for _, field := range rejected {
+					delete(body, field)
+				}
+				if retryBytes, mErr := json.Marshal(body); mErr == nil {
+					if retryResp, dErr := doRequest(retryBytes); dErr == nil {
+						resp = retryResp
+					}
+				}
+			} else {
+				return &ExecutionResult{ResponseCode: resp.StatusCode, Body: respBody, IsStream: false}
+			}
 		}
-	}
-
-	resp, err := sharedHTTPClient.Do(req)
-	if err != nil {
-		return &ExecutionResult{Err: err}
 	}
 
 	if stream && resp.StatusCode == http.StatusOK {

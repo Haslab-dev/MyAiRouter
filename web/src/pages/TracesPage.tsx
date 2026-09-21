@@ -70,10 +70,22 @@ function TraceDetail({ trace, onClose }: { trace: FlatTrace; onClose: () => void
       <div className="mb-4 flex flex-wrap gap-1.5">
         <Badge tone={trace.status === 'ok' ? 'success' : 'danger'}>{trace.status}</Badge>
         <Badge tone={routeTone[trace.route] ?? 'neutral'}>{trace.route}</Badge>
+        {trace.status === 'error' && !!trace.errorCode && <Badge tone="danger">HTTP {trace.errorCode}</Badge>}
         {trace.isStream && <Badge>stream</Badge>}
         {trace.retryCount > 0 && <Badge tone="warning">{trace.retryCount} retries</Badge>}
         {trace.fallbackCount > 0 && <Badge tone="warning">{trace.fallbackCount} fallbacks</Badge>}
       </div>
+
+      {trace.status === 'error' && (
+        <div className="mb-4 rounded-md border border-danger/30 bg-danger/5 px-3 py-2">
+          <div className="mb-1 text-[11px] font-semibold text-danger">
+            Request failed{trace.errorCode ? ` · HTTP ${trace.errorCode}` : ''}
+          </div>
+          <pre className="max-h-28 overflow-auto whitespace-pre-wrap break-words font-mono text-[11px] text-danger">
+            {trace.errorMessage || trace.response || '(No error message captured)'}
+          </pre>
+        </div>
+      )}
 
       <div className="tnum mb-4 grid grid-cols-3 gap-2 text-center">
         {[
@@ -145,7 +157,25 @@ export default function TracesPage() {
   const [searchQuery, setSearchQuery] = useState('')
   const [page, setPage] = useState(1)
   const [total, setTotal] = useState(0)
+  const [maxRecords, setMaxRecords] = useState(500)
   const perPage = 20
+
+  useEffect(() => {
+    api.get<{ maxTraceRecords?: number }>('/api/settings')
+      .then((s) => { if (s?.maxTraceRecords && s.maxTraceRecords > 0) setMaxRecords(s.maxTraceRecords) })
+      .catch(() => {})
+  }, [])
+
+  const handleMaxRecordsChange = async (value: string) => {
+    const n = Math.max(50, parseInt(value, 10) || 0)
+    setMaxRecords(n)
+    try {
+      await api.patch('/api/settings', { maxTraceRecords: n })
+      notify(`Trace retention set to ${n} records`, 'info')
+    } catch {
+      notify('Failed to update trace retention', 'error')
+    }
+  }
 
   const fetchTraces = async (p: number) => {
     setIsLoading(true)
@@ -190,9 +220,22 @@ export default function TracesPage() {
           title="Traces"
           description="Per-request routing detail: attempt chains, pipeline steps, and token usage."
           actions={
-            <Button size="sm" onClick={handleReset}>
-              <Trash2 size={13} /> Clear all
-            </Button>
+            <div className="flex items-center gap-2">
+              <label className="flex items-center gap-1.5 text-[11px] text-subtle" title="Maximum number of trace records kept. Oldest traces are deleted automatically.">
+                Auto-clear after
+                <input
+                  type="number"
+                  min={50}
+                  value={maxRecords}
+                  onChange={(e) => handleMaxRecordsChange(e.target.value)}
+                  className="w-16 rounded-md border border-border bg-surface-2 px-2 py-1 text-right text-[11px] text-text"
+                />
+                records
+              </label>
+              <Button size="sm" onClick={handleReset}>
+                <Trash2 size={13} /> Clear all
+              </Button>
+            </div>
           }
         />
 
@@ -229,6 +272,9 @@ export default function TracesPage() {
                         <div className="flex items-center gap-2">
                           <code className="truncate font-mono text-xs font-medium">{trace.model}</code>
                           <Badge tone={routeTone[trace.route] ?? 'neutral'}>{trace.route}</Badge>
+                          {trace.status === 'error' && !!trace.errorCode && (
+                            <Badge tone="danger">{trace.errorCode}</Badge>
+                          )}
                           {trace.fallbackCount > 0 && <Badge tone="warning">+{trace.fallbackCount} fallback</Badge>}
                         </div>
                         <div className="tnum mt-0.5 text-[10px] text-subtle">

@@ -169,6 +169,8 @@ func createTables() error {
 			pipeline TEXT,
 			requestMeta TEXT,
 			responseMeta TEXT,
+			errorCode INTEGER,
+			errorMessage TEXT,
 			request TEXT,
 			response TEXT
 		);`,
@@ -241,12 +243,16 @@ func createTables() error {
 		return err
 	}
 	if count == 0 {
-		defaultSettingsJSON := `{"rtkEnabled":false,"headroomEnabled":false,"headroomUrl":"http://localhost:8787","cavemanEnabled":false,"cavemanLevel":"full","ponytailEnabled":false,"ponytailLevel":"full","optimizerEnabled":false,"optimizationEngine":"auto","optimizationProfile":"balanced","optimizationGoal":"balanced","pipelineSteps":[{"name":"tool","enabled":true},{"name":"structure","enabled":true},{"name":"dedup","enabled":true},{"name":"markdown","enabled":true}],"traceStorageMode":"summary"}`
+		defaultSettingsJSON := `{"rtkEnabled":false,"headroomEnabled":false,"headroomUrl":"http://localhost:8787","cavemanEnabled":false,"cavemanLevel":"full","ponytailEnabled":false,"ponytailLevel":"full","optimizerEnabled":false,"optimizationEngine":"auto","optimizationProfile":"balanced","optimizationGoal":"balanced","pipelineSteps":[{"name":"tool","enabled":true},{"name":"structure","enabled":true},{"name":"dedup","enabled":true},{"name":"markdown","enabled":true}],"traceStorageMode":"summary","maxTraceRecords":500}`
 		_, err = DB.Exec("INSERT INTO settings (id, data) VALUES (1, ?)", defaultSettingsJSON)
 		if err != nil {
 			return err
 		}
 	}
+
+	// Enforce the rolling trace cap on startup so an oversized legacy table
+	// gets trimmed immediately.
+	_ = PruneFlatTraces(maxRetainedTraces())
 
 	return nil
 }

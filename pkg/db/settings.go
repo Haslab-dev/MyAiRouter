@@ -29,6 +29,7 @@ type Settings struct {
 	OptimizationGoal    string         `json:"optimizationGoal"`
 	PipelineSteps       []PipelineStep `json:"pipelineSteps"`
 	TraceStorageMode    string         `json:"traceStorageMode"`
+	MaxTraceRecords     int            `json:"maxTraceRecords"`
 }
 
 func GetSettings() (*Settings, error) {
@@ -76,8 +77,21 @@ func loadSettingsFromDB() (*Settings, error) {
 	if settings.TraceStorageMode == "" || settings.TraceStorageMode == "store_both" {
 		settings.TraceStorageMode = "summary"
 	}
+	if settings.MaxTraceRecords <= 0 {
+		settings.MaxTraceRecords = 500
+	}
 
 	return &settings, nil
+}
+
+// maxRetainedTraces returns the configured rolling cap on stored traces,
+// falling back to the default if settings can't be read.
+func maxRetainedTraces() int {
+	settings, err := GetSettings()
+	if err != nil || settings.MaxTraceRecords <= 0 {
+		return 500
+	}
+	return settings.MaxTraceRecords
 }
 
 func UpdateSettings(updates map[string]interface{}) (*Settings, error) {

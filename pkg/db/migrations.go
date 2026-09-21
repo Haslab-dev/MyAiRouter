@@ -75,6 +75,8 @@ func ensureSchemaColumns() error {
 		{"traces", "pipeline", "TEXT"},
 		{"traces", "requestMeta", "TEXT"},
 		{"traces", "responseMeta", "TEXT"},
+		{"traces", "errorCode", "INTEGER"},
+		{"traces", "errorMessage", "TEXT"},
 	}
 
 	for _, spec := range requiredColumns {

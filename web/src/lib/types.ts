@@ -122,6 +122,8 @@ export interface FlatTrace {
   fallbackCount: number
   targetAttempts: TargetAttempt[]
   pipeline: TracePipelineStep[]
+  errorCode?: number
+  errorMessage?: string
   request?: string
   response?: string
 }
