@@ -12,6 +12,7 @@ import {
   LayoutDashboard,
   MessagesSquare,
   Network,
+  DollarSign,
   Route as RouteIcon,
   ScanSearch,
   Sun,
@@ -33,6 +34,7 @@ const ProvidersPage = lazy(() => import('@/pages/ProvidersPage'))
 const CombosPage = lazy(() => import('@/pages/CombosPage'))
 const UsagePage = lazy(() => import('@/pages/UsagePage'))
 const ModelsPage = lazy(() => import('@/pages/ModelsPage'))
+const PricingPage = lazy(() => import('@/pages/PricingPage'))
 const SkillsPage = lazy(() => import('@/pages/SkillsPage'))
 const QuotaPage = lazy(() => import('@/pages/QuotaPage'))
 const ConsoleLogPage = lazy(() => import('@/pages/ConsoleLogPage'))
@@ -50,6 +52,7 @@ const NAV_ITEMS = [
   { to: '/providers', label: 'Providers', icon: HardDrive },
   { to: '/combos', label: 'Routes', icon: RouteIcon },
   { to: '/models', label: 'Models', icon: Workflow },
+  { to: '/pricing', label: 'Pricing', icon: DollarSign },
   { to: '/traces', label: 'Traces', icon: ScanSearch },
   { to: '/quota', label: 'Health', icon: Gauge },
   { to: '/skills', label: 'Skills', icon: CircuitBoard },
@@ -381,6 +384,7 @@ function AppShell() {
               <Route path="/providers" element={<ProvidersPage />} />
               <Route path="/combos" element={<CombosPage />} />
               <Route path="/models" element={<ModelsPage />} />
+              <Route path="/pricing" element={<PricingPage />} />
               <Route path="/chat" element={<ChatPage />} />
               <Route path="/benchmark" element={<BenchmarkPage />} />
               <Route path="/traces" element={<TracesPage />} />
