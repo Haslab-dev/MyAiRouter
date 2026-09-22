@@ -572,18 +572,25 @@ export default function ProvidersPage() {
 
   const handleSavePrice = async () => {
     if (!priceDraft || !viewingDetailProvider) return
+    const blank = (v: string) => v.trim() === '' || parseFloat(v) === 0
+    const allBlank = blank(priceDraft.input) && blank(priceDraft.output) && blank(priceDraft.cached)
     try {
-      await api.post('/api/models/pricing', {
-        providerAlias: viewingDetailProvider.id,
-        model: priceDraft.modelId,
-        input: parseFloat(priceDraft.input) || 0,
-        output: parseFloat(priceDraft.output) || 0,
-        cached: parseFloat(priceDraft.cached) || 0,
-      })
+      if (allBlank) {
+        // Saving an all-empty form clears the override instead of writing 0s.
+        await api.del(`/api/models/pricing?providerAlias=${encodeURIComponent(viewingDetailProvider.id)}&model=${encodeURIComponent(priceDraft.modelId)}`)
+      } else {
+        await api.post('/api/models/pricing', {
+          providerAlias: viewingDetailProvider.id,
+          model: priceDraft.modelId,
+          input: parseFloat(priceDraft.input) || 0,
+          output: parseFloat(priceDraft.output) || 0,
+          cached: parseFloat(priceDraft.cached) || 0,
+        })
+      }
       const data = await api.get<{ overrides: Record<string, ModelRate> }>(`/api/models/pricing?providerAlias=${encodeURIComponent(viewingDetailProvider.id)}`)
       setPricingOverrides(data.overrides ?? {})
       setPriceDraft(null)
-      notify(`Pricing saved for ${priceDraft.modelId}`, 'success')
+      notify(allBlank ? `Pricing override cleared for ${priceDraft.modelId}` : `Pricing saved for ${priceDraft.modelId}`, 'success')
     } catch {
       notify('Failed to save pricing', 'error')
     }
