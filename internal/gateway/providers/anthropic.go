@@ -1,0 +1,102 @@
+package providers
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"io"
+	"net/http"
+	"strings"
+	"time"
+
+	"myAiRouter/pkg/db"
+)
+
+// AnthropicProvider routes requests to the Anthropic Messages API (api.anthropic.com/v1/messages).
+type AnthropicProvider struct{}
+
+func init() {
+	Register(&AnthropicProvider{})
+}
+
+func (p *AnthropicProvider) Name() string {
+	return "anthropic"
+}
+
+func (p *AnthropicProvider) Capabilities(conn *db.ProviderConnection) ProviderCapabilities {
+	return ProviderCapabilities{PromptCache: CacheCapabilities{Supported: true, PrefixCaching: true, ReportsTokens: true, ReportsHit: false}}
+}
+
+// Execute sends a request to the Anthropic Messages API. It handles auth via x-api-key,
+// sets the anthropic-version header, supports streaming, and allows custom header injection.
+func (p *AnthropicProvider) Execute(ctx context.Context, conn *db.ProviderConnection, body map[string]interface{}) *ExecutionResult {
+	apiKey, _ := conn.Data["apiKey"].(string)
+	if oauthTok, err := OAuthAccessToken(conn); err == nil && oauthTok != "" {
+		apiKey = oauthTok // OAuth connection: token wins over any stored key
+	}
+	if apiKey == "" {
+		apiKey = conn.Name
+	}
+	stream, _ := body["stream"].(bool)
+
+	baseUrl, _ := conn.Data["baseUrl"].(string)
+	if baseUrl == "" {
+		if oauthBase := OAuthBaseURL(conn); oauthBase != "" {
+			baseUrl = oauthBase
+		} else {
+			baseUrl = "https://api.anthropic.com/v1"
+		}
+	}
+
+	url := strings.TrimSuffix(baseUrl, "/") + "/messages"
+	bodyBytes, err := json.Marshal(body)
+	if err != nil {
+		return &ExecutionResult{Err: err}
+	}
+
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(bodyBytes))
+	if err != nil {
+		return &ExecutionResult{Err: err}
+	}
+
+	req.Header.Set("content-type", "application/json")
+	req.Header.Set("x-api-key", apiKey)
+	req.Header.Set("anthropic-version", "2023-06-01")
+
+	// Apply custom headers from provider connection config (e.g. org-id, client-info)
+	if headers, ok := conn.Data["headers"].(map[string]interface{}); ok {
+		for k, v := range headers {
+			if valStr, ok := v.(string); ok {
+				req.Header.Set(k, valStr)
+			}
+		}
+	}
+
+	ApplyAntiDetect(req, conn)
+
+	start := time.Now()
+	resp, err := ClientFor(conn).Do(req)
+	latencyMs := float64(time.Since(start).Microseconds()) / 1000.0
+	if err != nil {
+		return &ExecutionResult{Err: err}
+	}
+
+	if stream && resp.StatusCode == http.StatusOK {
+		return &ExecutionResult{
+			ResponseCode: resp.StatusCode,
+			Stream:       resp.Body,
+			IsStream:     true,
+			LatencyMs:    latencyMs,
+		}
+	}
+
+	defer resp.Body.Close()
+	respBody, err := io.ReadAll(resp.Body)
+	return &ExecutionResult{
+		ResponseCode: resp.StatusCode,
+		Body:         respBody,
+		IsStream:     false,
+		LatencyMs:    latencyMs,
+		Err:          err,
+	}
+}

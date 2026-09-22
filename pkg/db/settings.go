@@ -1,0 +1,139 @@
+package db
+
+import (
+	"database/sql"
+	"encoding/json"
+)
+
+type PipelineStep struct {
+	Name    string                 `json:"name"`
+	Enabled bool                   `json:"enabled"`
+	Config  map[string]interface{} `json:"config"`
+}
+
+type Settings struct {
+	RtkEnabled      bool   `json:"rtkEnabled"`
+	HeadroomEnabled bool   `json:"headroomEnabled"`
+	HeadroomUrl     string `json:"headroomUrl"`
+	CavemanEnabled  bool   `json:"cavemanEnabled"`
+	CavemanLevel    string `json:"cavemanLevel"`
+	PonytailEnabled bool   `json:"ponytailEnabled"`
+	PonytailLevel   string `json:"ponytailLevel"`
+	RequireLogin    bool   `json:"requireLogin"`
+	PasswordHash    string `json:"passwordHash"`
+
+	// New prompt optimizer fields
+	OptimizerEnabled    bool           `json:"optimizerEnabled"`
+	OptimizationEngine  string         `json:"optimizationEngine"`
+	OptimizationProfile string         `json:"optimizationProfile"`
+	OptimizationGoal    string         `json:"optimizationGoal"`
+	PipelineSteps       []PipelineStep `json:"pipelineSteps"`
+	TraceStorageMode    string         `json:"traceStorageMode"`
+	MaxTraceRecords     int            `json:"maxTraceRecords"`
+}
+
+func GetSettings() (*Settings, error) {
+	// Hot path: serve from the routing snapshot (invalidated on every mutation).
+	if s := snapshotPtr.Load(); s != nil && s.settings != nil {
+		return s.settings, nil
+	}
+	if DB == nil {
+		return nil, sql.ErrConnDone
+	}
+	return loadSettingsFromDB()
+}
+
+// loadSettingsFromDB reads and normalizes the settings row directly.
+func loadSettingsFromDB() (*Settings, error) {
+	var dataStr string
+	err := DB.QueryRow("SELECT data FROM settings WHERE id = 1").Scan(&dataStr)
+	if err != nil {
+		return nil, err
+	}
+
+	var settings Settings
+	if err := json.Unmarshal([]byte(dataStr), &settings); err != nil {
+		return nil, err
+	}
+
+	// Apply default values for dynamic migration fallback
+	if settings.OptimizationEngine == "" {
+		settings.OptimizationEngine = "auto"
+	}
+	if settings.OptimizationProfile == "" {
+		settings.OptimizationProfile = "balanced"
+	}
+	if settings.OptimizationGoal == "" {
+		settings.OptimizationGoal = "balanced"
+	}
+	if len(settings.PipelineSteps) == 0 {
+		settings.PipelineSteps = []PipelineStep{
+			{Name: "tool", Enabled: true, Config: nil},
+			{Name: "structure", Enabled: true, Config: nil},
+			{Name: "dedup", Enabled: true, Config: nil},
+			{Name: "markdown", Enabled: true, Config: nil},
+		}
+	}
+	if settings.TraceStorageMode == "" || settings.TraceStorageMode == "store_both" {
+		settings.TraceStorageMode = "summary"
+	}
+	if settings.MaxTraceRecords <= 0 {
+		settings.MaxTraceRecords = 500
+	}
+
+	return &settings, nil
+}
+
+// maxRetainedTraces returns the configured rolling cap on stored traces,
+// falling back to the default if settings can't be read.
+func maxRetainedTraces() int {
+	settings, err := GetSettings()
+	if err != nil || settings.MaxTraceRecords <= 0 {
+		return 500
+	}
+	return settings.MaxTraceRecords
+}
+
+func UpdateSettings(updates map[string]interface{}) (*Settings, error) {
+	// First load current settings
+	current, err := GetSettings()
+	if err != nil {
+		return nil, err
+	}
+
+	// Marshal back to map to merge
+	currentBytes, err := json.Marshal(current)
+	if err != nil {
+		return nil, err
+	}
+
+	var currentMap map[string]interface{}
+	if err := json.Unmarshal(currentBytes, &currentMap); err != nil {
+		return nil, err
+	}
+
+	// Merge updates
+	for k, v := range updates {
+		currentMap[k] = v
+	}
+
+	// Marshal back to struct
+	mergedBytes, err := json.Marshal(currentMap)
+	if err != nil {
+		return nil, err
+	}
+
+	var merged Settings
+	if err := json.Unmarshal(mergedBytes, &merged); err != nil {
+		return nil, err
+	}
+
+	// Save to DB
+	_, err = DB.Exec("UPDATE settings SET data = ? WHERE id = 1", string(mergedBytes))
+	if err != nil {
+		return nil, err
+	}
+	InvalidateRoutingSnapshot()
+
+	return &merged, nil
+}
