@@ -1,6 +1,7 @@
 MyAiRouter
 myairouter
 myairouter.exe
+myairouter.pid
 .env
 web/dist
 web/node_modules
