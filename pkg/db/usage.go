@@ -535,7 +535,10 @@ func GetUsageStats(provider, period, startDate, endDate string) (*UsageStats, er
 		stats.TotalPromptTokens = stats.TotalRequests * 10
 		stats.TotalCompletionTokens = stats.TotalRequests * 20
 	}
-	if stats.TotalCost == 0 && (stats.TotalPromptTokens > 0 || stats.TotalCompletionTokens > 0) {
+	// Recompute from current pricing (canonical + pattern + overrides incl.
+	// group rules) so pricing edits reflect immediately, even on rows that
+	// already carry a stored cost.
+	if stats.TotalPromptTokens > 0 || stats.TotalCompletionTokens > 0 {
 		stats.TotalCost = estimateCost(provider, where, args)
 	}
 	stats.TotalCost = math.Round(stats.TotalCost*10000) / 10000
@@ -686,7 +689,10 @@ func GetModelUsageSummary(provider, period, startDate, endDate string) ([]ModelU
 			s.PromptTokens = s.Requests * 10
 			s.CompletionTokens = s.Requests * 20
 		}
-		if s.Cost == 0 && (s.PromptTokens > 0 || s.CompletionTokens > 0) {
+		// Always recompute from current pricing (canonical + pattern +
+		// overrides incl. group rules) so pricing edits reflect immediately,
+		// even on rows that already carry a stored cost.
+		if s.PromptTokens > 0 || s.CompletionTokens > 0 {
 			s.Cost = CalculateCost(s.Provider, s.Model, s.PromptTokens, s.CompletionTokens, s.CachedTokens)
 		}
 		s.Cost = math.Round(s.Cost*10000) / 10000
@@ -732,7 +738,9 @@ func GetProviderUsageSummary() ([]ProviderUsageSummary, error) {
 			s.PromptTokens = s.Requests * 10
 			s.CompletionTokens = s.Requests * 20
 		}
-		if s.Cost == 0 && (s.PromptTokens > 0 || s.CompletionTokens > 0) {
+		// Recompute from current pricing so pricing edits (group rules,
+		// overrides) reflect immediately, even on rows with a stored cost.
+		if s.PromptTokens > 0 || s.CompletionTokens > 0 {
 			s.Cost = estimateCost(s.Provider, " WHERE COALESCE(provider, 'unknown') = ?", []interface{}{s.Provider})
 		}
 		s.Cost = math.Round(s.Cost*10000) / 10000
