@@ -432,10 +432,38 @@ func extractErrorMessage(body []byte) string {
 	if errStr, ok := resp["error"].(string); ok && errStr != "" {
 		return truncatePreview(errStr, 512)
 	}
+	// FastAPI/pydantic validation errors (e.g. MIMO 422): top-level "detail"
+	if detail := extractFastAPIDetail(resp["detail"]); detail != "" {
+		return truncatePreview(detail, 512)
+	}
 	if msg, ok := resp["message"].(string); ok && msg != "" {
 		return truncatePreview(msg, 512)
 	}
 	return ""
+}
+
+// extractFastAPIDetail renders a FastAPI/pydantic validation "detail" value:
+// either a plain string or a list of {loc, msg, type} objects.
+func extractFastAPIDetail(v interface{}) string {
+	if s, ok := v.(string); ok && s != "" {
+		return s
+	}
+	arr, ok := v.([]interface{})
+	if !ok {
+		return ""
+	}
+	var parts []string
+	for _, item := range arr {
+		switch it := item.(type) {
+		case string:
+			parts = append(parts, it)
+		case map[string]interface{}:
+			if msg, ok := it["msg"].(string); ok && msg != "" {
+				parts = append(parts, msg)
+			}
+		}
+	}
+	return strings.Join(parts, "; ")
 }
 
 func truncatePreview(s string, maxLen int) string {

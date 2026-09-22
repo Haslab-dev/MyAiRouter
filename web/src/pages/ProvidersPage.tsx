@@ -36,26 +36,27 @@ interface ProviderMetrics {
 }
 
 const CORE_PROVIDERS = [
-  { id: 'kilocode', name: 'Kilo Code', type: 'oauth', desc: 'Secure authorization code login' },
-  { id: 'opencode-go', name: 'OpenCode Go', type: 'apikey', desc: 'Fast, secure open code credentials' },
-  { id: 'opencode-zen', name: 'OpenCode Zen', type: 'apikey', desc: 'Custom code generation engine' },
-  { id: 'kenari', name: 'Kenari', type: 'apikey', desc: 'Kenari AI intelligent routing' },
-  { id: 'sumopod', name: 'Sumopod', type: 'apikey', desc: 'Sumopod high-performance endpoints' },
-  { id: 'mistral', name: 'Mistral AI', type: 'apikey', desc: 'Frontier AI models by Mistral' },
-  { id: 'meta', name: 'Meta AI', type: 'apikey', desc: 'Meta Llama foundation models' },
-  { id: 'ollama', name: 'Ollama', type: 'apikey', desc: 'Local & server inference engine' },
-  { id: 'qwen', name: 'Qwen', type: 'apikey', desc: 'Alibaba Cloud Tongyi Qianwen' },
-  { id: 'tencent', name: 'Tencent Hunyuan', type: 'apikey', desc: 'Tencent Cloud Hunyuan LLMs' },
-  { id: 'vercel', name: 'Vercel AI', type: 'apikey', desc: 'Vercel AI Gateway integration' },
-  { id: 'fireworks', name: 'Fireworks AI', type: 'apikey', desc: 'Fast generative AI inference' },
-  { id: 'cloudflare-ai', name: 'Cloudflare AI', type: 'apikey', desc: 'Cloudflare Workers AI platform' },
-  { id: 'glm', name: 'GLM API', type: 'apikey', desc: 'General LLM access keys' },
-  { id: 'glm-coding', name: 'GLM Coding Plan', type: 'apikey', desc: 'Targeted coding intelligence' },
-  { id: 'nvidia', name: 'NVIDIA NIM', type: 'apikey', desc: 'NVIDIA API Catalog & NIM endpoints' },
-  { id: 'groq', name: 'Groq', type: 'apikey', desc: 'LPU inference engine for fast LLMs' },
-  { id: 'openrouter', name: 'OpenRouter', type: 'apikey', desc: 'Unified API for top AI models' },
-  { id: 'deepseek', name: 'DeepSeek', type: 'apikey', desc: 'DeepSeek AI reasoning & chat models' },
-  { id: 'cerebras', name: 'Cerebras', type: 'apikey', desc: 'Ultra-fast inference on Cerebras hardware' },
+  { id: 'kilocode', name: 'Kilo Code', type: 'oauth', desc: 'Secure authorization code login', group: '' },
+  { id: 'opencode-go', name: 'OpenCode Go', type: 'apikey', desc: 'Fast, secure open code credentials', group: 'OpenCode' },
+  { id: 'opencode-zen', name: 'OpenCode Zen', type: 'apikey', desc: 'Custom code generation engine', group: 'OpenCode' },
+  { id: 'kenari', name: 'Kenari', type: 'apikey', desc: 'Kenari AI intelligent routing', group: '' },
+  { id: 'sumopod', name: 'Sumopod', type: 'apikey', desc: 'Sumopod high-performance endpoints', group: '' },
+  { id: 'mistral', name: 'Mistral AI', type: 'apikey', desc: 'Frontier AI models by Mistral', group: '' },
+  { id: 'meta', name: 'Meta AI', type: 'apikey', desc: 'Meta Llama foundation models', group: '' },
+  { id: 'ollama', name: 'Ollama', type: 'apikey', desc: 'Local & server inference engine', group: '' },
+  { id: 'qwen', name: 'Qwen', type: 'apikey', desc: 'Alibaba Cloud Tongyi Qianwen', group: '' },
+  { id: 'tencent', name: 'Tencent Hunyuan', type: 'apikey', desc: 'Tencent Cloud Hunyuan LLMs', group: '' },
+  { id: 'vercel', name: 'Vercel AI', type: 'apikey', desc: 'Vercel AI Gateway integration', group: '' },
+  { id: 'fireworks', name: 'Fireworks AI', type: 'apikey', desc: 'Fast generative AI inference', group: '' },
+  { id: 'cloudflare-ai', name: 'Cloudflare AI', type: 'apikey', desc: 'Cloudflare Workers AI platform', group: '' },
+  { id: 'glm', name: 'GLM API', type: 'apikey', desc: 'General LLM access keys', group: 'GLM' },
+  { id: 'glm-coding', name: 'GLM Coding Plan', type: 'apikey', desc: 'Targeted coding intelligence', group: 'GLM' },
+  { id: 'mimo', name: 'MIMO', type: 'apikey', desc: 'Xiaomi MiMo open models', group: '' },
+  { id: 'nvidia', name: 'NVIDIA NIM', type: 'apikey', desc: 'NVIDIA API Catalog & NIM endpoints', group: '' },
+  { id: 'groq', name: 'Groq', type: 'apikey', desc: 'LPU inference engine for fast LLMs', group: '' },
+  { id: 'openrouter', name: 'OpenRouter', type: 'apikey', desc: 'Unified API for top AI models', group: '' },
+  { id: 'deepseek', name: 'DeepSeek', type: 'apikey', desc: 'DeepSeek AI reasoning & chat models', group: '' },
+  { id: 'cerebras', name: 'Cerebras', type: 'apikey', desc: 'Ultra-fast inference on Cerebras hardware', group: '' },
 ] as const
 
 const PROVIDER_URLS: Record<string, string> = {
@@ -73,6 +74,7 @@ const PROVIDER_URLS: Record<string, string> = {
   'cloudflare-ai': 'https://api.cloudflare.com/client/v4/accounts/{account_id}/ai/v1',
   glm: 'https://open.bigmodel.cn/api/paas/v4',
   'glm-coding': 'https://open.bigmodel.cn/api/coding/paas/v4',
+  mimo: 'https://api.xiaomimimo.com/v1',
   nvidia: 'https://integrate.api.nvidia.com/v1',
   groq: 'https://api.groq.com/openai/v1',
   openrouter: 'https://openrouter.ai/api/v1',
@@ -563,6 +565,31 @@ export default function ProvidersPage() {
 
   const getConnectionFor = (providerId: string) => connections.find((c) => c.provider === providerId)
 
+  const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({})
+
+  // Collapse grouped providers (e.g. OpenCode Go + Zen -> OpenCode) into one
+  // parent card with expandable sub-provider entries.
+  const groupedProviderEntries = useMemo(() => {
+    type Entry = (typeof allProviderEntries)[number]
+    type Grouped = Entry & { subs: Entry[] }
+    const out: Grouped[] = []
+    const byGroup: Record<string, Entry[]> = {}
+    for (const e of allProviderEntries) {
+      // group key only applies to core providers with a non-empty group
+      const groupKey = (!e.isNode && CORE_PROVIDERS.find((c) => c.id === e.id && c.group)?.group) || ''
+      if (groupKey) {
+        ;(byGroup[groupKey] ??= []).push(e)
+      } else {
+        out.push({ ...e, subs: [] })
+      }
+    }
+    for (const members of Object.values(byGroup)) {
+      const [head, ...subs] = members
+      out.push({ ...head, subs })
+    }
+    return out
+  }, [allProviderEntries])
+
   if (viewingDetailProvider) {
     const provider = viewingDetailProvider
     const models = providerModels[provider.id] ?? []
@@ -730,15 +757,20 @@ export default function ProvidersPage() {
       </div>
 
       <div className="grid gap-3 grid-cols-1 sm:[grid-template-columns:repeat(auto-fill,minmax(300px,1fr))]">
-        {allProviderEntries.map((p) => {
+        {groupedProviderEntries.map((p) => {
           const conn = getConnectionFor(p.id)
           const metrics = getProviderMetrics(p.id)
-          const connected = Boolean(conn)
+          const connected = Boolean(conn) || p.subs.some((s) => getConnectionFor(s.id))
+          const expanded = !!expandedGroups[p.id]
           return (
             <Card
               key={p.id}
               interactive
-              onClick={() => setViewingDetailProvider({ id: p.id, name: p.name, type: p.type, baseUrl: p.isNode ? nodes.find((n) => n.id === p.id)?.data?.baseUrl ?? '' : PROVIDER_URLS[p.id] ?? '', isNode: p.isNode })}
+              onClick={() =>
+                p.subs.length > 0
+                  ? setExpandedGroups((prev) => ({ ...prev, [p.id]: !expanded }))
+                  : setViewingDetailProvider({ id: p.id, name: p.name, type: p.type, baseUrl: p.isNode ? nodes.find((n) => n.id === p.id)?.data?.baseUrl ?? '' : PROVIDER_URLS[p.id] ?? '', isNode: p.isNode })
+              }
             >
               <div className="flex items-start gap-3">
                 <ProviderIcon id={p.id} name={p.name} size={34} />
@@ -759,7 +791,11 @@ export default function ProvidersPage() {
                   </div>
                 </div>
                 <div className="flex shrink-0 items-center gap-1" onClick={(e) => e.stopPropagation()}>
-                  {p.type === 'oauth' && p.id === 'kilocode' && !connected ? (
+                  {p.subs.length > 0 ? (
+                    <Button size="sm" variant="ghost" onClick={() => setExpandedGroups((prev) => ({ ...prev, [p.id]: !expanded }))}>
+                      {expanded ? 'Hide' : `${p.subs.length + 1} services`}
+                    </Button>
+                  ) : p.type === 'oauth' && p.id === 'kilocode' && !connected ? (
                     <Button size="sm" variant="primary" onClick={handleStartOauth}>
                       <KeyRound size={12} /> Authorize
                     </Button>
@@ -778,13 +814,37 @@ export default function ProvidersPage() {
                       {connected ? 'Edit' : 'Connect'}
                     </Button>
                   )}
-                  {connected && (
+                  {connected && p.subs.length === 0 && (
                     <Button size="sm" variant="ghost" className="text-danger hover:bg-danger-subtle hover:text-danger" onClick={() => handleRemoveConnection(p.id)}>
                       <Trash2 size={12} />
                     </Button>
                   )}
                 </div>
               </div>
+              {p.subs.length > 0 && expanded && (
+                <div className="mt-3 flex flex-col gap-2 border-t border-border/60 pt-3">
+                  {[p, ...p.subs].map((s) => {
+                    const sConn = getConnectionFor(s.id)
+                    return (
+                      <div
+                        key={s.id}
+                        className="flex cursor-pointer items-center gap-2.5 rounded-md px-2 py-1.5 transition-colors hover:bg-surface-2"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          setViewingDetailProvider({ id: s.id, name: s.name, type: s.type, baseUrl: PROVIDER_URLS[s.id] ?? '', isNode: false })
+                        }}
+                      >
+                        <ProviderIcon id={s.id} name={s.name} size={24} />
+                        <div className="min-w-0 flex-1">
+                          <div className="truncate text-[12px] font-medium text-text">{s.name}</div>
+                          <div className="truncate text-[10px] text-muted">{s.desc}</div>
+                        </div>
+                        <span className={cn('h-1.5 w-1.5 rounded-full', sConn ? 'bg-success' : 'bg-subtle')} title={sConn ? 'Connected' : 'Not connected'} />
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
             </Card>
           )
         })}

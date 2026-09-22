@@ -25,6 +25,7 @@ const KNOWN_ICONS = [
 ]
 
 const CUSTOM_MAP: Record<string, string> = {
+  mimo: 'mimo-free.png',
   'opencode-zen': 'opencode.png',
   'glm-coding': 'glm.png',
   aws: 'aws-polly.png',
