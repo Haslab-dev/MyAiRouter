@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { ArrowLeft, Brain, KeyRound, Pencil, Plus, RefreshCw, Trash2, Zap } from 'lucide-react'
+import { ArrowLeft, Brain, DollarSign, KeyRound, Pencil, Plus, RefreshCw, Trash2, Zap } from 'lucide-react'
 import { api } from '@/lib/api'
 import { useSnackbar } from '@/stores/snackbar'
 import ProviderIcon from '@/components/ProviderIcon'
@@ -33,6 +33,12 @@ interface ProviderMetrics {
   successRate: string
   avgLatency: string
   status: 'Healthy' | 'Degraded'
+}
+
+interface ModelRate {
+  input: number
+  output: number
+  cached: number
 }
 
 const CORE_PROVIDERS = [
@@ -230,7 +236,7 @@ export default function ProvidersPage() {
   // Detail: models / testing
   const [enabledModelIds, setEnabledModelIds] = useState<string[] | null>(null)
   const [thinkingMap, setThinkingMap] = useState<Record<string, boolean>>({})
-  const [pricingOverrides, setPricingOverrides] = useState<Record<string, Record<string, number>>>({})
+  const [pricingOverrides, setPricingOverrides] = useState<Record<string, ModelRate>>({})
   const [customModelIdInput, setCustomModelIdInput] = useState('')
   const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | null>(null)
   const [testing, setTesting] = useState(false)
@@ -331,7 +337,7 @@ export default function ProvidersPage() {
       .then((data) => setThinkingMap(data.thinkingMap ?? {}))
       .catch(() => {})
     api
-      .get<{ overrides: Record<string, Record<string, number>> }>(`/api/models/pricing?providerAlias=${encodeURIComponent(providerId)}`)
+      .get<{ overrides: Record<string, ModelRate> }>(`/api/models/pricing?providerAlias=${encodeURIComponent(providerId)}`)
       .then((data) => setPricingOverrides(data.overrides ?? {}))
       .catch(() => {})
     setTestResult(null)
@@ -552,6 +558,49 @@ export default function ProvidersPage() {
     }
   }
 
+  const [priceDraft, setPriceDraft] = useState<{ modelId: string; input: string; output: string; cached: string } | null>(null)
+
+  const openPriceEditor = (modelId: string) => {
+    const existing = pricingOverrides[modelId]
+    setPriceDraft({
+      modelId,
+      input: existing ? String(existing.input ?? 0) : '',
+      output: existing ? String(existing.output ?? 0) : '',
+      cached: existing ? String(existing.cached ?? 0) : '',
+    })
+  }
+
+  const handleSavePrice = async () => {
+    if (!priceDraft || !viewingDetailProvider) return
+    try {
+      await api.post('/api/models/pricing', {
+        providerAlias: viewingDetailProvider.id,
+        model: priceDraft.modelId,
+        input: parseFloat(priceDraft.input) || 0,
+        output: parseFloat(priceDraft.output) || 0,
+        cached: parseFloat(priceDraft.cached) || 0,
+      })
+      const data = await api.get<{ overrides: Record<string, ModelRate> }>(`/api/models/pricing?providerAlias=${encodeURIComponent(viewingDetailProvider.id)}`)
+      setPricingOverrides(data.overrides ?? {})
+      setPriceDraft(null)
+      notify(`Pricing saved for ${priceDraft.modelId}`, 'success')
+    } catch {
+      notify('Failed to save pricing', 'error')
+    }
+  }
+
+  const handleDeletePrice = async (modelId: string) => {
+    if (!viewingDetailProvider) return
+    try {
+      await api.del(`/api/models/pricing?providerAlias=${encodeURIComponent(viewingDetailProvider.id)}&model=${encodeURIComponent(modelId)}`)
+      const data = await api.get<{ overrides: Record<string, ModelRate> }>(`/api/models/pricing?providerAlias=${encodeURIComponent(viewingDetailProvider.id)}`)
+      setPricingOverrides(data.overrides ?? {})
+      notify(`Pricing reset to defaults for ${modelId}`, 'info')
+    } catch {
+      notify('Failed to reset pricing', 'error')
+    }
+  }
+
   /* ------------------------------ Provider list ----------------------------- */
 
   const allProviderEntries = useMemo(() => {
@@ -687,6 +736,19 @@ export default function ProvidersPage() {
                   <div key={entry.id} className="flex items-center gap-2 border-b border-border/60 px-3 py-1.5 last:border-b-0">
                     <Toggle checked={isModelEnabled(entry.id)} onChange={() => handleSetEnabledModels(isModelEnabled(entry.id) ? (enabledModelIds ?? []).filter((x) => x !== entry.id) : [...(enabledModelIds ?? models.map((m) => m.id)), entry.id])} />
                     <code className="min-w-0 flex-1 truncate font-mono text-[11px]">{entry.id}</code>
+                    {pricingOverrides[entry.id] && (
+                      <span className="tnum shrink-0 text-[10px] text-accent" title="Custom pricing set">
+                        ${pricingOverrides[entry.id].input}/${pricingOverrides[entry.id].output}
+                      </span>
+                    )}
+                    <button
+                      onClick={() => openPriceEditor(entry.id)}
+                      className={cn('shrink-0 transition-colors', pricingOverrides[entry.id] ? 'text-accent' : 'text-subtle hover:text-text')}
+                      aria-label={`Edit pricing for ${entry.id}`}
+                      title="Edit pricing ($/1M tokens)"
+                    >
+                      <DollarSign size={12} />
+                    </button>
                     <button
                       onClick={() => handleToggleThinkingMode(entry.id)}
                       className={cn('transition-colors', thinkingMap[entry.id] ? 'text-accent' : 'text-subtle hover:text-text')}
@@ -711,17 +773,65 @@ export default function ProvidersPage() {
               <h3 className="mb-3 text-sm font-semibold">Pricing overrides</h3>
               <div className="tnum grid gap-2 text-xs sm:grid-cols-2 lg:grid-cols-3">
                 {Object.entries(pricingOverrides).map(([model, prices]) => (
-                  <div key={model} className="rounded-md bg-surface-2 px-3 py-2">
+                  <button
+                    key={model}
+                    className="rounded-md bg-surface-2 px-3 py-2 text-left transition-colors hover:bg-surface-2/70"
+                    onClick={() => openPriceEditor(model)}
+                  >
                     <code className="block truncate font-mono text-[11px]">{model}</code>
                     <span className="text-muted">
-                      in {prices.Input ?? prices.input ?? 0} / out {prices.Output ?? prices.output ?? 0} / cached {prices.Cached ?? prices.cached ?? 0}
+                      in {prices.input ?? 0} / out {prices.output ?? 0} / cached {prices.cached ?? 0} $/1M
                     </span>
-                  </div>
+                  </button>
                 ))}
               </div>
             </Card>
           )}
         </div>
+
+        {/* Pricing editor modal */}
+        <Modal
+          open={priceDraft !== null}
+          onClose={() => setPriceDraft(null)}
+          title="Model pricing"
+          subtitle={priceDraft?.modelId}
+          footer={
+            <>
+              {priceDraft && pricingOverrides[priceDraft.modelId] && (
+                <Button
+                  variant="ghost"
+                  className="mr-auto text-danger hover:bg-danger-subtle hover:text-danger"
+                  onClick={async () => {
+                    const model = priceDraft.modelId
+                    setPriceDraft(null)
+                    await handleDeletePrice(model)
+                  }}
+                >
+                  <Trash2 size={13} /> Reset to defaults
+                </Button>
+              )}
+              <Button onClick={() => setPriceDraft(null)}>Cancel</Button>
+              <Button variant="primary" onClick={handleSavePrice}>
+                Save pricing
+              </Button>
+            </>
+          }
+        >
+          {priceDraft && (
+            <div className="flex flex-col gap-3">
+              <Field label="Input price ($/1M tokens)">
+                <Input type="number" step="0.01" min={0} value={priceDraft.input} onChange={(e) => setPriceDraft({ ...priceDraft, input: e.target.value })} placeholder="e.g. 3.00" />
+              </Field>
+              <Field label="Output price ($/1M tokens)">
+                <Input type="number" step="0.01" min={0} value={priceDraft.output} onChange={(e) => setPriceDraft({ ...priceDraft, output: e.target.value })} placeholder="e.g. 15.00" />
+              </Field>
+              <Field label="Cache hit price ($/1M tokens)">
+                <Input type="number" step="0.01" min={0} value={priceDraft.cached} onChange={(e) => setPriceDraft({ ...priceDraft, cached: e.target.value })} placeholder="e.g. 0.30" />
+              </Field>
+              <p className="text-[11px] text-subtle">Overrides apply to cost calculations immediately, including existing usage summaries that were stored without a cost.</p>
+            </div>
+          )}
+        </Modal>
 
         {credEditor && (
           <CredentialEditor

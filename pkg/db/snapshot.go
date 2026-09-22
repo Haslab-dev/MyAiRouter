@@ -139,16 +139,22 @@ func (s *routingSnapshot) modelConfig(id string) *ModelConfig {
 	}
 }
 
-// snapshotPricingOverride mirrors GetPricingOverride precedence: exact
-// "provider|model" key first, then the base model without a prefix.
+// snapshotPricingOverride mirrors getPricingOverrideFromDB precedence:
+// "provider:model" exact and base-model keys first, then bare model keys.
 func (s *routingSnapshot) pricingOverride(provider, model string) (ModelRate, bool) {
 	p := strings.ToLower(strings.TrimSpace(provider))
 	m := strings.ToLower(strings.TrimSpace(model))
-	if rate, ok := s.pricingOverrides[p+"|"+m]; ok {
-		return rate, true
+	baseModel := m
+	if idx := strings.LastIndex(m, "/"); idx != -1 {
+		baseModel = m[idx+1:]
 	}
-	if idx := strings.Index(m, "/"); idx != -1 {
-		if rate, ok := s.pricingOverrides[p+"|"+m[idx+1:]]; ok {
+	keysToTry := []string{}
+	if p != "" {
+		keysToTry = append(keysToTry, p+":"+baseModel, p+":"+m)
+	}
+	keysToTry = append(keysToTry, baseModel, m)
+	for _, k := range keysToTry {
+		if rate, ok := s.pricingOverrides[k]; ok {
 			return rate, true
 		}
 	}

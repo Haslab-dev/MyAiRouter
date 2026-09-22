@@ -494,6 +494,27 @@ func BuildUsageWhere(provider, period, startDate, endDate string) (string, []int
 	return where, args
 }
 
+// estimateCost recomputes total cost row-by-row with current pricing
+// (including KV overrides) for usage rows stored without a cost.
+func estimateCost(provider, where string, args []interface{}) float64 {
+	rows, err := DB.Query(`SELECT provider, model, COALESCE(promptTokens,0), COALESCE(completionTokens,0), COALESCE(cachedTokens,0) FROM usageHistory`+where, args...)
+	if err != nil {
+		return 0
+	}
+	defer rows.Close()
+
+	var total float64
+	for rows.Next() {
+		var p, m string
+		var prompt, completion, cached int
+		if err := rows.Scan(&p, &m, &prompt, &completion, &cached); err != nil {
+			continue
+		}
+		total += CalculateCost(p, m, prompt, completion, cached)
+	}
+	return total
+}
+
 func GetUsageStats(provider, period, startDate, endDate string) (*UsageStats, error) {
 	var stats UsageStats
 	where, args := BuildUsageWhere(provider, period, startDate, endDate)
@@ -515,7 +536,7 @@ func GetUsageStats(provider, period, startDate, endDate string) (*UsageStats, er
 		stats.TotalCompletionTokens = stats.TotalRequests * 20
 	}
 	if stats.TotalCost == 0 && (stats.TotalPromptTokens > 0 || stats.TotalCompletionTokens > 0) {
-		stats.TotalCost = float64(stats.TotalPromptTokens+stats.TotalCompletionTokens) * 0.000002
+		stats.TotalCost = estimateCost(provider, where, args)
 	}
 	stats.TotalCost = math.Round(stats.TotalCost*10000) / 10000
 
@@ -667,9 +688,6 @@ func GetModelUsageSummary(provider, period, startDate, endDate string) ([]ModelU
 		}
 		if s.Cost == 0 && (s.PromptTokens > 0 || s.CompletionTokens > 0) {
 			s.Cost = CalculateCost(s.Provider, s.Model, s.PromptTokens, s.CompletionTokens, s.CachedTokens)
-			if s.Cost == 0 {
-				s.Cost = float64(s.PromptTokens+s.CompletionTokens) * 0.000002
-			}
 		}
 		s.Cost = math.Round(s.Cost*10000) / 10000
 		summaries = append(summaries, s)
@@ -715,7 +733,7 @@ func GetProviderUsageSummary() ([]ProviderUsageSummary, error) {
 			s.CompletionTokens = s.Requests * 20
 		}
 		if s.Cost == 0 && (s.PromptTokens > 0 || s.CompletionTokens > 0) {
-			s.Cost = float64(s.PromptTokens+s.CompletionTokens) * 0.000002
+			s.Cost = estimateCost(s.Provider, " WHERE COALESCE(provider, 'unknown') = ?", []interface{}{s.Provider})
 		}
 		s.Cost = math.Round(s.Cost*10000) / 10000
 		summaries = append(summaries, s)

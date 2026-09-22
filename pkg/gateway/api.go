@@ -957,6 +957,23 @@ func handleModelPricing(w http.ResponseWriter, r *http.Request) {
 		if provider == "" {
 			provider = r.URL.Query().Get("provider")
 		}
+		if r.URL.Query().Get("all") == "1" {
+			// Bulk effective pricing: merge canonical defaults with overrides,
+			// keyed by bare model id. Combos and unknown ids resolve later at
+			// request time, so they are omitted here.
+			models, err := HandleListModelsData(r)
+			if err != nil {
+				WriteErrorResponse(w, http.StatusInternalServerError, err.Error())
+				return
+			}
+			rates := make(map[string]ModelRateJSON, len(models))
+			for _, m := range models {
+				rate := db.GetPricing(m.OwnedBy, m.ID)
+				rates[m.ID] = ModelRateJSON{Input: rate.Input, Output: rate.Output, Cached: rate.Cached}
+			}
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"rates": rates})
+			return
+		}
 		overrides, err := db.GetPricingOverrides(provider)
 		if err != nil {
 			WriteErrorResponse(w, http.StatusInternalServerError, err.Error())
