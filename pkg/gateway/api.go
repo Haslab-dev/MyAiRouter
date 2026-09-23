@@ -107,6 +107,7 @@ func RegisterAdminRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/usage/stats", handleUsageStats)
 	mux.HandleFunc("/api/usage/logs", handleUsageLogs)
 	mux.HandleFunc("/api/usage/charts", handleUsageCharts)
+	mux.HandleFunc("/api/usage/chart", handleUsageCharts)
 	mux.HandleFunc("/api/usage/models", handleUsageModels)
 	mux.HandleFunc("/api/usage/provider-summary", handleProviderUsageSummary)
 	mux.HandleFunc("/api/usage/export", handleUsageExport)
@@ -585,6 +586,44 @@ func handleUsageCharts(w http.ResponseWriter, r *http.Request) {
 	}
 	whereClause, args := db.BuildUsageWhere(provider, chartPeriod,
 		r.URL.Query().Get("startDate"), r.URL.Query().Get("endDate"))
+
+	if period == "all" {
+		rows, err := db.DB.Query(`
+			SELECT 
+				STRFTIME('%Y-%m-%d', timestamp) as date_part,
+				SUM(promptTokens + completionTokens) as total_tokens,
+				SUM(cost) as total_cost
+			FROM usageHistory
+			`+whereClause+`
+			GROUP BY date_part
+			ORDER BY date_part ASC
+		`, args...)
+		var points []ChartPoint
+		if err == nil {
+			defer rows.Close()
+			for rows.Next() {
+				var dateStr string
+				var tokens int
+				var cost float64
+				if err := rows.Scan(&dateStr, &tokens, &cost); err == nil {
+					label := dateStr
+					if t, err := time.Parse("2006-01-02", dateStr); err == nil {
+						label = t.Format("Jan 02")
+					}
+					points = append(points, ChartPoint{
+						Label:  label,
+						Tokens: tokens,
+						Cost:   math.Round(cost*10000) / 10000,
+					})
+				}
+			}
+		}
+		if points == nil {
+			points = []ChartPoint{}
+		}
+		_ = json.NewEncoder(w).Encode(points)
+		return
+	}
 
 	if period == "week" || period == "7d" {
 		now := time.Now().UTC()

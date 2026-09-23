@@ -31,10 +31,10 @@ interface ModelSummaryRow {
 }
 
 const PERIODS = [
+  { value: 'all', label: 'All time' },
   { value: 'today', label: 'Today' },
   { value: '7d', label: '7 days' },
   { value: '30d', label: '30 days' },
-  { value: 'all', label: 'All time' },
 ]
 
 function LineChart({ data, mode }: { data: ChartPoint[]; mode: 'tokens' | 'cost' }) {
@@ -84,7 +84,7 @@ export default function UsagePage() {
   const [modelSummaries, setModelSummaries] = useState<ModelSummaryRow[]>([])
   const [connections, setConnections] = useState<ProviderConnection[]>([])
   const [providerFilter, setProviderFilter] = useState('')
-  const [period, setPeriod] = useState('today')
+  const [period, setPeriod] = useState('all')
   const [chartMode, setChartMode] = useState<'tokens' | 'cost'>('tokens')
   const [tableMode, setTableMode] = useState<'models' | 'providers'>('models')
   const [isRefreshing, setIsRefreshing] = useState(false)

@@ -31,11 +31,16 @@ export default function PricingPage() {
       const data = await api.get<{ overrides: Record<string, Record<string, number>> }>('/api/models/pricing')
       const list: PricingRule[] = []
       for (const [key, val] of Object.entries(data.overrides ?? {})) {
-        // Skip the mirrored "provider/model" alias row when the bare row exists.
-        if (key.includes('/') && (data.overrides ?? {})[key.split('/').pop() ?? '']) continue
+        let provider = ''
+        let model = key
+        if (key.includes('/')) {
+          const parts = key.split('/')
+          provider = parts[0]
+          model = parts.slice(1).join('/')
+        }
         list.push({
-          provider: String(val.provider ?? val.Provider ?? ''),
-          model: String(val.model ?? val.Model ?? key),
+          provider: String(val.provider ?? val.Provider ?? provider),
+          model: String(val.model ?? val.Model ?? model),
           input: Number(val.input ?? val.Input ?? 0),
           output: Number(val.output ?? val.Output ?? 0),
           cached: Number(val.cached ?? val.Cached ?? 0),
