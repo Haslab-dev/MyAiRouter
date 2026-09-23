@@ -13,6 +13,14 @@ import (
 	"time"
 )
 
+func pidFilePath() string {
+	exe, err := os.Executable()
+	if err != nil {
+		return "myairouter.pid"
+	}
+	return filepath.Join(filepath.Dir(exe), "myairouter.pid")
+}
+
 func findRunningPIDs() []int {
 	myPID := os.Getpid()
 	out, err := exec.Command("pgrep", "-f", "my[aA]i[rR]outer").Output()

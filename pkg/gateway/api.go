@@ -133,6 +133,7 @@ func RegisterAdminRoutes(mux *http.ServeMux) {
 	admin.HandleFunc("/api/usage/stats", handleUsageStats)
 	admin.HandleFunc("/api/usage/logs", handleUsageLogs)
 	admin.HandleFunc("/api/usage/charts", handleUsageCharts)
+	admin.HandleFunc("/api/usage/chart", handleUsageCharts)
 	admin.HandleFunc("/api/usage/models", handleUsageModels)
 	admin.HandleFunc("/api/usage/provider-summary", handleProviderUsageSummary)
 	admin.HandleFunc("/api/usage/export", handleUsageExport)

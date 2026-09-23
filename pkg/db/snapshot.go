@@ -3,6 +3,7 @@ package db
 import (
 	"encoding/json"
 	"strings"
+	"sync"
 	"sync/atomic"
 )
 
@@ -22,6 +23,7 @@ type routingSnapshot struct {
 	customModels     []CustomModel
 	pricingOverrides map[string]ModelRate // "provider|model" -> rate
 	enabledModels    map[string][]string  // provider -> ids (nil = all allowed)
+	resolvedPricing  sync.Map             // "provider|model" -> ModelRate
 }
 
 var snapshotPtr atomic.Pointer[routingSnapshot]

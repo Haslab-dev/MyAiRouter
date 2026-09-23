@@ -51,9 +51,10 @@ func GetPricingOverrides(provider string) (map[string]ModelRate, error) {
 			}
 			// Match if no provider requested or provider matches
 			if p == "" || strings.ToLower(rec.Provider) == p || k == rec.Model || strings.HasPrefix(k, p+":") {
-				res[rec.Model] = rate
 				if rec.Provider != "" {
 					res[rec.Provider+"/"+rec.Model] = rate
+				} else {
+					res[rec.Model] = rate
 				}
 			}
 		}
@@ -147,8 +148,10 @@ func DeletePricingOverride(provider, model string) error {
 	if err != nil {
 		return err
 	}
-	// Also delete un-prefixed key if present
-	_, _ = DB.Exec("DELETE FROM kv WHERE scope = ? AND key = ?", PricingOverridesScope, m)
+	// Also delete un-prefixed key if deleting global rule
+	if p == "" {
+		_, _ = DB.Exec("DELETE FROM kv WHERE scope = ? AND key = ?", PricingOverridesScope, m)
+	}
 	InvalidateRoutingSnapshot()
 	return nil
 }

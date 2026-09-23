@@ -160,6 +160,25 @@ var ModelPricing = map[string]ModelRate{
 type PatternRate struct {
 	Pattern string
 	Rate    ModelRate
+	regex   *regexp.Regexp
+}
+
+func init() {
+	for i := range PatternPricing {
+		escaped := regexp.QuoteMeta(PatternPricing[i].Pattern)
+		escaped = strings.ReplaceAll(escaped, "\\*", ".*")
+		PatternPricing[i].regex = regexp.MustCompile("(?i)^" + escaped + "$")
+	}
+}
+
+func (pr *PatternRate) match(model string) bool {
+	if pr.regex != nil {
+		return pr.regex.MatchString(model)
+	}
+	escapedPattern := regexp.QuoteMeta(pr.Pattern)
+	escapedPattern = strings.ReplaceAll(escapedPattern, "\\*", ".*")
+	match, _ := regexp.MatchString("(?i)^"+escapedPattern+"$", model)
+	return match
 }
 
 var PatternPricing = []PatternRate{
@@ -244,8 +263,28 @@ func matchPattern(pattern, model string) bool {
 }
 
 func GetPricing(provider, model string) ModelRate {
+	cacheKey := provider + "|" + model
+	snap := getRoutingSnapshot()
+	if snap != nil {
+		if val, ok := snap.resolvedPricing.Load(cacheKey); ok {
+			return val.(ModelRate)
+		}
+	}
+
+	rate := resolvePricing(snap, provider, model)
+	if snap != nil {
+		snap.resolvedPricing.Store(cacheKey, rate)
+	}
+	return rate
+}
+
+func resolvePricing(snap *routingSnapshot, provider, model string) ModelRate {
 	// 0. Check KV pricing override first
-	if rate, ok := GetPricingOverride(provider, model); ok {
+	if snap != nil {
+		if rate, ok := snap.pricingOverride(provider, model); ok {
+			return rate
+		}
+	} else if rate, ok := GetPricingOverride(provider, model); ok {
 		return rate
 	}
 
@@ -263,9 +302,9 @@ func GetPricing(provider, model string) ModelRate {
 	}
 
 	// 2. Pattern check
-	for _, pr := range PatternPricing {
-		if matchPattern(pr.Pattern, baseModel) || matchPattern(pr.Pattern, model) {
-			return pr.Rate
+	for i := range PatternPricing {
+		if PatternPricing[i].match(baseModel) || PatternPricing[i].match(model) {
+			return PatternPricing[i].Rate
 		}
 	}
 
@@ -500,16 +539,17 @@ func GetUsageStats(provider, period, startDate, endDate string) (*UsageStats, er
 	var stats UsageStats
 	where, args := BuildUsageWhere(provider, period, startDate, endDate)
 
-	row := DB.QueryRow("SELECT COUNT(*), SUM(promptTokens), SUM(completionTokens), SUM(cost) FROM usageHistory"+where, args...)
-	var requests, prompt, completion sql.NullInt64
+	row := DB.QueryRow("SELECT COUNT(*), COALESCE(SUM(promptTokens), 0), COALESCE(SUM(completionTokens), 0), COALESCE(SUM(cachedTokens), 0), COALESCE(SUM(cost), 0) FROM usageHistory"+where, args...)
+	var requests, prompt, completion, cached sql.NullInt64
 	var cost sql.NullFloat64
-	if err := row.Scan(&requests, &prompt, &completion, &cost); err != nil {
+	if err := row.Scan(&requests, &prompt, &completion, &cached, &cost); err != nil {
 		return nil, err
 	}
 
 	stats.TotalRequests = int(requests.Int64)
 	stats.TotalPromptTokens = int(prompt.Int64)
 	stats.TotalCompletionTokens = int(completion.Int64)
+	stats.TotalCachedTokens = int(cached.Int64)
 	stats.TotalCost = cost.Float64
 
 	if stats.TotalRequests > 0 && stats.TotalPromptTokens == 0 && stats.TotalCompletionTokens == 0 {
@@ -524,10 +564,6 @@ func GetUsageStats(provider, period, startDate, endDate string) (*UsageStats, er
 	}
 	stats.TotalCost = math.Round(stats.TotalCost*10000) / 10000
 
-	// Get cached tokens sum
-	var cachedSum int
-	_ = DB.QueryRow("SELECT COALESCE(SUM(cachedTokens), 0) FROM usageHistory"+where, args...).Scan(&cachedSum)
-	stats.TotalCachedTokens = cachedSum
 	return &stats, nil
 }
 
@@ -730,6 +766,19 @@ func GetProviderUsageSummary() ([]ProviderUsageSummary, error) {
 	}
 	defer rows.Close()
 
+	provCosts := make(map[string]float64)
+	costRows, err := DB.Query(`SELECT COALESCE(provider, 'unknown'), model, COALESCE(promptTokens,0), COALESCE(completionTokens,0), COALESCE(cachedTokens,0) FROM usageHistory`)
+	if err == nil {
+		defer costRows.Close()
+		for costRows.Next() {
+			var p, m string
+			var prompt, completion, cached int
+			if err := costRows.Scan(&p, &m, &prompt, &completion, &cached); err == nil {
+				provCosts[p] += CalculateCost(p, m, prompt, completion, cached)
+			}
+		}
+	}
+
 	var summaries []ProviderUsageSummary
 	for rows.Next() {
 		var s ProviderUsageSummary
@@ -743,7 +792,11 @@ func GetProviderUsageSummary() ([]ProviderUsageSummary, error) {
 		// Recompute from current pricing so pricing edits (group rules,
 		// overrides) reflect immediately, even on rows with a stored cost.
 		if s.PromptTokens > 0 || s.CompletionTokens > 0 {
-			s.Cost = estimateCost(s.Provider, " WHERE COALESCE(provider, 'unknown') = ?", []interface{}{s.Provider})
+			if cost, ok := provCosts[s.Provider]; ok {
+				s.Cost = cost
+			} else {
+				s.Cost = estimateCost(s.Provider, " WHERE COALESCE(provider, 'unknown') = ?", []interface{}{s.Provider})
+			}
 		}
 		s.Cost = math.Round(s.Cost*10000) / 10000
 		summaries = append(summaries, s)
