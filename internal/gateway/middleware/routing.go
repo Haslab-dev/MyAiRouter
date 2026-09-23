@@ -9,6 +9,7 @@ import (
 	"myAiRouter/internal/gateway/context"
 	"myAiRouter/internal/gateway/health"
 	"myAiRouter/pkg/db"
+	pkgGateway "myAiRouter/pkg/gateway"
 )
 
 type ConnectionModel struct {
@@ -37,8 +38,30 @@ func Routing(ctx *context.GatewayContext, next HandlerFunc) error {
 		}
 	}
 
+	targets := resolveConnectionTargets(modelsToTry)
+	if len(targets) == 0 {
+		ctx.WriteError(503, "No active upstream connections found for requested models")
+		ctx.AddStep("Routing", "failed", "No connections available")
+		return nil
+	}
+
+	ctx.Metadata["routingTargets"] = targets
+	pkgGateway.SetTargets(ctx.LiveID, len(targets))
+	ctx.AddStep("Routing", "success", fmt.Sprintf("Routed to %d target connection(s)", len(targets)))
+	return next(ctx)
+}
+
+// resolveConnectionTargets is the shared target-resolution core: for each
+// requested model it finds the active connections of the model's primary
+// provider (and configured fallback), deduplicates and health-orders them.
+// Routing uses it per request; the passthrough endpoints (/v1/embeddings,
+// /v1/audio/*) use it to pick a single upstream connection.
+func resolveConnectionTargets(modelsToTry []string) []ConnectionModel {
 	var targets []ConnectionModel
-	seenConnIDs := make(map[string]bool)
+	// Dedupe by connection+model+provider (NOT connection alone): a combo
+	// like ["prov/model-A", "prov/model-B"] served by the SAME account must
+	// still produce two targets so fallback can switch models.
+	seen := make(map[string]bool)
 
 	for _, currentModel := range modelsToTry {
 		cfg := db.GetModelConfigOrDefault(currentModel)
@@ -50,17 +73,23 @@ func Routing(ctx *context.GatewayContext, next HandlerFunc) error {
 		// 1. Resolve Primary Provider targets
 		primaryProvider := cfg.Routing.PrimaryProvider
 		accounts, err := getActiveConnectionsForPrefix(primaryProvider)
-		if err == nil && len(accounts) > 0 {
-			targetModelName := resolveTargetModelName(primaryProvider, baseModelName)
-			for _, acc := range accounts {
-				if !seenConnIDs[acc.ID] {
-					targets = append(targets, ConnectionModel{
-						Connection: acc,
-						ModelName:  targetModelName,
-						Provider:   primaryProvider,
-					})
-					seenConnIDs[acc.ID] = true
-				}
+		if err != nil || len(accounts) == 0 {
+			// Emitting a target with a zero-value Connection used to crash the
+			// whole gateway later (providers.Execute nil deref). Say exactly
+			// which model had no usable account instead of routing it anyway.
+			fmt.Printf("myairouter: routing: model %q (provider %q) has no active upstream connection; skipping\n", currentModel, primaryProvider)
+			continue
+		}
+		targetModelName := resolveTargetModelName(primaryProvider, baseModelName)
+		for _, acc := range accounts {
+			key := acc.ID + "|" + primaryProvider + "/" + targetModelName
+			if !seen[key] {
+				targets = append(targets, ConnectionModel{
+					Connection: acc,
+					ModelName:  targetModelName,
+					Provider:   primaryProvider,
+				})
+				seen[key] = true
 			}
 		}
 
@@ -78,28 +107,28 @@ func Routing(ctx *context.GatewayContext, next HandlerFunc) error {
 			if err == nil && len(fbAccounts) > 0 {
 				targetModelName := resolveTargetModelName(fbProvider, fbModelName)
 				for _, acc := range fbAccounts {
-					if !seenConnIDs[acc.ID] {
+					key := acc.ID + "|" + fbProvider + "/" + targetModelName
+					if !seen[key] {
 						targets = append(targets, ConnectionModel{
 							Connection: acc,
 							ModelName:  targetModelName,
 							Provider:   fbProvider,
 						})
-						seenConnIDs[acc.ID] = true
+						seen[key] = true
 					}
 				}
 			}
 		}
 	}
 	targets = orderTargetsByHealth(targets)
-	if len(targets) == 0 {
-		ctx.WriteError(503, "No active upstream connections found for requested models")
-		ctx.AddStep("Routing", "failed", "No connections available")
-		return nil
-	}
+	return targets
+}
 
-	ctx.Metadata["routingTargets"] = targets
-	ctx.AddStep("Routing", "success", fmt.Sprintf("Routed to %d target connection(s)", len(targets)))
-	return next(ctx)
+// ResolveConnectionTargets exposes target resolution to the passthrough
+// endpoints (/v1/embeddings, /v1/audio/*) which live in another package but
+// need the same health-ordered connection selection as the chat pipeline.
+func ResolveConnectionTargets(modelsToTry []string) []ConnectionModel {
+	return resolveConnectionTargets(modelsToTry)
 }
 
 // orderTargetsByHealth applies the health tracker to the flattened target

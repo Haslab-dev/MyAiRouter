@@ -235,15 +235,8 @@ export default function ChatPage() {
           if (data.data?.length) loaded = data.data
         }
       } catch {
-        /* try next source */
+        /* no models available */
       }
-    }
-    if (loaded.length === 0) {
-      loaded = [
-        { id: 'gpt-4o', object: 'model', owned_by: 'openai', created: 0 },
-        { id: 'gpt-4o-mini', object: 'model', owned_by: 'openai', created: 0 },
-        { id: 'claude-3-5-sonnet-20241022', object: 'model', owned_by: 'anthropic', created: 0 },
-      ]
     }
     const seen = new Set<string>()
     const deduped = loaded.filter((m) => {
@@ -252,6 +245,9 @@ export default function ChatPage() {
       return true
     })
     setModels(deduped)
+    // Keep the current selection if it is still offered; otherwise fall back to
+    // the first available model. Never invent models the gateway does not
+    // expose — an empty list must stay empty so the empty state is honest.
     setSelectedModel((prev) => (prev && deduped.some((m) => m.id === prev) ? prev : deduped[0]?.id ?? ''))
   }, [])
 
@@ -363,6 +359,22 @@ export default function ChatPage() {
     }
     init()
   }, [fetchSystemApiKey, fetchModels, loadSessions])
+
+  // Refresh the model registry when the tab regains focus or visibility:
+  // providers/models added elsewhere in the dashboard become selectable
+  // without a full page reload.
+  useEffect(() => {
+    const refresh = async () => {
+      if (document.visibilityState === 'hidden') return
+      await fetchModels(await fetchSystemApiKey())
+    }
+    window.addEventListener('focus', refresh)
+    document.addEventListener('visibilitychange', refresh)
+    return () => {
+      window.removeEventListener('focus', refresh)
+      document.removeEventListener('visibilitychange', refresh)
+    }
+  }, [fetchModels, fetchSystemApiKey])
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -986,8 +998,10 @@ export default function ChatPage() {
             <select
               value={selectedModel}
               onChange={(e) => handleModelChange(e.target.value)}
-              className="h-8 max-w-36 sm:max-w-64 rounded-md border border-border bg-bg px-2 text-xs outline-none focus:border-accent truncate"
+              disabled={models.length === 0}
+              className="h-8 max-w-36 sm:max-w-64 rounded-md border border-border bg-bg px-2 text-xs outline-none focus:border-accent truncate disabled:opacity-60"
             >
+              {models.length === 0 && <option value="">No models available</option>}
               {models.map((m) => (
                 <option key={m.id} value={m.id}>
                   {m.id}

@@ -4,7 +4,7 @@ import { useAuth } from '@/contexts/AuthContext'
 import { Button, Input } from '@/components/ui'
 
 export default function LoginPage() {
-  const { login } = useAuth()
+  const { login, status } = useAuth()
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
@@ -30,7 +30,7 @@ export default function LoginPage() {
           <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-lg bg-accent text-on-accent">
             <RouteIcon size={24} />
           </div>
-          <h1 className="text-xl font-semibold tracking-tight text-text">myAiRouter</h1>
+          <h1 className="text-xl font-semibold tracking-tight text-text">MyAiRouter</h1>
           <p className="mt-1.5 text-[13px] text-muted">Enter your password to access the gateway</p>
         </div>
 
@@ -68,9 +68,15 @@ export default function LoginPage() {
           </Button>
         </form>
 
-        <p className="mt-4 text-center text-[11px] text-subtle">
-          Default password: <code className="font-mono text-muted">123456789</code> — change it after first login.
-        </p>
+        {status?.hasPassword === false ? (
+          <p className="mt-4 text-center text-[11px] text-warning">
+            No password is set. Default password: <code className="font-mono">123456789</code> — set a new one in Settings after signing in.
+          </p>
+        ) : (
+          <p className="mt-4 text-center text-[11px] text-subtle">
+            Use the password you set for this gateway.
+          </p>
+        )}
       </div>
     </div>
   )

@@ -36,11 +36,11 @@ dev:
 prod:
 	@echo "Building production binary..."
 	$(MAKE) build
-	@echo "Run: ./myAiRouter"
+	@echo "Run: ./MyAiRouter"
 	@echo "Open http://$(HOST):$(PORT)"
 
 clean:
-	rm -f myAiRouter
+	rm -f MyAiRouter
 	rm -rf web/dist
 
 # version helpers

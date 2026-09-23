@@ -1,4 +1,4 @@
-/** Shared domain types for the myAiRouter admin UI. */
+/** Shared domain types for the MyAiRouter admin UI. */
 
 export interface ApiError {
   message: string
@@ -13,7 +13,21 @@ export interface ProviderConnectionData {
   orgId?: string
   testStatus?: string
   lastError?: string
+  proxyRouteId?: string
   [key: string]: unknown
+}
+
+export interface ProxyRoute {
+  id: string
+  name: string
+  scheme: 'http' | 'https' | 'socks5'
+  host: string
+  port: number
+  username?: string
+  password?: string
+  isEnabled: boolean
+  createdAt: string
+  updatedAt: string
 }
 
 export interface ProviderConnection {
@@ -152,7 +166,13 @@ export interface SystemMetrics {
 export interface AuthStatus {
   requireLogin: boolean
   authenticated: boolean
+  hasPassword?: boolean
   version?: string
+}
+
+export interface ApiKeyScope {
+  allowedModels?: string[]
+  dailyTokenLimit?: number
 }
 
 export interface ApiKeyEntry {
@@ -161,6 +181,7 @@ export interface ApiKeyEntry {
   name: string
   machineId?: string
   isActive: boolean
+  scope?: ApiKeyScope
   createdAt: string
 }
 

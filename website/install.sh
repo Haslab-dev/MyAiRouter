@@ -43,12 +43,12 @@ LOCAL_BIN=""
 if [ "$REMOTE_ONLY" = false ]; then
   if [ -f "./myairouter" ]; then
     LOCAL_BIN="./myairouter"
-  elif [ -f "./myAiRouter" ]; then
-    LOCAL_BIN="./myAiRouter"
+  elif [ -f "./MyAiRouter" ]; then
+    LOCAL_BIN="./MyAiRouter"
   elif [ -f "../myairouter" ]; then
     LOCAL_BIN="../myairouter"
-  elif [ -f "../myAiRouter" ]; then
-    LOCAL_BIN="../myAiRouter"
+  elif [ -f "../MyAiRouter" ]; then
+    LOCAL_BIN="../MyAiRouter"
   elif [ "$LOCAL_ONLY" = true ]; then
     echo "Building local binary..."
     if [ -f "Makefile" ]; then
@@ -79,10 +79,10 @@ if [ -n "$LOCAL_BIN" ]; then
   echo "Replacing existing installation if running..."
   if command -v pkill >/dev/null 2>&1; then
     pkill -f "$INSTALL_DIR/myairouter" 2>/dev/null || true
-    pkill -f "$INSTALL_DIR/myAiRouter" 2>/dev/null || true
+    pkill -f "$INSTALL_DIR/MyAiRouter" 2>/dev/null || true
   fi
   echo "Installing local binary ($LOCAL_BIN) to $INSTALL_DIR/myairouter (replacing old version)..."
-  $SUDO rm -f "$INSTALL_DIR/myairouter" "$INSTALL_DIR/myAiRouter"
+  $SUDO rm -f "$INSTALL_DIR/myairouter" "$INSTALL_DIR/MyAiRouter"
   $SUDO cp "$LOCAL_BIN" "$INSTALL_DIR/myairouter"
   $SUDO chmod +x "$INSTALL_DIR/myairouter"
   echo "Successfully installed local myairouter to $INSTALL_DIR/myairouter"
@@ -141,12 +141,12 @@ mkdir -p "$INSTALL_DIR"
 echo "Replacing existing installation if running..."
 if command -v pkill >/dev/null 2>&1; then
   pkill -f "$INSTALL_DIR/myairouter" 2>/dev/null || true
-  pkill -f "$INSTALL_DIR/myAiRouter" 2>/dev/null || true
+  pkill -f "$INSTALL_DIR/MyAiRouter" 2>/dev/null || true
 fi
 
 echo "Installing to $INSTALL_DIR/myairouter (replacing old version)..."
 tar -xzf "/tmp/$ARCHIVE" -C /tmp
-$SUDO rm -f "$INSTALL_DIR/myairouter" "$INSTALL_DIR/myAiRouter"
+$SUDO rm -f "$INSTALL_DIR/myairouter" "$INSTALL_DIR/MyAiRouter"
 $SUDO mv "/tmp/myairouter-${OS}-${ARCH}" "$INSTALL_DIR/myairouter"
 $SUDO chmod +x "$INSTALL_DIR/myairouter"
 

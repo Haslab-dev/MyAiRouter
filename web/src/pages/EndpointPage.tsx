@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { Check, Copy, KeyRound, Network } from 'lucide-react'
 import { api, ApiRequestError } from '@/lib/api'
 import { useSnackbar } from '@/stores/snackbar'
-import { Button, Card, CardHeader, Input, PageContainer, PageHeader, Table, Td, Badge } from '@/components/ui'
+import { Button, Card, CardHeader, Field, Input, Modal, PageContainer, PageHeader, Table, Td, Badge } from '@/components/ui'
 import type { ApiKeyEntry } from '@/lib/types'
 
 export default function EndpointPage() {
@@ -12,6 +12,9 @@ export default function EndpointPage() {
   const [copiedId, setCopiedId] = useState<string | null>(null)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+  const [editingKey, setEditingKey] = useState<ApiKeyEntry | null>(null)
+  const [scopeText, setScopeText] = useState('')
+  const [dailyLimit, setDailyLimit] = useState('')
 
   const baseUrl = `${window.location.protocol}//${window.location.host}`
   const gatewayUrl = `${baseUrl}/v1`
@@ -57,6 +60,34 @@ export default function EndpointPage() {
     } catch (err) {
       console.error('Error deleting key:', err)
       notify('Error deleting key', 'error')
+    }
+  }
+
+  const openScope = (k: ApiKeyEntry) => {
+    setEditingKey(k)
+    setScopeText((k.scope?.allowedModels ?? []).join('\n'))
+    setDailyLimit(k.scope?.dailyTokenLimit ? String(k.scope.dailyTokenLimit) : '')
+  }
+
+  const handleSaveScope = async () => {
+    if (!editingKey) return
+    const allowedModels = scopeText
+      .split(/[\n,]/)
+      .map((s) => s.trim())
+      .filter(Boolean)
+    const limit = parseInt(dailyLimit, 10)
+    try {
+      await api.patch('/api/keys', {
+        id: editingKey.id,
+        allowedModels,
+        dailyTokenLimit: Number.isNaN(limit) ? 0 : limit,
+      })
+      setEditingKey(null)
+      await fetchKeys()
+      notify('Key scope updated', 'success')
+    } catch (err) {
+      const msg = err instanceof ApiRequestError ? err.message : 'Connection error'
+      notify(msg, 'error')
     }
   }
 
@@ -133,10 +164,19 @@ export default function EndpointPage() {
                 </Td>
                 <Td className="text-muted">{new Date(k.createdAt).toLocaleDateString()}</Td>
                 <Td>
-                  <Badge tone="success">Active</Badge>
+                  {k.scope?.allowedModels?.length ? (
+                    <Badge tone="accent">{k.scope.allowedModels.length} model{k.scope.allowedModels.length > 1 ? 's' : ''}</Badge>
+                  ) : k.scope?.dailyTokenLimit ? (
+                    <Badge tone="warning">{(k.scope.dailyTokenLimit / 1000).toFixed(0)}k/day</Badge>
+                  ) : (
+                    <Badge tone="success">Unrestricted</Badge>
+                  )}
                 </Td>
                 <Td>
                   <div className="flex justify-end gap-1.5">
+                    <Button size="sm" onClick={() => openScope(k)}>
+                      Scope
+                    </Button>
                     <Button size="sm" onClick={() => copy(k.key, k.id)}>
                       {copiedId === k.id ? <Check size={12} /> : <Copy size={12} />}
                       {copiedId === k.id ? 'Copied' : 'Copy'}
@@ -159,6 +199,34 @@ export default function EndpointPage() {
           </span>
         </div>
       </Card>
+
+      <Modal
+        open={!!editingKey}
+        onClose={() => setEditingKey(null)}
+        title={`Scope — ${editingKey?.name || 'key'}`}
+        footer={
+          <>
+            <Button onClick={() => setEditingKey(null)}>Cancel</Button>
+            <Button variant="primary" onClick={handleSaveScope}>
+              Save scope
+            </Button>
+          </>
+        }
+      >
+        <div className="flex flex-col gap-4">
+          <Field label="Allowed models" hint="One model ID or route name per line. Empty = all models allowed.">
+            <textarea
+              className="min-h-28 w-full rounded-md border border-border bg-surface px-3 py-2 font-mono text-xs text-text"
+              placeholder={'Collabs\nopenai-compatible-nutaraline/glm-5.3-flash'}
+              value={scopeText}
+              onChange={(e) => setScopeText(e.target.value)}
+            />
+          </Field>
+          <Field label="Daily token limit" hint="Prompt + completion tokens per UTC day. 0 or empty = unlimited.">
+            <Input type="number" min={0} value={dailyLimit} onChange={(e) => setDailyLimit(e.target.value)} placeholder="e.g. 500000" />
+          </Field>
+        </div>
+      </Modal>
     </PageContainer>
   )
 }

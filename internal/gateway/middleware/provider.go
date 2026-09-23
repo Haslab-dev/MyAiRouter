@@ -12,6 +12,7 @@ import (
 
 	"myAiRouter/internal/gateway/context"
 	"myAiRouter/internal/gateway/providers"
+	pkgGateway "myAiRouter/pkg/gateway"
 )
 
 func Provider(ctx *context.GatewayContext, next HandlerFunc) error {
@@ -19,6 +20,18 @@ func Provider(ctx *context.GatewayContext, next HandlerFunc) error {
 	if p == nil {
 		// Fallback to default OpenAI-compatible handler
 		p = providers.Get("openai")
+	}
+
+	// A nil connection means routing materialized a target without a usable
+	// upstream account. Execute() dereferences it immediately, and a panic
+	// here takes down the whole server (every in-flight request dies with it,
+	// which is why myairouter looked like it "randomly stops"). Fail just this
+	// attempt so a sibling target in a parallel combo can still win.
+	if ctx.Connection == nil {
+		ctx.ResponseCode = http.StatusBadGateway
+		ctx.ResponseBody = []byte(`{"error":{"message":"No upstream connection resolved for this target","type":"api_error"}}`)
+		ctx.AddStep("Provider Executor", "failed", fmt.Sprintf("nil connection for provider=%q model=%q", ctx.Provider, ctx.Model))
+		return nil
 	}
 
 	startTime := time.Now()
@@ -40,6 +53,8 @@ func Provider(ctx *context.GatewayContext, next HandlerFunc) error {
 		return nil
 	}
 
+	pkgGateway.MarkStream(ctx.LiveID, res.IsStream)
+
 	format := ctx.Provider
 	if format != "anthropic" && format != "gemini" {
 		format = "openai"
@@ -47,7 +62,8 @@ func Provider(ctx *context.GatewayContext, next HandlerFunc) error {
 
 	if res.IsStream {
 		ctx.Stream = res.Stream
-		pTokens, cTokens, cat, ttfb, preview, finishReason, err := handleSSEStream(ctx.ResponseWriter, res.Stream, format, ctx.StartTime)
+		ctx.ResponseWritten = true
+		pTokens, cTokens, cat, ttfb, preview, finishReason, err := handleSSEStream(ctx.ResponseWriter, res.Stream, format, ctx.StartTime, ctx.LiveID)
 		if err == nil {
 			if pTokens > 0 {
 				ctx.PromptTokens = pTokens
@@ -81,6 +97,7 @@ func Provider(ctx *context.GatewayContext, next HandlerFunc) error {
 		if ctx.TTFB <= 0 {
 			ctx.TTFB = ctx.Latency
 		}
+		ctx.ResponseWritten = true
 		ctx.ResponseWriter.Header().Set("Content-Type", "application/json")
 		ctx.ResponseWriter.WriteHeader(res.ResponseCode)
 		_, _ = ctx.ResponseWriter.Write(res.Body)
@@ -108,7 +125,7 @@ type Flusher interface {
 	Flush()
 }
 
-func handleSSEStream(w http.ResponseWriter, stream io.ReadCloser, format string, requestStartTime time.Time) (promptTokens, completionTokens, cachedTokens int, ttfb time.Duration, preview string, finishReason string, err error) {
+func handleSSEStream(w http.ResponseWriter, stream io.ReadCloser, format string, requestStartTime time.Time, liveID string) (promptTokens, completionTokens, cachedTokens int, ttfb time.Duration, preview string, finishReason string, err error) {
 	defer stream.Close()
 	flusher, ok := w.(Flusher)
 	if !ok {
@@ -147,6 +164,7 @@ func handleSSEStream(w http.ResponseWriter, stream io.ReadCloser, format string,
 				ttfb = 1 * time.Millisecond
 			}
 			hasReceivedFirstToken = true
+			pkgGateway.FirstToken(liveID, ttfb)
 		}
 
 		if pt, ct, cat := extractStreamUsage(line); pt > 0 || ct > 0 || cat > 0 {
@@ -184,6 +202,11 @@ func handleSSEStream(w http.ResponseWriter, stream io.ReadCloser, format string,
 			if chunkText != "" {
 				totalChars += len(chunkText)
 				chunkCount++
+				// Live token counter for the Overview animation: the real
+				// completion_tokens only arrive in the final usage chunk, so
+				// without this the card can only show a static spinner while the
+				// stream is actually producing text.
+				pkgGateway.OutputBytes(liveID, len(chunkText))
 				if textBuf.Len() < 2048 {
 					textBuf.WriteString(chunkText)
 				}

@@ -4,7 +4,7 @@
 @source "../**/*.{ts,tsx,jsx,js,html}";
 
 /*
- * myAiRouter design tokens — "neutral + blue" no-slop system.
+ * MyAiRouter design tokens — "neutral + blue" no-slop system.
  *
  * Rules encoded here (do not violate in components):
  *   - ONE accent color (blue) shared by both themes; only luminance differs.
@@ -20,26 +20,28 @@
 [data-theme="light"] {
   color-scheme: light;
 
-  --bg: #fafafa;
-  --surface: #ffffff;
-  --surface-2: #f4f4f5;
-  --border: #e4e4e7;
-  --border-strong: #d4d4d8;
+  /* Soft-white light theme: pure #ffffff surfaces glare on OLED/lit rooms.
+     Base white is #fafafa; the page sits one step below so cards read. */
+  --bg: #f4f4f5;
+  --surface: #fafafa;
+  --surface-2: #ececee;
+  --border: #e2e2e6;
+  --border-strong: #d2d2d8;
   --text: #18181b;
   --text-muted: #71717a;
   --text-subtle: #a1a1aa;
 
   --accent: #2563eb;
   --accent-hover: #1d4ed8;
-  --accent-subtle: #eff6ff;
+  --accent-subtle: #e8effd;
   --on-accent: #ffffff;
 
   --success: #16a34a;
-  --success-subtle: #f0fdf4;
+  --success-subtle: #eaf7ee;
   --warning: #d97706;
-  --warning-subtle: #fffbeb;
+  --warning-subtle: #fdf6e7;
   --danger: #dc2626;
-  --danger-subtle: #fef2f2;
+  --danger-subtle: #fdeeee;
 }
 
 [data-theme="dark"] {
@@ -102,7 +104,7 @@ html {
   background: #0a0a0a;
 }
 [data-theme="light"] {
-  background: #fafafa;
+  background: #f4f4f5;
 }
 
 body {
@@ -144,6 +146,40 @@ body {
 @keyframes spin {
   from { transform: rotate(0deg); }
   to { transform: rotate(360deg); }
+}
+
+/*
+ * Live-activity animation. Deliberately minimal: a 1px sweep, a soft ping and
+ * a 2px level meter. No glow, no gradient — those would fight the flat design
+ * system. All three are suppressed under prefers-reduced-motion below.
+ */
+@keyframes live-sweep {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(300%); }
+}
+@keyframes live-ping {
+  0% { transform: scale(1); opacity: 0.65; }
+  70% { transform: scale(2.4); opacity: 0; }
+  100% { transform: scale(2.4); opacity: 0; }
+}
+@keyframes live-bar {
+  from { transform: scaleY(0.55); }
+  to { transform: scaleY(1.15); }
+}
+@keyframes live-cursor {
+  0%, 49% { opacity: 1; }
+  50%, 100% { opacity: 0.15; }
+}
+
+/* Motion is decoration here, never information: the numbers stay readable
+   when animation is disabled at the OS level. */
+@media (prefers-reduced-motion: reduce) {
+  [style*='live-sweep'],
+  [style*='live-ping'],
+  [style*='live-bar'],
+  [style*='live-cursor'] {
+    animation: none !important;
+  }
 }
 
 /* Mobile safe area support for standalone PWA mode */

@@ -1,8 +1,8 @@
-# myAiRouter - Setup & Run Tutorial
+# MyAiRouter - Setup & Run Tutorial
 
 *Inspired by 9router, built with Go for maximum performance and ultra-low footprint.*
 
-This tutorial guides you through compiling, running, and configuring your **myAiRouter** gateway and dashboard.
+This tutorial guides you through compiling, running, and configuring your **MyAiRouter** gateway and dashboard.
 
 ---
 
@@ -40,7 +40,7 @@ This tutorial guides you through compiling, running, and configuring your **myAi
 
 ## 1. Build the Application
 
-Because `myAiRouter` embeds all frontend assets directly into the Go executable, you only need to run a simple build step to generate the final standalone binary.
+Because `MyAiRouter` embeds all frontend assets directly into the Go executable, you only need to run a simple build step to generate the final standalone binary.
 
 ### Step A: Build the Frontend (Vite + React)
 Navigate to the `web` folder, install dependencies, and build the static production distribution:
@@ -53,9 +53,9 @@ cd ..
 *This creates the static HTML, JS, and CSS files inside `web/dist/`.*
 
 ### Step B: Compile the Go Binary
-Compile the Go entry code to produce a standalone executable binary named `myAiRouter`:
+Compile the Go entry code to produce a standalone executable binary named `MyAiRouter`:
 ```bash
-go build -o myAiRouter .
+go build -o MyAiRouter .
 ```
 *This packages the Go web server, the SQLite database migrations, local agent skills, and embedded Vite assets into a single binary.*
 
@@ -89,7 +89,7 @@ By default, the server runs on port `20128`. Set `PORT` to change:
 PORT=8080 myairouter
 ```
 
-On startup, `myAiRouter` will:
+On startup, `MyAiRouter` will:
 1. Initialize a SQLite database at `~/.myairouter/db.sqlite`.
 2. Apply database migrations and seed default configuration settings.
 3. Automatically sweep and terminate any duplicate process instances.

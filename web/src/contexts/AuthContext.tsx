@@ -18,13 +18,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [status, setStatus] = useState<AuthStatus | null>(null)
   const [onboardingDone, setOnboardingDone] = useState(false)
 
+  // Per-tab session verification. A valid cookie in another tab must NOT
+  // grant this tab access: opening the dashboard in a fresh tab/browser
+  // always requires the password. sessionStorage is per-tab by design, so a
+  // missing flag here means this tab never completed a login.
+  const TAB_AUTH_KEY = 'myairouter_tab_authenticated'
+
   const fetchStatus = useCallback(async () => {
-    try {
-      const data = await api.get<AuthStatus>('/api/auth/status')
-      setStatus(data)
-    } catch {
-      setStatus({ requireLogin: false, authenticated: true })
-    }
+  	try {
+  		let data = await api.get<AuthStatus>('/api/auth/status')
+  		if (data.requireLogin && data.authenticated && sessionStorage.getItem(TAB_AUTH_KEY) !== 'true') {
+  			// A session cookie from another tab does NOT grant this tab access.
+  			// Suppress locally only — calling the logout endpoint here would
+  			// also kill the session of the tab that legitimately logged in.
+  			data = { ...data, authenticated: false }
+  		}
+  		setStatus(data)
+  	} catch {
+  		// Fail-safe: if the status probe fails we cannot prove the dashboard is
+  		// open, so land on the login screen rather than exposing admin routes.
+  		setStatus({ requireLogin: true, authenticated: false })
+  	}
   }, [])
 
   useEffect(() => {
@@ -40,15 +54,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const login = useCallback(
     async (password: string) => {
       await api.post('/api/auth/login', { password })
+      sessionStorage.setItem(TAB_AUTH_KEY, 'true')
       await fetchStatus()
     },
     [fetchStatus],
   )
 
   const logout = useCallback(async () => {
-    await api.post('/api/auth/logout')
-    await fetchStatus()
-  }, [fetchStatus])
+    try {
+      await api.post('/api/auth/logout')
+    } finally {
+      sessionStorage.removeItem(TAB_AUTH_KEY)
+      setStatus((prev) => ({
+        requireLogin: prev?.requireLogin ?? true,
+        authenticated: false,
+        version: prev?.version,
+      }))
+    }
+  }, [])
 
   const changePassword = useCallback(async (currentPassword: string, newPassword: string) => {
     await api.post('/api/auth/change-password', { currentPassword, newPassword })

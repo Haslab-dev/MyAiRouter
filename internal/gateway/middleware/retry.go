@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
+	"runtime/debug"
 	"strings"
 	"sync"
 	"time"
@@ -13,6 +15,7 @@ import (
 	gwContext "myAiRouter/internal/gateway/context"
 	"myAiRouter/internal/gateway/health"
 	"myAiRouter/pkg/db"
+	pkgGateway "myAiRouter/pkg/gateway"
 )
 
 func Retry(ctx *gwContext.GatewayContext, next HandlerFunc) error {
@@ -31,8 +34,10 @@ func Retry(ctx *gwContext.GatewayContext, next HandlerFunc) error {
 		ctx.Provider = target.Provider
 		ctx.RequestBody["model"] = target.ModelName
 
+		pkgGateway.AttemptStarted(ctx.LiveID, target.Provider, target.ModelName, 1)
 		attemptStart := time.Now()
 		err := next(ctx)
+		pkgGateway.AttemptFinished(ctx.LiveID)
 		durMs := time.Since(attemptStart).Milliseconds()
 
 		status := "success"
@@ -114,6 +119,11 @@ func Retry(ctx *gwContext.GatewayContext, next HandlerFunc) error {
 		ctx.RequestBody = cloneMap(originalBody)
 		ctx.RequestBody["model"] = target.ModelName
 
+		// Attempt started: the live record belongs to the parent request, so a
+		// parallel/race combo reports its real fan-out (several in-flight
+		// upstream attempts) against the one request the client made.
+		pkgGateway.AttemptStarted(ctx.LiveID, target.Provider, target.ModelName, i+1)
+
 		// Fast per-node attempt timeout while more targets remain so slow or
 		// hanging nodes are abandoned quickly; the last target is allowed to
 		// run to completion. Both are tunable per combo via AttemptPolicy.
@@ -129,6 +139,7 @@ func Retry(ctx *gwContext.GatewayContext, next HandlerFunc) error {
 		ctx.Context = attemptCtx
 
 		err := next(ctx)
+		pkgGateway.AttemptFinished(ctx.LiveID)
 		durMs := time.Since(attemptStart).Milliseconds()
 		cancelAttempt()
 		ctx.Context = oldCtx
@@ -215,13 +226,23 @@ func Retry(ctx *gwContext.GatewayContext, next HandlerFunc) error {
 			return nil
 		}
 
-		// Auth failure (401/403): the account is the problem. Remaining
-		// accounts of the same provider may be tried, but the engine never
-		// silently hands the client to a different provider's model.
-		if class == ErrAccountFailover && (i+1 >= len(targets) || targets[i+1].Provider != target.Provider) {
-			ctx.AddStep("Routing Engine", "failed", fmt.Sprintf("Auth error HTTP %d on %s — no further %s accounts to try", ctx.ResponseCode, target.ModelName, target.Provider))
-			writeUpstreamError(ctx, ctx.ResponseCode)
-			return nil
+		// Auth failure (401/403): the account is the problem. Two outcomes:
+		//   - the combo listed a DIFFERENT model next → deliberate failover,
+		//     advance (this is the round-robin the operator configured);
+		//   - the same model remains (another account, or the same model on
+		//     another provider) → keep the original guard: never silently
+		//     hand the client to a different provider for the same model.
+		if class == ErrAccountFailover {
+			nextIsDifferentModel := i+1 < len(targets) && targets[i+1].ModelName != target.ModelName
+			nextIsOtherProvider := i+1 < len(targets) && targets[i+1].Provider != target.Provider
+			switch {
+			case nextIsDifferentModel:
+				ctx.AddStep("Routing Engine", "info", fmt.Sprintf("Auth error HTTP %d on %s — advancing to combo model %s (%s)", ctx.ResponseCode, target.ModelName, targets[i+1].ModelName, targets[i+1].Provider))
+			case nextIsOtherProvider || i+1 >= len(targets):
+				ctx.AddStep("Routing Engine", "failed", fmt.Sprintf("Auth error HTTP %d on %s — no further %s accounts to try", ctx.ResponseCode, target.ModelName, target.Provider))
+				writeUpstreamError(ctx, ctx.ResponseCode)
+				return nil
+			}
 		}
 
 		// Retry budget: stop after the configured number of fallback hops.
@@ -255,12 +276,19 @@ func resolveAttemptPolicy(ctx *gwContext.GatewayContext) *db.AttemptPolicy {
 }
 
 // writeUpstreamError forwards the stored upstream error response to the
-// client as-is, preserving the provider's own error message.
+// client as-is, preserving the provider's own error message. If a previous
+// middleware (Guardrail) or attempt already wrote the socket, it only records
+// the status instead of appending a second JSON body (the concatenated
+// '{"error":...}{"error":...}' the client reported as Bad Request).
 func writeUpstreamError(ctx *gwContext.GatewayContext, status int) {
 	if status < 400 {
 		status = http.StatusBadGateway
 	}
 	ctx.ResponseCode = status
+	if ctx.ResponseWritten {
+		return
+	}
+	ctx.ResponseWritten = true
 	if len(ctx.ResponseBody) > 0 {
 		ctx.ResponseWriter.Header().Set("Content-Type", "application/json")
 		ctx.ResponseWriter.WriteHeader(status)
@@ -362,13 +390,30 @@ type targetResult struct {
 // runChildWithRecorder executes one attempt of a concurrent strategy against a
 // buffered writer and returns its captured result. The child never touches the
 // real client socket; only a winning result is replayed by the caller.
+func guardProviderPanic(stepName string) {
+	if r := recover(); r != nil {
+		fmt.Printf("myairouter: recovered panic in %s: %v\n%s\n", stepName, r, debug.Stack())
+	}
+}
+
 func runChildWithRecorder(ctx *gwContext.GatewayContext, doneCtx context.Context, target ConnectionModel, body map[string]interface{}, next HandlerFunc) (targetResult, bool) {
+	// Convert a panic inside any provider/middleware goroutine into a failed
+	// attempt instead of crashing the whole gateway process. Before this, one
+	// nil dereference in providers.Execute killed the server outright, taking
+	// every concurrent request with it — which is what made myairouter look like
+	// it stopped at random while being tested from Hermes/OpenCode.
+	defer guardProviderPanic("provider attempt")
 	rec := newResponseRecorder()
 	subCtx := ctx.CloneForTarget(doneCtx, &target.Connection, target.ModelName, target.Provider, body)
 	subCtx.ResponseWriter = rec
+	if os.Getenv("MYAIROUTER_DEBUG_PICKS") != "" {
+		fmt.Printf("myairouter: child map ptr parent=%p child=%p model=%q\n", ctx.Metadata, subCtx.Metadata, target.ModelName)
+	}
 
+	pkgGateway.AttemptStarted(subCtx.LiveID, target.Provider, target.ModelName, 0)
 	start := time.Now()
 	err := next(subCtx)
+	pkgGateway.AttemptFinished(subCtx.LiveID)
 	durMs := time.Since(start).Milliseconds()
 
 	success := err == nil && subCtx.ResponseCode < 400
@@ -397,6 +442,7 @@ func executeRaceStrategy(ctx *gwContext.GatewayContext, targets []ConnectionMode
 	ctx.AddStep("Race (Hedged)", "info", fmt.Sprintf("Launching hedged race across %d models with 400ms delay", len(targets)))
 	originalBody := cloneMap(ctx.RequestBody)
 	resultChan := make(chan targetResult, len(targets))
+	failChan := make(chan targetResult, len(targets))
 	doneCtx, cancel := context.WithCancel(ctx.Context)
 	defer cancel()
 
@@ -413,6 +459,11 @@ func executeRaceStrategy(ctx *gwContext.GatewayContext, targets []ConnectionMode
 			select {
 			case resultChan <- res:
 				cancel()
+			default:
+			}
+		} else {
+			select {
+			case failChan <- res:
 			default:
 			}
 		}
@@ -445,8 +496,30 @@ func executeRaceStrategy(ctx *gwContext.GatewayContext, targets []ConnectionMode
 		applyWin(res, fmt.Sprintf("Hedged model %s won race", res.target.ModelName))
 		return nil
 	case <-time.After(30 * time.Second):
-		ctx.WriteError(http.StatusGatewayTimeout, "Race hedged requests timed out")
-		return nil
+		select {
+		case res := <-resultChan:
+			applyWin(res, fmt.Sprintf("Hedged model %s won race (late)", res.target.ModelName))
+			return nil
+		default:
+		}
+		// All hedged attempts failed (e.g. every model returned 4xx/5xx):
+		// surface the last upstream error instead of a generic timeout so
+		// the client sees the real failure and the trace shows each model.
+		select {
+		case fail := <-failChan:
+			for {
+				select {
+				case f := <-failChan:
+					fail = f
+				default:
+					applyFailure(ctx, fail, "Race (Hedged)")
+					return nil
+				}
+			}
+		default:
+			ctx.WriteError(http.StatusGatewayTimeout, "Race hedged requests timed out")
+			return nil
+		}
 	}
 }
 
@@ -454,17 +527,38 @@ func executeParallelStrategy(ctx *gwContext.GatewayContext, targets []Connection
 	ctx.AddStep("Parallel Execution", "info", fmt.Sprintf("Dispatching parallel requests to %d models", len(targets)))
 	originalBody := cloneMap(ctx.RequestBody)
 	resultChan := make(chan targetResult, len(targets))
+	failChan := make(chan targetResult, len(targets))
 	doneCtx, cancel := context.WithCancel(ctx.Context)
 	defer cancel()
 
 	var attemptsMu sync.Mutex
+	var failedCount int
+	// allFailed is closed as soon as the last target has reported a failure, so
+	// the caller can return the real upstream error immediately instead of
+	// sleeping until a timer fires. `remaining` is only touched inside this
+	// loop (no goroutines started yet), so it needs no lock.
+	var once sync.Once
+	allFailed := make(chan struct{})
+	remaining := len(targets)
 
 	for _, t := range targets {
 		target := t
 		go func() {
 			res, ok := runChildWithRecorder(ctx, doneCtx, target, cloneMap(originalBody), next)
+			if os.Getenv("MYAIROUTER_DEBUG_PICKS") != "" {
+				bl := 0
+				if res.rec != nil {
+					bl = res.rec.buf.Len()
+				}
+				fmt.Printf("myairouter: parallel child model=%q ok=%v code=%d bodyLen=%d attempts=%d respBodyLen=%d\n",
+					res.target.ModelName, ok, res.responseCode, bl, len(res.attempts), len(res.responseBody))
+			}
 			attemptsMu.Lock()
 			ctx.TargetAttempts = append(ctx.TargetAttempts, res.attempts...)
+			if !ok {
+				failedCount++
+			}
+			allBad := failedCount >= remaining
 			attemptsMu.Unlock()
 			if ok {
 				select {
@@ -472,17 +566,61 @@ func executeParallelStrategy(ctx *gwContext.GatewayContext, targets []Connection
 					cancel()
 				default:
 				}
+			} else {
+				select {
+				case failChan <- res:
+				default:
+				}
+			}
+			if allBad {
+				once.Do(func() { close(allFailed) })
 			}
 		}()
 	}
+
+	// Every parallel model failed: the longest a combo may hold the client is
+	// the combo's own final timeout (attemptPolicy.finalTimeoutMs, 100s for
+	// Collabs) — not a hardcoded ceiling that stalls the client for 30s after
+	// the upstreams already gave up.
+	policy := resolveAttemptPolicy(ctx)
+	deadline := time.NewTimer(policy.FinalTimeout())
+	defer deadline.Stop()
 
 	select {
 	case res := <-resultChan:
 		applyWinner(ctx, res, fmt.Sprintf("Fastest model %s returned response", res.target.ModelName), "Parallel Execution")
 		return nil
-	case <-time.After(30 * time.Second):
-		ctx.WriteError(http.StatusGatewayTimeout, "Parallel request execution timed out")
+	case <-allFailed:
+		// Every target failed: replay the last upstream error now. Previously
+		// this was only checked after the timer, so a dead combo held the
+		// client for the full timeout before answering.
+		applyLastFailure(ctx, failChan, "Parallel Execution")
 		return nil
+	case <-deadline.C:
+		select {
+		case res := <-resultChan:
+			applyWinner(ctx, res, fmt.Sprintf("Fastest model %s returned response (late)", res.target.ModelName), "Parallel Execution")
+			return nil
+		default:
+		}
+		// Every parallel model failed: return the last upstream error
+		// instead of a misleading timeout; the client can then retry or
+		// inspect per-model attempts in the trace.
+		select {
+		case fail := <-failChan:
+			for {
+				select {
+				case f := <-failChan:
+					fail = f
+				default:
+					applyFailure(ctx, fail, "Parallel Execution")
+					return nil
+				}
+			}
+		default:
+			ctx.WriteError(http.StatusGatewayTimeout, "Parallel request execution timed out")
+			return nil
+		}
 	}
 }
 
@@ -527,9 +665,59 @@ func executeEnsembleStrategy(ctx *gwContext.GatewayContext, targets []Connection
 	return nil
 }
 
+// applyLastFailure drains the failure channel and replays the most recent
+// upstream error to the client, so a combo whose models all failed answers with
+// the real error instead of a synthetic timeout.
+func applyLastFailure(ctx *gwContext.GatewayContext, failChan <-chan targetResult, stepName string) {
+	select {
+	case fail := <-failChan:
+		for {
+			select {
+			case f := <-failChan:
+				fail = f
+			default:
+				applyFailure(ctx, fail, stepName)
+				return
+			}
+		}
+	default:
+		ctx.WriteError(http.StatusServiceUnavailable, "All concurrent target models failed")
+	}
+}
+
+// applyFailure promotes a failed child attempt when every concurrent model
+// failed: connection/model/response propagate so usage + traces attribute
+// correctly, and the real upstream error is replayed to the client.
+func applyFailure(ctx *gwContext.GatewayContext, res targetResult, stepName string) {
+	ctx.Connection = &res.target.Connection
+	ctx.Model = res.target.ModelName
+	ctx.Provider = res.target.Provider
+	ctx.ResponseCode = res.responseCode
+	if ctx.ResponseCode < 400 {
+		ctx.ResponseCode = http.StatusBadGateway
+	}
+	ctx.ResponseBody = res.responseBody
+	ctx.PromptTokens = res.promptTokens
+	ctx.CompletionTokens = res.completionTokens
+	ctx.CachedTokens = res.cachedTokens
+	ctx.TTFB = res.ttfb
+	ctx.Steps = append(ctx.Steps, res.steps...)
+	ctx.FallbackCount += len(ctx.TargetAttempts)
+	writeUpstreamError(ctx, ctx.ResponseCode)
+	ctx.AddStep(stepName, "failed", fmt.Sprintf("All %s models failed; last error from %s (HTTP %d)", stepName, res.target.ModelName, ctx.ResponseCode))
+}
+
 // applyWinner promotes a winning child attempt: metrics, traces and the
 // captured response are replayed to the real client socket.
 func applyWinner(ctx *gwContext.GatewayContext, res targetResult, msg string, stepName string) {
+	if os.Getenv("MYAIROUTER_DEBUG_PICKS") != "" {
+		bodyLen := 0
+		if res.rec != nil {
+			bodyLen = res.rec.buf.Len()
+		}
+		fmt.Printf("myairouter: winner pick provider=%q model=%q code=%d bodyLen=%d attempts=%d responseBodyLen=%d stream=%v\n",
+			res.target.Provider, res.target.ModelName, res.responseCode, bodyLen, len(res.attempts), len(res.responseBody), ctx.IsStream)
+	}
 	ctx.Connection = &res.target.Connection
 	ctx.Model = res.target.ModelName
 	ctx.Provider = res.target.Provider

@@ -1,9 +1,9 @@
 ---
-name: myAiRouter Token Saving Instructions
+name: MyAiRouter Token Saving Instructions
 description: Settings and instructions for Bolt (RTK), Headroom context pre-compression, Caveman terse response directives, and Ponytail lazy developer configurations.
 ---
 
-# myAiRouter Token Saving
+# MyAiRouter Token Saving
 
 Includes several filters and injectors to minimize token volume and cost.
 

@@ -1,9 +1,9 @@
 ---
-name: myAiRouter Chat Capability
+name: MyAiRouter Chat Capability
 description: Multi-turn conversations and code completions. Supports standard OpenAI chat completions parameters.
 ---
 
-# myAiRouter Chat Completions
+# MyAiRouter Chat Completions
 
 Exposes an OpenAI-compatible endpoint at `/v1/chat/completions`.
 

@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"time"
 
 	"myAiRouter/pkg/db"
 )
@@ -75,7 +76,11 @@ func (p *GeminiProvider) Execute(ctx context.Context, conn *db.ProviderConnectio
 		}
 	}
 
-	resp, err := SharedHTTPClient.Do(req)
+	ApplyAntiDetect(req, conn)
+
+	start := time.Now()
+	resp, err := ClientFor(conn).Do(req)
+	latencyMs := float64(time.Since(start).Microseconds()) / 1000.0
 	if err != nil {
 		return &ExecutionResult{Err: err}
 	}
@@ -85,6 +90,7 @@ func (p *GeminiProvider) Execute(ctx context.Context, conn *db.ProviderConnectio
 			ResponseCode: resp.StatusCode,
 			Stream:       resp.Body,
 			IsStream:     true,
+			LatencyMs:    latencyMs,
 		}
 	}
 
@@ -94,6 +100,7 @@ func (p *GeminiProvider) Execute(ctx context.Context, conn *db.ProviderConnectio
 		ResponseCode: resp.StatusCode,
 		Body:         respBody,
 		IsStream:     false,
+		LatencyMs:    latencyMs,
 		Err:          err,
 	}
 }

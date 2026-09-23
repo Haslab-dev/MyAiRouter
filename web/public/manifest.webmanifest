@@ -1,6 +1,6 @@
 {
-  "name": "myAiRouter",
-  "short_name": "myAiRouter",
+  "name": "MyAiRouter",
+  "short_name": "MyAiRouter",
   "description": "Smart, self-hosted AI gateway & router",
   "start_url": "/",
   "scope": "/",

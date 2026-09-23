@@ -6,11 +6,20 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"syscall"
 	"time"
 )
+
+func pidFilePath() string {
+	exe, err := os.Executable()
+	if err != nil {
+		return "myairouter.pid"
+	}
+	return filepath.Join(filepath.Dir(exe), "myairouter.pid")
+}
 
 func findRunningPIDs() []int {
 	myPID := os.Getpid()
@@ -118,7 +127,11 @@ func stopProcess() {
 func startBackground() {
 	stopExistingDuplicates()
 
-	cmd := exec.Command(os.Args[0])
+	exe := os.Args[0]
+	if abs, err := filepath.Abs(exe); err == nil {
+		exe = abs
+	}
+	cmd := exec.Command(exe, "start", "-f")
 	cmd.Stdout = nil
 	cmd.Stderr = nil
 	cmd.Env = os.Environ()

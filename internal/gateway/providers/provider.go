@@ -22,6 +22,19 @@ var SharedTransport = &http.Transport{
 	}).DialContext,
 }
 
+// ClientFor returns an outbound client honoring the proxy route attached to
+// the connection (if any), else the shared direct client.
+func ClientFor(conn *db.ProviderConnection) *http.Client {
+	if conn == nil {
+		return SharedHTTPClient
+	}
+	route, err := db.ProxyRouteForConnection(conn)
+	if err != nil || route == nil || !route.IsEnabled || route.Host == "" || route.Port == 0 {
+		return SharedHTTPClient
+	}
+	return proxyManager.clientFor(route)
+}
+
 var SharedHTTPClient = &http.Client{
 	Transport: SharedTransport,
 	Timeout:   120 * time.Second,
@@ -32,6 +45,7 @@ type ExecutionResult struct {
 	Body         []byte
 	Stream       io.ReadCloser
 	IsStream     bool
+	LatencyMs    float64
 	Err          error
 }
 

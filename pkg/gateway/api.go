@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -61,12 +62,14 @@ func getDefaultHash() string {
 }
 
 func issueSession() string {
-	b := make([]byte, 16)
-	for i := range b {
-		b[i] = byte(i + 1)
-	}
-	sum := sha256.Sum256(append(b, []byte(time.Now().String())...))
+	token := make([]byte, 32)
+	if _, err := rand.Read(token); err != nil {
+		// crypto/rand must not silently fail for session tokens; fall back to
+		// a time-bound hash so the login still works while staying unique.
+		sum := sha256.Sum256([]byte(time.Now().String()))
 	return hex.EncodeToString(sum[:])
+}
+	return hex.EncodeToString(token)
 }
 
 func ValidateSessionCookie(cookieVal string) bool {
@@ -92,54 +95,92 @@ func validateSession(r *http.Request) bool {
 	return ValidateSessionCookie(cookie.Value)
 }
 
+// requireAdminSession gates every admin API route. It is deny-by-default once
+// dashboard login is enabled; only the auth endpoints below are always public,
+// matching 9router's public allow-list model. When requireLogin is off the
+// dashboard is intentionally open, so validateSession already returns true.
+func requireAdminSession(next http.Handler) http.Handler {
+	publicPrefixes := []string{"/api/auth/status", "/api/auth/login", "/api/auth/logout", "/api/health"}
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		for _, p := range publicPrefixes {
+			if r.URL.Path == p || strings.HasPrefix(r.URL.Path, p+"/") {
+				next.ServeHTTP(w, r)
+				return
+			}
+		}
+		if !validateSession(r) {
+			WriteErrorResponse(w, http.StatusUnauthorized, "Unauthorized. Please sign in to access the dashboard.")
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
 func RegisterAdminRoutes(mux *http.ServeMux) {
-	mux.HandleFunc("/api/settings", handleSettings)
-	mux.HandleFunc("/api/providers", handleProviders)
-	mux.HandleFunc("/api/providers/", handleProviderDetail) // Matches /api/providers/<id>
-	mux.HandleFunc("/api/commandcode/token", handleCommandCodeToken)
-	mux.HandleFunc("/api/provider-nodes", handleProviderNodes)
-	mux.HandleFunc("/api/provider-nodes/", handleProviderNodeDetail) // Matches /api/provider-nodes/<id>
-	mux.HandleFunc("/api/oauth/kilocode/initiate", handleKilocodeInitiate)
-	mux.HandleFunc("/api/oauth/kilocode/poll", handleKilocodePoll)
-	mux.HandleFunc("/api/keys", handleKeys)
-	mux.HandleFunc("/api/apikeys", handleKeys)
-	mux.HandleFunc("/api/combos", handleCombos)
-	mux.HandleFunc("/api/usage/stats", handleUsageStats)
-	mux.HandleFunc("/api/usage/logs", handleUsageLogs)
-	mux.HandleFunc("/api/usage/charts", handleUsageCharts)
-	mux.HandleFunc("/api/usage/chart", handleUsageCharts)
-	mux.HandleFunc("/api/usage/models", handleUsageModels)
-	mux.HandleFunc("/api/usage/provider-summary", handleProviderUsageSummary)
-	mux.HandleFunc("/api/usage/export", handleUsageExport)
-	mux.HandleFunc("/api/usage/import", handleUsageImport)
-	mux.HandleFunc("/api/usage/inject", handleUsageInject)
-	mux.HandleFunc("/api/models", HandleListModels)
-	mux.HandleFunc("/api/models/disabled", handleModelsDisabled)
-	mux.HandleFunc("/api/models/enabled", handleModelsEnabled)
-	mux.HandleFunc("/api/models/custom", handleModelsCustom)
-	mux.HandleFunc("/api/models/policies", handleModelPolicies)
-	mux.HandleFunc("/api/models/thinking", handleModelsThinking)
-	mux.HandleFunc("/api/models/pricing", handleModelPricing)
-	mux.HandleFunc("/api/logs", handleServerLogs)
-	mux.HandleFunc("/api/health", handleHealth)
-	mux.HandleFunc("/api/connections/health", handleConnectionsHealth)
-	mux.HandleFunc("/api/traces", handleTraces)
-	mux.HandleFunc("/api/traces/", handleTraceDetail)
+	admin := http.NewServeMux()
+	mux.Handle("/api/", requireAdminSession(admin))
+	admin.HandleFunc("/api/settings", handleSettings)
+	admin.HandleFunc("/api/providers", handleProviders)
+	admin.HandleFunc("/api/providers/", handleProviderDetail) // Matches /api/providers/<id>
+	admin.HandleFunc("/api/commandcode/token", handleCommandCodeToken)
+	admin.HandleFunc("/api/provider-nodes", handleProviderNodes)
+	admin.HandleFunc("/api/provider-nodes/", handleProviderNodeDetail) // Matches /api/provider-nodes/<id>
+	admin.HandleFunc("/api/oauth/kilocode/initiate", handleKilocodeInitiate)
+	admin.HandleFunc("/api/oauth/kilocode/poll", handleKilocodePoll)
+	admin.HandleFunc("/api/keys", handleKeys)
+	admin.HandleFunc("/api/apikeys", handleKeys)
+	admin.HandleFunc("/api/combos", handleCombos)
+	admin.HandleFunc("/api/usage/stats", handleUsageStats)
+	admin.HandleFunc("/api/usage/logs", handleUsageLogs)
+	admin.HandleFunc("/api/usage/charts", handleUsageCharts)
+	admin.HandleFunc("/api/usage/chart", handleUsageCharts)
+	admin.HandleFunc("/api/usage/models", handleUsageModels)
+	admin.HandleFunc("/api/usage/provider-summary", handleProviderUsageSummary)
+	admin.HandleFunc("/api/usage/export", handleUsageExport)
+	admin.HandleFunc("/api/usage/import", handleUsageImport)
+	admin.HandleFunc("/api/usage/inject", handleUsageInject)
+	admin.HandleFunc("/api/models", HandleListModels)
+	admin.HandleFunc("/api/models/disabled", handleModelsDisabled)
+	admin.HandleFunc("/api/models/enabled", handleModelsEnabled)
+	admin.HandleFunc("/api/models/custom", handleModelsCustom)
+	admin.HandleFunc("/api/models/policies", handleModelPolicies)
+	admin.HandleFunc("/api/models/thinking", handleModelsThinking)
+	admin.HandleFunc("/api/models/pricing", handleModelPricing)
+	admin.HandleFunc("/api/logs", handleServerLogs)
+	admin.HandleFunc("/api/health", handleHealth)
+	// Live activity feed for the Overview "running" animation (in-memory,
+	// no DB access, safe to poll at ~1s).
+	admin.HandleFunc("/api/live", handleLiveActivity)
+	admin.HandleFunc("/api/connections/health", handleConnectionsHealth)
+	admin.HandleFunc("/api/traces", handleTraces)
+	admin.HandleFunc("/api/traces/", handleTraceDetail)
 	// Prompt Optimizer
-	mux.HandleFunc("/api/optimizer/engines", handleOptimizerEngines)
-	mux.HandleFunc("/api/optimizer/preview", handleOptimizerPreview)
-	mux.HandleFunc("/api/optimizer/benchmark", handleOptimizerBenchmark)
+	admin.HandleFunc("/api/optimizer/engines", handleOptimizerEngines)
+	admin.HandleFunc("/api/optimizer/preview", handleOptimizerPreview)
+	admin.HandleFunc("/api/optimizer/benchmark", handleOptimizerBenchmark)
 	// Auth
-	mux.HandleFunc("/api/auth/status", handleAuthStatus)
-	mux.HandleFunc("/api/auth/login", handleAuthLogin)
-	mux.HandleFunc("/api/auth/logout", handleAuthLogout)
-	mux.HandleFunc("/api/auth/change-password", handleAuthChangePassword)
+	admin.HandleFunc("/api/auth/status", handleAuthStatus)
+	admin.HandleFunc("/api/auth/login", handleAuthLogin)
+	admin.HandleFunc("/api/auth/logout", handleAuthLogout)
+	admin.HandleFunc("/api/auth/change-password", handleAuthChangePassword)
+	// Proxy routes (outbound HTTP/SOCKS5 proxies for provider connections)
+	admin.HandleFunc("/api/proxies", handleProxyRoutes)
+	admin.HandleFunc("/api/proxies/", handleProxyRouteDetail)
+	admin.HandleFunc("/api/proxies/test/", handleProxyRouteTest)
 	// Chat Sessions (JSONL streaming append storage)
-	mux.HandleFunc("/api/system/metrics", HandleSystemMetrics)
-	mux.HandleFunc("/api/chat/sessions", handleChatSessions)
-	mux.HandleFunc("/api/chat/sessions/", handleChatSessionDetail)
+	admin.HandleFunc("/api/system/metrics", HandleSystemMetrics)
+	admin.HandleFunc("/api/chat/sessions", handleChatSessions)
+	admin.HandleFunc("/api/chat/sessions/", handleChatSessionDetail)
 	// Image Generation
-	mux.HandleFunc("/api/images/generations", HandleImagesGenerations)
+	admin.HandleFunc("/api/images/generations", HandleImagesGenerations)
+	// OAuth device-flow providers (xAI, Kimi, Copilot, Qoder, CodeBuddy, Cline…)
+	admin.HandleFunc("/api/oauth/providers", handleOAuthProviders)
+	admin.HandleFunc("/api/oauth/", handleOAuthRouter)
+	// Config portability (providers/combos/models/proxies/settings)
+	admin.HandleFunc("/api/config/export", HandleConfigExport)
+	admin.HandleFunc("/api/config/import", HandleConfigImport)
+	// Manual on-demand DB backup (scheduler also runs daily)
+	admin.HandleFunc("/api/backup", HandleBackupNow)
 }
 
 func handleHealth(w http.ResponseWriter, r *http.Request) {
@@ -221,6 +262,11 @@ func handleProviders(w http.ResponseWriter, r *http.Request) {
 			WriteErrorResponse(w, http.StatusInternalServerError, err.Error())
 			return
 		}
+		// Mask secrets before they leave the dashboard API; the full values
+		// stay in the DB and are only used server-side when routing requests.
+		for i := range conns {
+			maskNodeData(conns[i].Data)
+		}
 		_ = json.NewEncoder(w).Encode(conns)
 		return
 	}
@@ -245,6 +291,28 @@ func handleProviders(w http.ResponseWriter, r *http.Request) {
 }
 
 var commandCodeKeyRe = regexp.MustCompile(`user_[A-Za-z0-9]+`)
+
+// maskNodeData replaces secret fields in a provider connection's data map
+// (API keys, tokens, client secrets) with a masked placeholder for dashboard
+// display. The map is mutated in place; the DB row is left untouched.
+func maskNodeData(data map[string]interface{}) {
+	if data == nil {
+		return
+	}
+	for _, k := range []string{"apiKey", "token", "accessToken", "refreshToken", "clientSecret"} {
+		if v, ok := data[k].(string); ok && v != "" {
+			data[k] = maskSecret(v)
+		}
+	}
+}
+
+// maskSecret keeps the first/last 2 chars for identification, masks the rest.
+func maskSecret(s string) string {
+	if len(s) <= 8 {
+		return "***"
+	}
+	return s[:2] + "***" + s[len(s)-2:]
+}
 
 // handleCommandCodeToken reads the local Command Code CLI session
 // (~/.commandcode/auth.json) and returns its user_... API key so the UI
@@ -373,10 +441,14 @@ func handleTestProvider(w http.ResponseWriter, r *http.Request, id string) {
 
 	valid := false
 	var errMsg string
+	latencyMs := 0.0
 
 	if res.Err != nil {
 		errMsg = res.Err.Error()
 	} else {
+		if res.LatencyMs > 0 {
+			latencyMs = res.LatencyMs
+		}
 		// HTTP 401/403/404 are invalid credentials/endpoints
 		valid = res.ResponseCode != http.StatusUnauthorized && res.ResponseCode != http.StatusForbidden && res.ResponseCode != http.StatusNotFound
 		if !valid {
@@ -400,7 +472,9 @@ func handleTestProvider(w http.ResponseWriter, r *http.Request, id string) {
 
 	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"valid": valid,
+		"latencyMs":  latencyMs,
 		"error": errMsg,
+		"testStatus": statusStr,
 	})
 }
 
@@ -432,6 +506,26 @@ func handleKeys(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		_ = json.NewEncoder(w).Encode(key)
+		return
+	}
+
+	if r.Method == http.MethodPatch {
+		// Update an API key's scope (model allowlist + daily token cap).
+		var payload struct {
+			ID              string   `json:"id"`
+			AllowedModels   []string `json:"allowedModels"`
+			DailyTokenLimit int64    `json:"dailyTokenLimit"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil || payload.ID == "" {
+			WriteErrorResponse(w, http.StatusBadRequest, "Invalid JSON or missing id")
+			return
+		}
+		scope := db.ApiKeyScope{AllowedModels: payload.AllowedModels, DailyTokenLimit: payload.DailyTokenLimit}
+		if err := db.UpdateApiKeyScope(payload.ID, scope); err != nil {
+			WriteErrorResponse(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"success": true})
 		return
 	}
 
@@ -568,17 +662,18 @@ func handleUsageLogs(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func handleUsageCharts(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-
-	provider := r.URL.Query().Get("provider")
-	period := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("period")))
-
+// ChartPoint is one bucket in the usage time-series chart.
 	type ChartPoint struct {
 		Label  string  `json:"label"`
 		Tokens int     `json:"tokens"`
 		Cost   float64 `json:"cost"`
 	}
+
+func handleUsageCharts(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	provider := r.URL.Query().Get("provider")
+	period := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("period")))
 
 	chartPeriod := period
 	if chartPeriod == "" {
@@ -587,139 +682,47 @@ func handleUsageCharts(w http.ResponseWriter, r *http.Request) {
 	whereClause, args := db.BuildUsageWhere(provider, chartPeriod,
 		r.URL.Query().Get("startDate"), r.URL.Query().Get("endDate"))
 
-	if period == "all" {
-		rows, err := db.DB.Query(`
-			SELECT 
-				STRFTIME('%Y-%m-%d', timestamp) as date_part,
-				SUM(promptTokens + completionTokens) as total_tokens,
-				SUM(cost) as total_cost
-			FROM usageHistory
-			`+whereClause+`
-			GROUP BY date_part
-			ORDER BY date_part ASC
-		`, args...)
-		var points []ChartPoint
-		if err == nil {
-			defer rows.Close()
-			for rows.Next() {
-				var dateStr string
-				var tokens int
-				var cost float64
-				if err := rows.Scan(&dateStr, &tokens, &cost); err == nil {
-					label := dateStr
-					if t, err := time.Parse("2006-01-02", dateStr); err == nil {
-						label = t.Format("Jan 02")
-					}
-					points = append(points, ChartPoint{
-						Label:  label,
-						Tokens: tokens,
-						Cost:   math.Round(cost*10000) / 10000,
-					})
-				}
-			}
+	// Timestamps are stored as RFC3339 ("2026-09-20T15:21:26Z"), which SQLite's
+	// date functions cannot parse without datetime() normalization. Buckets are
+	// computed in WIB (+7) so chart labels line up with the operator's clock.
+	const tz = "+7 hours"
+
+	switch period {
+	case "week", "7d", "month", "30d", "1m":
+		days := 7
+		layout := "Jan 02"
+		if period == "month" || period == "30d" || period == "1m" {
+			days = 30
+			layout = "01/02"
 		}
-		if points == nil {
-			points = []ChartPoint{}
+		points, labelMap := usageDailyBuckets(days, layout, tz)
+		usageFillDaily(whereClause, args, tz, points, labelMap)
+		_ = json.NewEncoder(w).Encode(points)
+		return
+	case "all":
+		// Span the stored history: day count from the first WIB calendar day
+		// with usage up to today inclusive, capped at 90 buckets so long-lived
+		// installs stay readable.
+		var days int
+		_ = db.DB.QueryRow("SELECT CAST(julianday('now','+7 hours','start of day') - julianday(datetime(MIN(timestamp)),'+7 hours','start of day') AS INTEGER) + 1 FROM usageHistory" + whereClause, args...).Scan(&days)
+		if days < 1 || days > 90 {
+			days = 90
 		}
+		points, labelMap := usageDailyBuckets(days, "Jan 02", tz)
+		usageFillDaily(whereClause, args, tz, points, labelMap)
 		_ = json.NewEncoder(w).Encode(points)
 		return
 	}
 
-	if period == "week" || period == "7d" {
-		now := time.Now().UTC()
-		points := make([]ChartPoint, 7)
-		labelMap := make(map[string]int)
-		for i := 0; i < 7; i++ {
-			d := now.AddDate(0, 0, -(6 - i))
-			dateStr := d.Format("2006-01-02")
-			points[i] = ChartPoint{
-				Label:  d.Format("Jan 02"),
-				Tokens: 0,
-				Cost:   0,
-			}
-			labelMap[dateStr] = i
-		}
-
-		rows, err := db.DB.Query(`
-			SELECT 
-				STRFTIME('%Y-%m-%d', timestamp) as date_part,
-				SUM(promptTokens + completionTokens) as total_tokens,
-				SUM(cost) as total_cost
-			FROM usageHistory
-			`+whereClause+`
-			GROUP BY date_part
-		`, args...)
-		if err == nil {
-			defer rows.Close()
-			for rows.Next() {
-				var dateStr string
-				var tokens int
-				var cost float64
-				if err := rows.Scan(&dateStr, &tokens, &cost); err == nil {
-					if idx, ok := labelMap[dateStr]; ok {
-						points[idx].Tokens = tokens
-						points[idx].Cost = math.Round(cost*10000) / 10000
-					}
-				}
-			}
-		}
-		_ = json.NewEncoder(w).Encode(points)
-		return
-	} else if period == "month" || period == "30d" || period == "1m" {
-		now := time.Now().UTC()
-		points := make([]ChartPoint, 30)
-		labelMap := make(map[string]int)
-		for i := 0; i < 30; i++ {
-			d := now.AddDate(0, 0, -(29 - i))
-			dateStr := d.Format("2006-01-02")
-			points[i] = ChartPoint{
-				Label:  d.Format("01/02"),
-				Tokens: 0,
-				Cost:   0,
-			}
-			labelMap[dateStr] = i
-		}
-
-		rows, err := db.DB.Query(`
-			SELECT 
-				STRFTIME('%Y-%m-%d', timestamp) as date_part,
-				SUM(promptTokens + completionTokens) as total_tokens,
-				SUM(cost) as total_cost
-			FROM usageHistory
-			`+whereClause+`
-			GROUP BY date_part
-		`, args...)
-		if err == nil {
-			defer rows.Close()
-			for rows.Next() {
-				var dateStr string
-				var tokens int
-				var cost float64
-				if err := rows.Scan(&dateStr, &tokens, &cost); err == nil {
-					if idx, ok := labelMap[dateStr]; ok {
-						points[idx].Tokens = tokens
-						points[idx].Cost = math.Round(cost*10000) / 10000
-					}
-				}
-			}
-		}
-		_ = json.NewEncoder(w).Encode(points)
-		return
-	}
-
-	// Default: 24 hours (day)
+	// Default: hourly buckets for the last 24 hours (Today / day / 24h).
 	points := make([]ChartPoint, 24)
 	for i := 0; i < 24; i++ {
-		points[i] = ChartPoint{
-			Label:  fmt.Sprintf("%02d:00", i),
-			Tokens: 0,
-			Cost:   0,
-		}
+		points[i] = ChartPoint{Label: fmt.Sprintf("%02d:00", i)}
 	}
 
 	rows, err := db.DB.Query(`
 		SELECT 
-			STRFTIME('%H', timestamp) as hour_part,
+			STRFTIME('%H', datetime(timestamp), '`+tz+`') as hour_part,
 			SUM(promptTokens + completionTokens) as total_tokens,
 			SUM(cost) as total_cost
 		FROM usageHistory
@@ -733,11 +736,7 @@ func handleUsageCharts(w http.ResponseWriter, r *http.Request) {
 			var tokens int
 			var cost float64
 			if err := rows.Scan(&hourStr, &tokens, &cost); err == nil {
-				var h int
-				if parsed, err := strconv.Atoi(hourStr); err == nil {
-					h = parsed
-				}
-				if h >= 0 && h < 24 {
+				if h, err := strconv.Atoi(hourStr); err == nil && h >= 0 && h < 24 {
 					points[h].Tokens = tokens
 					points[h].Cost = math.Round(cost*10000) / 10000
 				}
@@ -748,6 +747,47 @@ func handleUsageCharts(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(points)
 }
 
+// usageDailyBuckets builds an N-day window ending today (WIB), keyed by
+// YYYY-MM-DD so row aggregation can be mapped back onto the labels.
+func usageDailyBuckets(days int, labelLayout, tz string) ([]ChartPoint, map[string]int) {
+	points := make([]ChartPoint, days)
+	labelMap := make(map[string]int, days)
+	for i := 0; i < days; i++ {
+		d := time.Now().UTC().Add(time.Duration(7) * time.Hour).AddDate(0, 0, -(days - 1 - i))
+		points[i] = ChartPoint{Label: d.Format(labelLayout)}
+		labelMap[d.Format("2006-01-02")] = i
+	}
+	return points, labelMap
+}
+
+// usageFillDaily aggregates usage rows into the day buckets built above.
+func usageFillDaily(whereClause string, args []interface{}, tz string, points []ChartPoint, labelMap map[string]int) {
+	rows, err := db.DB.Query(`
+		SELECT
+			STRFTIME('%Y-%m-%d', datetime(timestamp), '`+tz+`') as date_part,
+			SUM(promptTokens + completionTokens) as total_tokens,
+			SUM(cost) as total_cost
+		FROM usageHistory
+		`+whereClause+`
+		GROUP BY date_part
+	`, args...)
+	if err != nil {
+		return
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var dateStr string
+		var tokens int
+		var cost float64
+		if err := rows.Scan(&dateStr, &tokens, &cost); err == nil {
+			if idx, ok := labelMap[dateStr]; ok {
+				points[idx].Tokens = tokens
+				points[idx].Cost = math.Round(cost*10000) / 10000
+			}
+		}
+	}
+}
+
 func handleProviderNodes(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
@@ -756,6 +796,11 @@ func handleProviderNodes(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			WriteErrorResponse(w, http.StatusInternalServerError, err.Error())
 			return
+		}
+		// Mask secrets before they leave the dashboard API; the full values
+		// stay in the DB and are only used server-side when routing requests.
+		for i := range nodes {
+			maskNodeData(nodes[i].Data)
 		}
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{"nodes": nodes})
 		return
@@ -1261,7 +1306,7 @@ func handleModelsCustom(w http.ResponseWriter, r *http.Request) {
 func handleModelPolicies(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	if !validateSession(r) {
-		WriteErrorResponse(w, http.StatusUnauthorized, "Unauthorized")
+		WriteErrorResponse(w, http.StatusUnauthorized, "Unauthorized. Please sign in to access the dashboard.")
 		return
 	}
 
@@ -1493,6 +1538,7 @@ func handleAuthStatus(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"requireLogin":  settings.RequireLogin,
 		"authenticated": authed,
+		"hasPassword":   settings.PasswordHash != "",
 		"version":       AppVersion,
 	})
 }
@@ -1528,30 +1574,37 @@ func handleAuthLogin(w http.ResponseWriter, r *http.Request) {
 	sessionsMu.Lock()
 	sessions[token] = time.Now().Add(24 * time.Hour)
 	sessionsMu.Unlock()
-	http.SetCookie(w, &http.Cookie{
+	http.SetCookie(w, sessionCookie(token, 86400))
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true})
+}
+
+func sessionCookie(value string, maxAge int) *http.Cookie {
+	c := &http.Cookie{
 		Name:     "session",
-		Value:    token,
+		Value:    value,
 		Path:     "/",
 		HttpOnly: true,
 		SameSite: http.SameSiteLaxMode,
-		MaxAge:   86400,
-	})
-	_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true})
+		MaxAge:   maxAge,
+	}
+	if maxAge < 0 {
+		c.Expires = time.Unix(0, 0)
+	}
+	return c
 }
 
 func handleAuthLogout(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
 	if cookie, err := r.Cookie("session"); err == nil {
 		sessionsMu.Lock()
 		delete(sessions, cookie.Value)
 		sessionsMu.Unlock()
 	}
-	http.SetCookie(w, &http.Cookie{
-		Name:   "session",
-		Value:  "",
-		Path:   "/",
-		MaxAge: -1,
-	})
+	http.SetCookie(w, sessionCookie("", -1))
 	_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true})
 }
 

@@ -11,6 +11,16 @@ import (
 
 var DB *sql.DB
 
+// dbPath is the sqlite file location; extracted so backup/export code can
+// read it without duplicating the ~/.myairouter construction.
+func dbPath() string {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return "db.sqlite"
+	}
+	return filepath.Join(homeDir, ".myairouter", "db.sqlite")
+}
+
 func InitDB() error {
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
@@ -22,8 +32,7 @@ func InitDB() error {
 		return fmt.Errorf("creating app directory: %w", err)
 	}
 
-	dbPath := filepath.Join(appDir, "db.sqlite")
-	db, err := sql.Open("sqlite", dbPath)
+	db, err := sql.Open("sqlite", dbPath())
 	if err != nil {
 		return fmt.Errorf("opening sqlite DB: %w", err)
 	}
@@ -55,6 +64,27 @@ func InitDB() error {
 	}
 
 	return nil
+}
+
+// Checkpoint flushes the WAL file into the main database so usage history
+// survives a force-kill (taskkill /F, power loss). Called periodically and
+// on graceful shutdown.
+func Checkpoint() {
+	if DB == nil {
+		return
+	}
+	_, _ = DB.Exec("PRAGMA wal_checkpoint(PASSIVE);")
+}
+
+// CloseDB checkpoints the WAL and closes the pool. Must be called on
+// graceful shutdown so no committed usage row stays in db-wal.
+func CloseDB() {
+	if DB == nil {
+		return
+	}
+	_, _ = DB.Exec("PRAGMA wal_checkpoint(TRUNCATE);")
+	_ = DB.Close()
+	DB = nil
 }
 
 func createTables() error {
@@ -209,6 +239,21 @@ func createTables() error {
 			updatedAt TEXT NOT NULL
 		);`,
 		`CREATE INDEX IF NOT EXISTS idx_chatsessions_updated ON chatSessions(updatedAt DESC);`,
+
+		// Outbound proxy routes (provider requests can be routed through these
+		// to hide origin IP/fingerprint from upstream providers).
+		`CREATE TABLE IF NOT EXISTS proxyRoutes (
+			id TEXT PRIMARY KEY,
+			name TEXT NOT NULL,
+			scheme TEXT NOT NULL DEFAULT 'http',
+			host TEXT NOT NULL,
+			port INTEGER NOT NULL,
+			username TEXT,
+			password TEXT,
+			isEnabled INTEGER DEFAULT 1,
+			createdAt TEXT NOT NULL,
+			updatedAt TEXT NOT NULL
+		);`,
 	}
 
 	for _, query := range queries {
