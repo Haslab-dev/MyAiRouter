@@ -42,10 +42,29 @@ func newRetryTestContext(comboKind string) *gwContext.GatewayContext {
 func makeTargets(ids ...string) []ConnectionModel {
 	targets := make([]ConnectionModel, 0, len(ids))
 	for _, id := range ids {
+		// Provider is the prefix before the first dash. Accounts of the same
+		// provider serve the SAME model (that is how routing.go builds combo
+		// targets), so the model name is derived from the provider, not the
+		// connection id.
+		provider := "prov-" + strings.SplitN(id, "-", 2)[0]
 		targets = append(targets, ConnectionModel{
-			Connection: db.ProviderConnection{ID: id, Provider: "prov-" + strings.SplitN(id, "-", 2)[0], Priority: 1, IsActive: true},
-			ModelName:  "model-" + id,
-			Provider:   "prov-" + strings.SplitN(id, "-", 2)[0],
+			Connection: db.ProviderConnection{ID: id, Provider: provider, Priority: 1, IsActive: true},
+			ModelName:  "model-" + provider,
+			Provider:   provider,
+		})
+	}
+	return targets
+}
+
+// makeModelTargets builds targets where each entry is a DISTINCT combo model
+// (different provider AND model), for cross-model failover tests.
+func makeModelTargets(provider, model string, connIDs ...string) []ConnectionModel {
+	targets := make([]ConnectionModel, 0, len(connIDs))
+	for _, id := range connIDs {
+		targets = append(targets, ConnectionModel{
+			Connection: db.ProviderConnection{ID: id, Provider: provider, Priority: 1, IsActive: true},
+			ModelName:  model,
+			Provider:   provider,
 		})
 	}
 	return targets
@@ -112,9 +131,10 @@ func TestRetry_Matrix(t *testing.T) {
 
 	t.Run("401 stops after exhausting same-provider accounts", func(t *testing.T) {
 		ctx := newRetryTestContext("fallback")
-		// Provider is derived from the id prefix before the first dash:
-		// p1-a/p1-b share one provider, p2-a belongs to another.
-		ctx.Metadata["routingTargets"] = makeTargets("p1-a", "p1-b", "p2-a")
+		// Two accounts of model A on provider p1, then a DIFFERENT account of
+		// the SAME model on provider p2 — auth errors must not cross models.
+		targets := append(makeModelTargets("p1", "model-a", "p1-a", "p1-b"), makeModelTargets("p2", "model-a", "p2-a")...)
+		ctx.Metadata["routingTargets"] = targets
 		up := &fakeUpstream{codes: map[string]int{"p1-a": 401, "p1-b": 401}}
 
 		err := Retry(ctx, up.next)
@@ -126,6 +146,26 @@ func TestRetry_Matrix(t *testing.T) {
 		}
 		if ctx.ResponseCode != 401 {
 			t.Fatalf("status = %d, want 401", ctx.ResponseCode)
+		}
+	})
+
+	t.Run("401 falls through to a different combo model (round-robin)", func(t *testing.T) {
+		ctx := newRetryTestContext("fallback")
+		// Combo listed model-a (provider p1) then model-b (provider p2).
+		// p1 returns 401 → engine must advance to model-b instead of dying.
+		targets := append(makeModelTargets("p1", "model-a", "p1-a"), makeModelTargets("p2", "model-b", "p2-a")...)
+		ctx.Metadata["routingTargets"] = targets
+		up := &fakeUpstream{codes: map[string]int{"p1-a": 401}}
+
+		err := Retry(ctx, up.next)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(ctx.TargetAttempts) != 2 {
+			t.Fatalf("attempts = %d, want 2 (cross-provider combo model must be tried on 401)", len(ctx.TargetAttempts))
+		}
+		if ctx.TargetAttempts[1].Status != "success" {
+			t.Fatalf("second attempt (other provider's model) should succeed")
 		}
 	})
 

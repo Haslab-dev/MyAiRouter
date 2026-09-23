@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { ChevronDown, Lock, LogOut, User, ShieldCheck, Unlock } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
+import { api } from '@/lib/api'
 import { Button, Field, Input, Modal } from '@/components/ui'
 
 function ChangePasswordModal({ onClose }: { onClose: () => void }) {
@@ -73,9 +74,14 @@ function ChangePasswordModal({ onClose }: { onClose: () => void }) {
 }
 
 export default function UserMenu() {
-  const { status, logout } = useAuth()
+  const { status, logout, changePassword, refetch } = useAuth()
   const [open, setOpen] = useState(false)
   const [showChangePassword, setShowChangePassword] = useState(false)
+  const [enablingAuth, setEnablingAuth] = useState(false)
+  const [newAuthPw, setNewAuthPw] = useState('')
+  const [confirmAuthPw, setConfirmAuthPw] = useState('')
+  const [authError, setAuthError] = useState('')
+  const [authBusy, setAuthBusy] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -85,6 +91,50 @@ export default function UserMenu() {
     document.addEventListener('mousedown', handler)
     return () => document.removeEventListener('mousedown', handler)
   }, [])
+
+  const disableAuth = async () => {
+    setAuthBusy(true)
+    try {
+      await api.patch('/api/settings', { requireLogin: false })
+      await refetch()
+      setOpen(false)
+    } catch (err) {
+      setAuthError(err instanceof Error ? err.message : 'Failed to disable auth')
+    } finally {
+      setAuthBusy(false)
+    }
+  }
+
+  const enableAuth = async () => {
+    setAuthError('')
+    if (newAuthPw.length < 6) {
+      setAuthError('Password must be at least 6 characters')
+      return
+    }
+    if (newAuthPw !== confirmAuthPw) {
+      setAuthError('Passwords do not match')
+      return
+    }
+    setAuthBusy(true)
+    try {
+      // No password set yet → seed it from the default, else re-key to the new one.
+      await changePassword(status?.hasPassword ? newAuthPw : '123456789', newAuthPw).catch(async () => {
+        // change-password requires the CURRENT password; when the user doesn't
+        // know it we cannot re-key — surface instead of silently failing.
+        throw new Error('Enter your current password first via Change password.')
+      })
+      await api.patch('/api/settings', { requireLogin: true })
+      await refetch()
+      setOpen(false)
+      setEnablingAuth(false)
+      setNewAuthPw('')
+      setConfirmAuthPw('')
+    } catch (err) {
+      setAuthError(err instanceof Error ? err.message : 'Failed to enable auth')
+    } finally {
+      setAuthBusy(false)
+    }
+  }
 
   if (!status) return null
 
@@ -122,6 +172,20 @@ export default function UserMenu() {
               <button
                 onClick={() => {
                   setOpen(false)
+                  if (status.requireLogin) {
+                    void disableAuth()
+                  } else {
+                    setEnablingAuth(true)
+                  }
+                }}
+                className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-[13px] text-muted transition-colors hover:bg-surface-2 hover:text-text"
+              >
+                {status.requireLogin ? <Unlock size={14} /> : <ShieldCheck size={14} />}
+                {status.requireLogin ? 'Disable password protection' : 'Enable password protection'}
+              </button>
+              <button
+                onClick={() => {
+                  setOpen(false)
                   setShowChangePassword(true)
                 }}
                 className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-[13px] text-muted transition-colors hover:bg-surface-2 hover:text-text"
@@ -133,6 +197,10 @@ export default function UserMenu() {
                 onClick={async () => {
                   setOpen(false)
                   await logout()
+                  // requireLogin=false means there is no login page to land
+                  // on; refresh so the operator sees the (open) dashboard in a
+                  // clean state instead of expecting a login screen.
+                  if (!status.requireLogin) window.location.reload()
                 }}
                 className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-[13px] text-danger transition-colors hover:bg-danger-subtle"
               >
@@ -145,6 +213,50 @@ export default function UserMenu() {
       </div>
 
       {showChangePassword && <ChangePasswordModal onClose={() => setShowChangePassword(false)} />}
+
+      <Modal
+        open={enablingAuth}
+        onClose={() => {
+          setEnablingAuth(false)
+          setAuthError('')
+          setNewAuthPw('')
+          setConfirmAuthPw('')
+        }}
+        title="Enable password protection"
+        subtitle="Require login to access this dashboard."
+        width="max-w-sm"
+        footer={
+          <>
+            <Button
+              onClick={() => {
+                setEnablingAuth(false)
+                setAuthError('')
+              }}
+            >
+              Cancel
+            </Button>
+            <Button variant="primary" loading={authBusy} onClick={enableAuth}>
+              Protect dashboard
+            </Button>
+          </>
+        }
+      >
+        <form
+          className="flex flex-col gap-3"
+          onSubmit={(e) => {
+            e.preventDefault()
+            void enableAuth()
+          }}
+        >
+          <Field label="New password">
+            <Input type="password" value={newAuthPw} onChange={(e) => setNewAuthPw(e.target.value)} autoComplete="new-password" />
+          </Field>
+          <Field label="Confirm password">
+            <Input type="password" value={confirmAuthPw} onChange={(e) => setConfirmAuthPw(e.target.value)} autoComplete="new-password" />
+          </Field>
+          {authError && <p className="text-xs text-danger">{authError}</p>}
+        </form>
+      </Modal>
     </>
   )
 }

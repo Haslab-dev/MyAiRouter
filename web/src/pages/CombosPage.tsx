@@ -162,7 +162,9 @@ export default function CombosPage() {
 
   const fetchAvailableModels = async () => {
     try {
-      const json = await api.get<{ data: ModelEntry[] }>('/v1/models')
+      // /api/models is the full admin registry (not the /v1/models whitelist),
+      // so a freshly added provider model is immediately selectable here.
+      const json = await api.get<{ data: ModelEntry[] }>('/api/models')
       const grouped: Record<string, ModelEntry[]> = {}
       for (const m of json.data ?? []) {
         grouped[m.owned_by] = grouped[m.owned_by] ?? []
@@ -175,6 +177,9 @@ export default function CombosPage() {
   }
 
   const openEditor = (combo?: Combo) => {
+    // Refresh the model registry each time the editor opens so providers/models
+    // added earlier in the session show up without a page reload.
+    fetchAvailableModels()
     if (combo) {
       setEditCombo(combo)
       setName(combo.name)

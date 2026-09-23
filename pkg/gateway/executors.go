@@ -12,11 +12,23 @@ import (
 	"strings"
 	"time"
 
-	"myAiRouter/internal/gateway/providers"
 	"myAiRouter/pkg/db"
 )
 
-var sharedHTTPClient = &http.Client{
+
+// timedDo records request latency and selects the proxy-aware client for the
+// request's connection (nil conn = direct client).
+func timedDo(req *http.Request, conn *db.ProviderConnection, elapsed *time.Duration) (*http.Response, error) {
+	start := time.Now()
+	ApplyAntiDetect(req, conn)
+
+	resp, err := ClientFor(conn).Do(req)
+	*elapsed = time.Since(start)
+	return resp, err
+}
+
+// SharedHTTPClient is the direct (non-proxied) outbound client.
+var SharedHTTPClient = &http.Client{
 	Transport: &http.Transport{
 		MaxIdleConns:        50,
 		MaxIdleConnsPerHost: 10,
@@ -30,6 +42,7 @@ type ExecutionResult struct {
 	Body         []byte
 	Stream       io.ReadCloser
 	IsStream     bool
+	LatencyMs    float64
 	Err          error
 }
 
@@ -101,57 +114,33 @@ func executeOpenAI(ctx context.Context, conn *db.ProviderConnection, apiKey stri
 	}
 
 	url := strings.TrimSuffix(baseUrl, "/") + "/chat/completions"
-
-	// Strip fields this provider is known to reject (strict validation).
-	providers.SanitizeRequestBody(conn.Provider, body)
-
-	doRequest := func(bodyBytes []byte) (*http.Response, error) {
-		req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(bodyBytes))
-		if err != nil {
-			return nil, err
-		}
-		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("Authorization", "Bearer "+apiKey)
-		if conn.Provider == "opencode" || conn.Provider == "opencode-go" {
-			req.Header.Set("x-opencode-client", "desktop")
-		}
-		if conn.Provider == "kilocode" {
-			if orgId, ok := conn.Data["orgId"].(string); ok && orgId != "" {
-				req.Header.Set("X-Kilocode-OrganizationID", orgId)
-			}
-		}
-		return sharedHTTPClient.Do(req)
-	}
-
 	bodyBytes, err := json.Marshal(body)
 	if err != nil {
 		return &ExecutionResult{Err: fmt.Errorf("marshalling body: %w", err)}
 	}
 
-	resp, err := doRequest(bodyBytes)
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(bodyBytes))
 	if err != nil {
 		return &ExecutionResult{Err: err}
 	}
 
-	// Future-proofing: if a provider still rejects unknown extra fields,
-	// strip them from the body and retry once.
-	if resp.StatusCode == http.StatusUnprocessableEntity {
-		respBody, readErr := io.ReadAll(resp.Body)
-		_ = resp.Body.Close()
-		if readErr == nil {
-			if rejected := providers.RejectedFieldsFrom422(respBody); len(rejected) > 0 {
-				for _, field := range rejected {
-					delete(body, field)
-				}
-				if retryBytes, mErr := json.Marshal(body); mErr == nil {
-					if retryResp, dErr := doRequest(retryBytes); dErr == nil {
-						resp = retryResp
-					}
-				}
-			} else {
-				return &ExecutionResult{ResponseCode: resp.StatusCode, Body: respBody, IsStream: false}
-			}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+apiKey)
+	if conn.Provider == "opencode" || conn.Provider == "opencode-go" {
+		req.Header.Set("x-opencode-client", "desktop")
+	}
+	if conn.Provider == "kilocode" {
+		if orgId, ok := conn.Data["orgId"].(string); ok && orgId != "" {
+			req.Header.Set("X-Kilocode-OrganizationID", orgId)
 		}
+	}
+
+	elapsed := time.Duration(0)
+	ApplyAntiDetect(req, conn)
+
+	resp, err := timedDo(req, conn, &elapsed)
+	if err != nil {
+		return &ExecutionResult{Err: err}
 	}
 
 	if stream && resp.StatusCode == http.StatusOK {
@@ -159,6 +148,7 @@ func executeOpenAI(ctx context.Context, conn *db.ProviderConnection, apiKey stri
 			ResponseCode: resp.StatusCode,
 			Stream:       resp.Body,
 			IsStream:     true,
+			LatencyMs:    float64(elapsed.Microseconds()) / 1000.0,
 		}
 	}
 
@@ -169,6 +159,7 @@ func executeOpenAI(ctx context.Context, conn *db.ProviderConnection, apiKey stri
 		Body:         respBody,
 		IsStream:     false,
 		Err:          err,
+		LatencyMs:    float64(elapsed.Microseconds()) / 1000.0,
 	}
 }
 
@@ -191,7 +182,10 @@ func executeCommandCode(ctx context.Context, apiKey string, body map[string]inte
 	req.Header.Set("Authorization", "Bearer "+apiKey)
 	req.Header.Set("Accept", "text/event-stream")
 
-	resp, err := sharedHTTPClient.Do(req)
+	ApplyAntiDetect(req, nil)
+
+	elapsed := time.Duration(0)
+	resp, err := timedDo(req, nil, &elapsed)
 	if err != nil {
 		return &ExecutionResult{Err: err}
 	}
@@ -201,6 +195,7 @@ func executeCommandCode(ctx context.Context, apiKey string, body map[string]inte
 			ResponseCode: resp.StatusCode,
 			Stream:       resp.Body,
 			IsStream:     true,
+			LatencyMs:    float64(elapsed.Microseconds()) / 1000.0,
 		}
 	}
 
@@ -211,6 +206,7 @@ func executeCommandCode(ctx context.Context, apiKey string, body map[string]inte
 		Body:         respBody,
 		IsStream:     false,
 		Err:          err,
+		LatencyMs:    float64(elapsed.Microseconds()) / 1000.0,
 	}
 }
 
@@ -235,7 +231,10 @@ func executeAnthropic(ctx context.Context, conn *db.ProviderConnection, apiKey s
 	req.Header.Set("x-api-key", apiKey)
 	req.Header.Set("anthropic-version", "2023-06-01")
 
-	resp, err := sharedHTTPClient.Do(req)
+	elapsed := time.Duration(0)
+	ApplyAntiDetect(req, conn)
+
+	resp, err := timedDo(req, conn, &elapsed)
 	if err != nil {
 		return &ExecutionResult{Err: err}
 	}
@@ -245,6 +244,7 @@ func executeAnthropic(ctx context.Context, conn *db.ProviderConnection, apiKey s
 			ResponseCode: resp.StatusCode,
 			Stream:       resp.Body,
 			IsStream:     true,
+			LatencyMs:    float64(elapsed.Microseconds()) / 1000.0,
 		}
 	}
 
@@ -255,6 +255,7 @@ func executeAnthropic(ctx context.Context, conn *db.ProviderConnection, apiKey s
 		Body:         respBody,
 		IsStream:     false,
 		Err:          err,
+		LatencyMs:    float64(elapsed.Microseconds()) / 1000.0,
 	}
 }
 
@@ -294,7 +295,10 @@ func executeGemini(ctx context.Context, conn *db.ProviderConnection, apiKey stri
 	}
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := sharedHTTPClient.Do(req)
+	elapsed := time.Duration(0)
+	ApplyAntiDetect(req, conn)
+
+	resp, err := timedDo(req, conn, &elapsed)
 	if err != nil {
 		return &ExecutionResult{Err: err}
 	}
@@ -304,6 +308,7 @@ func executeGemini(ctx context.Context, conn *db.ProviderConnection, apiKey stri
 			ResponseCode: resp.StatusCode,
 			Stream:       resp.Body,
 			IsStream:     true,
+			LatencyMs:    float64(elapsed.Microseconds()) / 1000.0,
 		}
 	}
 
@@ -314,6 +319,7 @@ func executeGemini(ctx context.Context, conn *db.ProviderConnection, apiKey stri
 		Body:         respBody,
 		IsStream:     false,
 		Err:          err,
+		LatencyMs:    float64(elapsed.Microseconds()) / 1000.0,
 	}
 }
 

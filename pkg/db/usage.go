@@ -16,21 +16,21 @@ type TokenUsage struct {
 }
 
 type UsageEntry struct {
-	ID               int64      `json:"id"`
-	Timestamp        string     `json:"timestamp"`
-	Provider         string     `json:"provider"`
-	Model            string     `json:"model"`
-	ConnectionID     string     `json:"connectionId"`
-	APIKey           string     `json:"apiKey"`
-	APIKeyName       string     `json:"apiKeyName"`
-	Endpoint         string     `json:"endpoint"`
-	PromptTokens     int        `json:"promptTokens"`
-	CompletionTokens int        `json:"completionTokens"`
-	CachedTokens     int        `json:"cachedTokens"`
-	Cost             float64    `json:"cost"`
-	Status           string     `json:"status"`
-	Tokens           TokenUsage `json:"tokens"`
-	Meta             string     `json:"meta"`
+	ID               int64       `json:"id"`
+	Timestamp        string      `json:"timestamp"`
+	Provider         string      `json:"provider"`
+	Model            string      `json:"model"`
+	ConnectionID     string      `json:"connectionId"`
+	APIKey           string      `json:"apiKey"`
+	APIKeyName       string      `json:"apiKeyName"`
+	Endpoint         string      `json:"endpoint"`
+	PromptTokens     int         `json:"promptTokens"`
+	CompletionTokens int         `json:"completionTokens"`
+	CachedTokens     int         `json:"cachedTokens"`
+	Cost             float64     `json:"cost"`
+	Status           string      `json:"status"`
+	Tokens           TokenUsage  `json:"tokens"`
+	Meta             string      `json:"meta"`
 }
 
 type UsageStats struct {
@@ -61,100 +61,100 @@ type ModelRate struct {
 // Full canonical model pricing from 9router — provider-agnostic
 var ModelPricing = map[string]ModelRate{
 	// === Anthropic / Claude ===
-	"claude-opus-4-6":            {5.00, 25.00, 0.50, 25.00, 6.25},
-	"claude-opus-4-5-20251101":   {5.00, 25.00, 0.50, 25.00, 6.25},
-	"claude-sonnet-4-6":          {3.00, 15.00, 0.30, 15.00, 3.75},
-	"claude-sonnet-4-5-20250929": {3.00, 15.00, 0.30, 15.00, 3.75},
-	"claude-haiku-4-5-20251001":  {1.00, 5.00, 0.10, 5.00, 1.25},
-	"claude-sonnet-4-20250514":   {3.00, 15.00, 1.50, 15.00, 3.00},
-	"claude-opus-4-20250514":     {15.00, 25.00, 7.50, 112.50, 15.00},
-	"claude-3-5-sonnet-20241022": {3.00, 15.00, 1.50, 15.00, 3.00},
-	"claude-haiku-4.5":           {0.50, 2.50, 0.05, 3.75, 0.50},
-	"claude-opus-4.1":            {5.00, 25.00, 0.50, 37.50, 5.00},
-	"claude-opus-4.5":            {5.00, 25.00, 0.50, 37.50, 5.00},
-	"claude-opus-4.6":            {5.00, 25.00, 0.50, 37.50, 5.00},
-	"claude-sonnet-4":            {3.00, 15.00, 0.30, 22.50, 3.00},
-	"claude-sonnet-4.5":          {3.00, 15.00, 0.30, 22.50, 3.00},
-	"claude-sonnet-4.6":          {3.00, 15.00, 0.30, 22.50, 3.00},
-	"claude-opus-4-5-thinking":   {5.00, 25.00, 0.50, 37.50, 5.00},
-	"claude-opus-4-6-thinking":   {5.00, 25.00, 0.50, 37.50, 5.00},
-	"claude-fable-5":             {10.00, 50.00, 1.00, 50.00, 12.50},
+	"claude-opus-4-6":              {5.00, 25.00, 0.50, 25.00, 6.25},
+	"claude-opus-4-5-20251101":     {5.00, 25.00, 0.50, 25.00, 6.25},
+	"claude-sonnet-4-6":            {3.00, 15.00, 0.30, 15.00, 3.75},
+	"claude-sonnet-4-5-20250929":   {3.00, 15.00, 0.30, 15.00, 3.75},
+	"claude-haiku-4-5-20251001":    {1.00, 5.00, 0.10, 5.00, 1.25},
+	"claude-sonnet-4-20250514":     {3.00, 15.00, 1.50, 15.00, 3.00},
+	"claude-opus-4-20250514":       {15.00, 25.00, 7.50, 112.50, 15.00},
+	"claude-3-5-sonnet-20241022":   {3.00, 15.00, 1.50, 15.00, 3.00},
+	"claude-haiku-4.5":             {0.50, 2.50, 0.05, 3.75, 0.50},
+	"claude-opus-4.1":              {5.00, 25.00, 0.50, 37.50, 5.00},
+	"claude-opus-4.5":              {5.00, 25.00, 0.50, 37.50, 5.00},
+	"claude-opus-4.6":              {5.00, 25.00, 0.50, 37.50, 5.00},
+	"claude-sonnet-4":              {3.00, 15.00, 0.30, 22.50, 3.00},
+	"claude-sonnet-4.5":            {3.00, 15.00, 0.30, 22.50, 3.00},
+	"claude-sonnet-4.6":            {3.00, 15.00, 0.30, 22.50, 3.00},
+	"claude-opus-4-5-thinking":     {5.00, 25.00, 0.50, 37.50, 5.00},
+	"claude-opus-4-6-thinking":     {5.00, 25.00, 0.50, 37.50, 5.00},
+	"claude-fable-5":               {10.00, 50.00, 1.00, 50.00, 12.50},
 
 	// === OpenAI / GPT ===
-	"gpt-3.5-turbo":           {0.50, 1.50, 0.25, 2.25, 0.50},
-	"gpt-4":                   {2.50, 10.00, 1.25, 15.00, 2.50},
-	"gpt-4-turbo":             {10.00, 30.00, 5.00, 45.00, 10.00},
-	"gpt-4o":                  {2.50, 10.00, 1.25, 15.00, 2.50},
-	"gpt-4o-mini":             {0.15, 0.60, 0.075, 0.90, 0.15},
-	"gpt-4.1":                 {2.50, 10.00, 1.25, 15.00, 2.50},
-	"gpt-5":                   {1.25, 10.00, 0.625, 10.00, 1.25},
-	"gpt-5-mini":              {0.25, 2.00, 0.125, 2.00, 0.25},
-	"gpt-5-codex":             {1.25, 10.00, 0.625, 10.00, 1.25},
-	"gpt-5.1":                 {1.25, 10.00, 0.625, 10.00, 1.25},
-	"gpt-5.1-codex":           {1.25, 10.00, 0.625, 10.00, 1.25},
-	"gpt-5.1-codex-mini":      {1.50, 6.00, 0.75, 9.00, 1.50},
-	"gpt-5.1-codex-mini-high": {2.00, 8.00, 1.00, 12.00, 2.00},
-	"gpt-5.1-codex-max":       {8.00, 32.00, 4.00, 48.00, 8.00},
-	"gpt-5.2":                 {1.75, 14.00, 0.175, 14.00, 1.75},
-	"gpt-5.2-codex":           {1.75, 14.00, 0.175, 14.00, 1.75},
-	"gpt-5.3-codex":           {1.75, 14.00, 0.175, 14.00, 1.75},
-	"gpt-5.3-codex-spark":     {3.00, 12.00, 0.30, 12.00, 3.00},
-	"gpt-5.6":                 {2.50, 15.00, 0.25, 15.00, 2.50},
-	"gpt-5.6-luna":            {1.00, 6.00, 0.10, 6.00, 1.00},
-	"gpt-5.6-terra":           {2.50, 15.00, 0.25, 15.00, 2.50},
-	"gpt-5.6-sol":             {5.00, 30.00, 0.50, 30.00, 5.00},
-	"o1":                      {15.00, 60.00, 7.50, 90.00, 15.00},
-	"o1-mini":                 {3.00, 12.00, 1.50, 18.00, 3.00},
-	"o3":                      {10.00, 40.00, 5.00, 60.00, 10.00},
+	"gpt-3.5-turbo":                {0.50, 1.50, 0.25, 2.25, 0.50},
+	"gpt-4":                        {2.50, 10.00, 1.25, 15.00, 2.50},
+	"gpt-4-turbo":                  {10.00, 30.00, 5.00, 45.00, 10.00},
+	"gpt-4o":                       {2.50, 10.00, 1.25, 15.00, 2.50},
+	"gpt-4o-mini":                  {0.15, 0.60, 0.075, 0.90, 0.15},
+	"gpt-4.1":                      {2.50, 10.00, 1.25, 15.00, 2.50},
+	"gpt-5":                        {1.25, 10.00, 0.625, 10.00, 1.25},
+	"gpt-5-mini":                   {0.25, 2.00, 0.125, 2.00, 0.25},
+	"gpt-5-codex":                  {1.25, 10.00, 0.625, 10.00, 1.25},
+	"gpt-5.1":                      {1.25, 10.00, 0.625, 10.00, 1.25},
+	"gpt-5.1-codex":                {1.25, 10.00, 0.625, 10.00, 1.25},
+	"gpt-5.1-codex-mini":           {1.50, 6.00, 0.75, 9.00, 1.50},
+	"gpt-5.1-codex-mini-high":      {2.00, 8.00, 1.00, 12.00, 2.00},
+	"gpt-5.1-codex-max":            {8.00, 32.00, 4.00, 48.00, 8.00},
+	"gpt-5.2":                      {1.75, 14.00, 0.175, 14.00, 1.75},
+	"gpt-5.2-codex":                {1.75, 14.00, 0.175, 14.00, 1.75},
+	"gpt-5.3-codex":                {1.75, 14.00, 0.175, 14.00, 1.75},
+	"gpt-5.3-codex-spark":          {3.00, 12.00, 0.30, 12.00, 3.00},
+	"gpt-5.6":                      {2.50, 15.00, 0.25, 15.00, 2.50},
+	"gpt-5.6-luna":                 {1.00, 6.00, 0.10, 6.00, 1.00},
+	"gpt-5.6-terra":                {2.50, 15.00, 0.25, 15.00, 2.50},
+	"gpt-5.6-sol":                  {5.00, 30.00, 0.50, 30.00, 5.00},
+	"o1":                           {15.00, 60.00, 7.50, 90.00, 15.00},
+	"o1-mini":                      {3.00, 12.00, 1.50, 18.00, 3.00},
+	"o3":                           {10.00, 40.00, 5.00, 60.00, 10.00},
 
 	// === Gemini ===
-	"gemini-3-flash-preview": {0.50, 3.00, 0.03, 4.50, 0.50},
-	"gemini-3-pro-preview":   {2.00, 12.00, 0.25, 18.00, 2.00},
-	"gemini-3.1-pro-low":     {2.00, 12.00, 0.25, 18.00, 2.00},
-	"gemini-3.1-pro-high":    {4.00, 18.00, 0.50, 27.00, 4.00},
-	"gemini-3-flash":         {0.50, 3.00, 0.03, 4.50, 0.50},
-	"gemini-2.5-pro":         {2.00, 12.00, 0.25, 18.00, 2.00},
-	"gemini-2.5-flash":       {0.30, 2.50, 0.03, 3.75, 0.30},
-	"gemini-2.5-flash-lite":  {0.15, 1.25, 0.015, 1.875, 0.15},
+	"gemini-3-flash-preview":       {0.50, 3.00, 0.03, 4.50, 0.50},
+	"gemini-3-pro-preview":         {2.00, 12.00, 0.25, 18.00, 2.00},
+	"gemini-3.1-pro-low":           {2.00, 12.00, 0.25, 18.00, 2.00},
+	"gemini-3.1-pro-high":          {4.00, 18.00, 0.50, 27.00, 4.00},
+	"gemini-3-flash":               {0.50, 3.00, 0.03, 4.50, 0.50},
+	"gemini-2.5-pro":               {2.00, 12.00, 0.25, 18.00, 2.00},
+	"gemini-2.5-flash":             {0.30, 2.50, 0.03, 3.75, 0.30},
+	"gemini-2.5-flash-lite":        {0.15, 1.25, 0.015, 1.875, 0.15},
 
 	// === Qwen ===
-	"qwen3-coder-plus":  {1.00, 4.00, 0.50, 6.00, 1.00},
-	"qwen3-coder-flash": {0.50, 2.00, 0.25, 3.00, 0.50},
+	"qwen3-coder-plus":             {1.00, 4.00, 0.50, 6.00, 1.00},
+	"qwen3-coder-flash":            {0.50, 2.00, 0.25, 3.00, 0.50},
 
 	// === Kimi ===
-	"kimi-k2":            {1.00, 4.00, 0.50, 6.00, 1.00},
-	"kimi-k2-thinking":   {1.50, 6.00, 0.75, 9.00, 1.50},
-	"kimi-k2.5":          {1.20, 4.80, 0.60, 7.20, 1.20},
-	"kimi-k2.5-thinking": {1.80, 7.20, 0.90, 10.80, 1.80},
+	"kimi-k2":                      {1.00, 4.00, 0.50, 6.00, 1.00},
+	"kimi-k2-thinking":             {1.50, 6.00, 0.75, 9.00, 1.50},
+	"kimi-k2.5":                    {1.20, 4.80, 0.60, 7.20, 1.20},
+	"kimi-k2.5-thinking":           {1.80, 7.20, 0.90, 10.80, 1.80},
 
 	// === DeepSeek ===
-	"deepseek-chat":          {0.14, 0.28, 0.0028, 0.28, 0.14},
-	"deepseek-reasoner":      {0.14, 0.28, 0.0028, 0.28, 0.14},
-	"deepseek-r1":            {0.14, 0.28, 0.0028, 0.28, 0.14},
-	"deepseek-v3.2-chat":     {0.14, 0.28, 0.0028, 0.28, 0.14},
-	"deepseek-v3.2-reasoner": {0.14, 0.28, 0.0028, 0.28, 0.14},
-	"deepseek-v4-flash":      {0.14, 0.28, 0.0028, 0.28, 0.14},
-	"deepseek-v4-pro":        {0.435, 0.87, 0.003625, 0.87, 0.435},
+	"deepseek-chat":                {0.14, 0.28, 0.0028, 0.28, 0.14},
+	"deepseek-reasoner":            {0.14, 0.28, 0.0028, 0.28, 0.14},
+	"deepseek-r1":                  {0.14, 0.28, 0.0028, 0.28, 0.14},
+	"deepseek-v3.2-chat":           {0.14, 0.28, 0.0028, 0.28, 0.14},
+	"deepseek-v3.2-reasoner":       {0.14, 0.28, 0.0028, 0.28, 0.14},
+	"deepseek-v4-flash":            {0.14, 0.28, 0.0028, 0.28, 0.14},
+	"deepseek-v4-pro":              {0.435, 0.87, 0.003625, 0.87, 0.435},
 
 	// === GLM ===
-	"glm-4.6":  {0.50, 2.00, 0.25, 3.00, 0.50},
-	"glm-4.6v": {0.75, 3.00, 0.375, 4.50, 0.75},
-	"glm-4.7":  {0.75, 3.00, 0.375, 4.50, 0.75},
-	"glm-5":    {1.00, 4.00, 0.50, 6.00, 1.00},
+	"glm-4.6":                      {0.50, 2.00, 0.25, 3.00, 0.50},
+	"glm-4.6v":                     {0.75, 3.00, 0.375, 4.50, 0.75},
+	"glm-4.7":                      {0.75, 3.00, 0.375, 4.50, 0.75},
+	"glm-5":                        {1.00, 4.00, 0.50, 6.00, 1.00},
 
 	// === MiniMax ===
-	"MiniMax-M3":   {0.30, 1.20, 0.06, 1.80, 0.30},
-	"MiniMax-M2.1": {0.50, 2.00, 0.25, 3.00, 0.50},
-	"MiniMax-M2.5": {0.50, 2.00, 0.25, 3.00, 0.50},
-	"MiniMax-M2.7": {0.50, 2.00, 0.25, 3.00, 0.50},
-	"minimax-m2.1": {0.50, 2.00, 0.25, 3.00, 0.50},
-	"minimax-m2.5": {0.60, 2.40, 0.30, 3.60, 0.60},
+	"MiniMax-M3":                   {0.30, 1.20, 0.06, 1.80, 0.30},
+	"MiniMax-M2.1":                 {0.50, 2.00, 0.25, 3.00, 0.50},
+	"MiniMax-M2.5":                 {0.50, 2.00, 0.25, 3.00, 0.50},
+	"MiniMax-M2.7":                 {0.50, 2.00, 0.25, 3.00, 0.50},
+	"minimax-m2.1":                 {0.50, 2.00, 0.25, 3.00, 0.50},
+	"minimax-m2.5":                 {0.60, 2.40, 0.30, 3.60, 0.60},
 
 	// === Misc ===
-	"grok-code-fast-1":    {0.50, 2.00, 0.25, 3.00, 0.50},
-	"oswe-vscode-prime":   {1.00, 4.00, 0.50, 6.00, 1.00},
-	"gpt-oss-120b-medium": {0.50, 2.00, 0.25, 3.00, 0.50},
-	"auto":                {2.00, 8.00, 1.00, 12.00, 2.00},
+	"grok-code-fast-1":             {0.50, 2.00, 0.25, 3.00, 0.50},
+	"oswe-vscode-prime":            {1.00, 4.00, 0.50, 6.00, 1.00},
+	"gpt-oss-120b-medium":          {0.50, 2.00, 0.25, 3.00, 0.50},
+	"auto":                         {2.00, 8.00, 1.00, 12.00, 2.00},
 }
 
 type PatternRate struct {
@@ -164,76 +164,76 @@ type PatternRate struct {
 
 var PatternPricing = []PatternRate{
 	// --- Codex variants ---
-	{Pattern: "*-codex-xhigh", Rate: ModelRate{10.00, 40.00, 5.00, 60.00, 10.00}},
-	{Pattern: "*-codex-high", Rate: ModelRate{8.00, 32.00, 4.00, 48.00, 8.00}},
-	{Pattern: "*-codex-max", Rate: ModelRate{8.00, 32.00, 4.00, 48.00, 8.00}},
-	{Pattern: "*-codex-mini-*", Rate: ModelRate{1.50, 6.00, 0.75, 9.00, 1.50}},
-	{Pattern: "*-codex-mini", Rate: ModelRate{1.50, 6.00, 0.75, 9.00, 1.50}},
-	{Pattern: "*-codex-low", Rate: ModelRate{1.75, 14.00, 0.175, 14.00, 1.75}},
-	{Pattern: "*-codex-none", Rate: ModelRate{1.75, 14.00, 0.175, 14.00, 1.75}},
-	{Pattern: "*-codex-spark", Rate: ModelRate{3.00, 12.00, 0.30, 12.00, 3.00}},
-	{Pattern: "codex-*", Rate: ModelRate{1.75, 14.00, 0.175, 14.00, 1.75}},
-	{Pattern: "*-codex", Rate: ModelRate{1.75, 14.00, 0.175, 14.00, 1.75}},
+	{Pattern: "*-codex-xhigh",      Rate: ModelRate{10.00, 40.00, 5.00, 60.00, 10.00}},
+	{Pattern: "*-codex-high",       Rate: ModelRate{8.00, 32.00, 4.00, 48.00, 8.00}},
+	{Pattern: "*-codex-max",        Rate: ModelRate{8.00, 32.00, 4.00, 48.00, 8.00}},
+	{Pattern: "*-codex-mini-*",     Rate: ModelRate{1.50, 6.00, 0.75, 9.00, 1.50}},
+	{Pattern: "*-codex-mini",       Rate: ModelRate{1.50, 6.00, 0.75, 9.00, 1.50}},
+	{Pattern: "*-codex-low",        Rate: ModelRate{1.75, 14.00, 0.175, 14.00, 1.75}},
+	{Pattern: "*-codex-none",       Rate: ModelRate{1.75, 14.00, 0.175, 14.00, 1.75}},
+	{Pattern: "*-codex-spark",      Rate: ModelRate{3.00, 12.00, 0.30, 12.00, 3.00}},
+	{Pattern: "codex-*",            Rate: ModelRate{1.75, 14.00, 0.175, 14.00, 1.75}},
+	{Pattern: "*-codex",            Rate: ModelRate{1.75, 14.00, 0.175, 14.00, 1.75}},
 
 	// --- Claude ---
-	{Pattern: "claude-opus-*", Rate: ModelRate{5.00, 25.00, 0.50, 25.00, 6.25}},
-	{Pattern: "claude-sonnet-*", Rate: ModelRate{3.00, 15.00, 0.30, 15.00, 3.75}},
-	{Pattern: "claude-haiku-*", Rate: ModelRate{1.00, 5.00, 0.10, 5.00, 1.25}},
-	{Pattern: "claude-*", Rate: ModelRate{3.00, 15.00, 0.30, 15.00, 3.75}},
+	{Pattern: "claude-opus-*",      Rate: ModelRate{5.00, 25.00, 0.50, 25.00, 6.25}},
+	{Pattern: "claude-sonnet-*",    Rate: ModelRate{3.00, 15.00, 0.30, 15.00, 3.75}},
+	{Pattern: "claude-haiku-*",     Rate: ModelRate{1.00, 5.00, 0.10, 5.00, 1.25}},
+	{Pattern: "claude-*",           Rate: ModelRate{3.00, 15.00, 0.30, 15.00, 3.75}},
 
 	// --- Gemini (specific first, generic last) ---
 	{Pattern: "gemini-*-flash-lite", Rate: ModelRate{0.15, 1.25, 0.015, 1.875, 0.15}},
-	{Pattern: "gemini-*-flash", Rate: ModelRate{0.30, 2.50, 0.03, 3.75, 0.30}},
-	{Pattern: "gemini-*-pro", Rate: ModelRate{2.00, 12.00, 0.25, 18.00, 2.00}},
-	{Pattern: "gemini-3-*", Rate: ModelRate{0.50, 3.00, 0.03, 4.50, 0.50}},
-	{Pattern: "gemini-2.5-*", Rate: ModelRate{0.30, 2.50, 0.03, 3.75, 0.30}},
-	{Pattern: "gemini-*", Rate: ModelRate{0.50, 3.00, 0.03, 4.50, 0.50}},
+	{Pattern: "gemini-*-flash",     Rate: ModelRate{0.30, 2.50, 0.03, 3.75, 0.30}},
+	{Pattern: "gemini-*-pro",       Rate: ModelRate{2.00, 12.00, 0.25, 18.00, 2.00}},
+	{Pattern: "gemini-3-*",         Rate: ModelRate{0.50, 3.00, 0.03, 4.50, 0.50}},
+	{Pattern: "gemini-2.5-*",       Rate: ModelRate{0.30, 2.50, 0.03, 3.75, 0.30}},
+	{Pattern: "gemini-*",           Rate: ModelRate{0.50, 3.00, 0.03, 4.50, 0.50}},
 
 	// --- GPT (specific first, generic last) ---
-	{Pattern: "gpt-5.6-*", Rate: ModelRate{2.50, 15.00, 0.25, 15.00, 2.50}},
-	{Pattern: "gpt-5.3-*", Rate: ModelRate{1.75, 14.00, 0.175, 14.00, 1.75}},
-	{Pattern: "gpt-5.2-*", Rate: ModelRate{1.75, 14.00, 0.175, 14.00, 1.75}},
-	{Pattern: "gpt-5.1-*", Rate: ModelRate{1.25, 10.00, 0.625, 10.00, 1.25}},
-	{Pattern: "gpt-5-*", Rate: ModelRate{1.25, 10.00, 0.625, 10.00, 1.25}},
-	{Pattern: "gpt-5*", Rate: ModelRate{1.25, 10.00, 0.625, 10.00, 1.25}},
-	{Pattern: "gpt-4o-*", Rate: ModelRate{0.15, 0.60, 0.075, 0.90, 0.15}},
-	{Pattern: "gpt-4o", Rate: ModelRate{2.50, 10.00, 1.25, 15.00, 2.50}},
-	{Pattern: "gpt-4*", Rate: ModelRate{2.50, 10.00, 1.25, 15.00, 2.50}},
+	{Pattern: "gpt-5.6-*",          Rate: ModelRate{2.50, 15.00, 0.25, 15.00, 2.50}},
+	{Pattern: "gpt-5.3-*",          Rate: ModelRate{1.75, 14.00, 0.175, 14.00, 1.75}},
+	{Pattern: "gpt-5.2-*",          Rate: ModelRate{1.75, 14.00, 0.175, 14.00, 1.75}},
+	{Pattern: "gpt-5.1-*",          Rate: ModelRate{1.25, 10.00, 0.625, 10.00, 1.25}},
+	{Pattern: "gpt-5-*",            Rate: ModelRate{1.25, 10.00, 0.625, 10.00, 1.25}},
+	{Pattern: "gpt-5*",             Rate: ModelRate{1.25, 10.00, 0.625, 10.00, 1.25}},
+	{Pattern: "gpt-4o-*",           Rate: ModelRate{0.15, 0.60, 0.075, 0.90, 0.15}},
+	{Pattern: "gpt-4o",             Rate: ModelRate{2.50, 10.00, 1.25, 15.00, 2.50}},
+	{Pattern: "gpt-4*",             Rate: ModelRate{2.50, 10.00, 1.25, 15.00, 2.50}},
 
 	// --- o1 / o-series ---
-	{Pattern: "o1-*", Rate: ModelRate{3.00, 12.00, 1.50, 18.00, 3.00}},
-	{Pattern: "o1", Rate: ModelRate{15.00, 60.00, 7.50, 90.00, 15.00}},
-	{Pattern: "o3-*", Rate: ModelRate{10.00, 40.00, 5.00, 60.00, 10.00}},
-	{Pattern: "o4-*", Rate: ModelRate{2.00, 8.00, 1.00, 12.00, 2.00}},
+	{Pattern: "o1-*",               Rate: ModelRate{3.00, 12.00, 1.50, 18.00, 3.00}},
+	{Pattern: "o1",                 Rate: ModelRate{15.00, 60.00, 7.50, 90.00, 15.00}},
+	{Pattern: "o3-*",               Rate: ModelRate{10.00, 40.00, 5.00, 60.00, 10.00}},
+	{Pattern: "o4-*",               Rate: ModelRate{2.00, 8.00, 1.00, 12.00, 2.00}},
 
 	// --- Qwen ---
-	{Pattern: "qwen3-coder-*", Rate: ModelRate{1.00, 4.00, 0.50, 6.00, 1.00}},
-	{Pattern: "qwen*-coder-*", Rate: ModelRate{1.00, 4.00, 0.50, 6.00, 1.00}},
-	{Pattern: "qwen*", Rate: ModelRate{0.50, 2.00, 0.25, 3.00, 0.50}},
+	{Pattern: "qwen3-coder-*",      Rate: ModelRate{1.00, 4.00, 0.50, 6.00, 1.00}},
+	{Pattern: "qwen*-coder-*",      Rate: ModelRate{1.00, 4.00, 0.50, 6.00, 1.00}},
+	{Pattern: "qwen*",              Rate: ModelRate{0.50, 2.00, 0.25, 3.00, 0.50}},
 
 	// --- Kimi ---
-	{Pattern: "kimi-*-thinking", Rate: ModelRate{1.80, 7.20, 0.90, 10.80, 1.80}},
-	{Pattern: "kimi-k2*", Rate: ModelRate{1.20, 4.80, 0.60, 7.20, 1.20}},
-	{Pattern: "kimi-*", Rate: ModelRate{1.00, 4.00, 0.50, 6.00, 1.00}},
+	{Pattern: "kimi-*-thinking",    Rate: ModelRate{1.80, 7.20, 0.90, 10.80, 1.80}},
+	{Pattern: "kimi-k2*",           Rate: ModelRate{1.20, 4.80, 0.60, 7.20, 1.20}},
+	{Pattern: "kimi-*",             Rate: ModelRate{1.00, 4.00, 0.50, 6.00, 1.00}},
 
 	// --- DeepSeek ---
 	{Pattern: "deepseek-*reasoner*", Rate: ModelRate{0.14, 0.28, 0.0028, 0.28, 0.14}},
-	{Pattern: "deepseek-r*", Rate: ModelRate{0.14, 0.28, 0.0028, 0.28, 0.14}},
-	{Pattern: "deepseek-v*", Rate: ModelRate{0.14, 0.28, 0.0028, 0.28, 0.14}},
-	{Pattern: "deepseek-*", Rate: ModelRate{0.14, 0.28, 0.0028, 0.28, 0.14}},
+	{Pattern: "deepseek-r*",        Rate: ModelRate{0.14, 0.28, 0.0028, 0.28, 0.14}},
+	{Pattern: "deepseek-v*",        Rate: ModelRate{0.14, 0.28, 0.0028, 0.28, 0.14}},
+	{Pattern: "deepseek-*",         Rate: ModelRate{0.14, 0.28, 0.0028, 0.28, 0.14}},
 
 	// --- GLM ---
-	{Pattern: "glm-5*", Rate: ModelRate{1.00, 4.00, 0.50, 6.00, 1.00}},
-	{Pattern: "glm-4*", Rate: ModelRate{0.75, 3.00, 0.375, 4.50, 0.75}},
-	{Pattern: "glm-*", Rate: ModelRate{0.50, 2.00, 0.25, 3.00, 0.50}},
+	{Pattern: "glm-5*",             Rate: ModelRate{1.00, 4.00, 0.50, 6.00, 1.00}},
+	{Pattern: "glm-4*",             Rate: ModelRate{0.75, 3.00, 0.375, 4.50, 0.75}},
+	{Pattern: "glm-*",              Rate: ModelRate{0.50, 2.00, 0.25, 3.00, 0.50}},
 
 	// --- MiniMax ---
-	{Pattern: "MiniMax-*", Rate: ModelRate{0.50, 2.00, 0.25, 3.00, 0.50}},
-	{Pattern: "minimax-*", Rate: ModelRate{0.50, 2.00, 0.25, 3.00, 0.50}},
+	{Pattern: "MiniMax-*",          Rate: ModelRate{0.50, 2.00, 0.25, 3.00, 0.50}},
+	{Pattern: "minimax-*",          Rate: ModelRate{0.50, 2.00, 0.25, 3.00, 0.50}},
 
 	// --- Grok ---
-	{Pattern: "grok-code-*", Rate: ModelRate{0.50, 2.00, 0.25, 3.00, 0.50}},
-	{Pattern: "grok-*", Rate: ModelRate{0.50, 2.00, 0.25, 3.00, 0.50}},
+	{Pattern: "grok-code-*",        Rate: ModelRate{0.50, 2.00, 0.25, 3.00, 0.50}},
+	{Pattern: "grok-*",             Rate: ModelRate{0.50, 2.00, 0.25, 3.00, 0.50}},
 }
 
 func matchPattern(pattern, model string) bool {
@@ -474,16 +474,18 @@ func BuildUsageWhere(provider, period, startDate, endDate string) (string, []int
 		}
 	} else {
 		switch strings.ToLower(strings.TrimSpace(period)) {
-		case "today":
-			clauses = append(clauses, "timestamp >= datetime('now', 'start of day')")
-		case "day", "1d", "24h":
-			clauses = append(clauses, "timestamp >= datetime('now', '-1 day')")
+		case "": // Frontend default = Today (start of local calendar day, computed in UTC).
+			clauses = append(clauses, "datetime(timestamp) >= datetime('now', 'start of day')")
+		case "day", "1d", "24h", "today": // Rolling last 24h / explicit today label.
+			clauses = append(clauses, "datetime(timestamp) >= datetime('now', '-1 day')")
 		case "yesterday":
-			clauses = append(clauses, "timestamp >= datetime('now', '-1 day', 'start of day') AND timestamp < datetime('now', 'start of day')")
+			clauses = append(clauses, "datetime(timestamp) >= datetime('now', '-1 day', 'start of day') AND datetime(timestamp) < datetime('now', 'start of day')")
 		case "week", "7d":
-			clauses = append(clauses, "timestamp >= datetime('now', '-7 days')")
+			clauses = append(clauses, "datetime(timestamp) >= datetime('now', '-7 days')")
 		case "month", "30d", "1m":
-			clauses = append(clauses, "timestamp >= datetime('now', '-30 days')")
+			clauses = append(clauses, "datetime(timestamp) >= datetime('now', '-30 days')")
+		case "all":
+			// No date filter — the entire history.
 		}
 	}
 
@@ -492,27 +494,6 @@ func BuildUsageWhere(provider, period, startDate, endDate string) (string, []int
 		where = " WHERE " + strings.Join(clauses, " AND ")
 	}
 	return where, args
-}
-
-// estimateCost recomputes total cost row-by-row with current pricing
-// (including KV overrides) for usage rows stored without a cost.
-func estimateCost(provider, where string, args []interface{}) float64 {
-	rows, err := DB.Query(`SELECT provider, model, COALESCE(promptTokens,0), COALESCE(completionTokens,0), COALESCE(cachedTokens,0) FROM usageHistory`+where, args...)
-	if err != nil {
-		return 0
-	}
-	defer rows.Close()
-
-	var total float64
-	for rows.Next() {
-		var p, m string
-		var prompt, completion, cached int
-		if err := rows.Scan(&p, &m, &prompt, &completion, &cached); err != nil {
-			continue
-		}
-		total += CalculateCost(p, m, prompt, completion, cached)
-	}
-	return total
 }
 
 func GetUsageStats(provider, period, startDate, endDate string) (*UsageStats, error) {
@@ -548,6 +529,27 @@ func GetUsageStats(provider, period, startDate, endDate string) (*UsageStats, er
 	_ = DB.QueryRow("SELECT COALESCE(SUM(cachedTokens), 0) FROM usageHistory"+where, args...).Scan(&cachedSum)
 	stats.TotalCachedTokens = cachedSum
 	return &stats, nil
+}
+
+// estimateCost recomputes total cost row-by-row with current pricing
+// (including KV overrides) for usage rows stored without a cost.
+func estimateCost(provider, where string, args []interface{}) float64 {
+	rows, err := DB.Query(`SELECT provider, model, COALESCE(promptTokens,0), COALESCE(completionTokens,0), COALESCE(cachedTokens,0) FROM usageHistory`+where, args...)
+	if err != nil {
+		return 0
+	}
+	defer rows.Close()
+
+	var total float64
+	for rows.Next() {
+		var p, m string
+		var prompt, completion, cached int
+		if err := rows.Scan(&p, &m, &prompt, &completion, &cached); err != nil {
+			continue
+		}
+		total += CalculateCost(p, m, prompt, completion, cached)
+	}
+	return math.Round(total*10000) / 10000
 }
 
 func GetRecentLogs(limit int, provider string, period string) ([]UsageEntry, error) {
@@ -689,11 +691,11 @@ func GetModelUsageSummary(provider, period, startDate, endDate string) ([]ModelU
 			s.PromptTokens = s.Requests * 10
 			s.CompletionTokens = s.Requests * 20
 		}
-		// Always recompute from current pricing (canonical + pattern +
-		// overrides incl. group rules) so pricing edits reflect immediately,
-		// even on rows that already carry a stored cost.
-		if s.PromptTokens > 0 || s.CompletionTokens > 0 {
+		if s.Cost == 0 && (s.PromptTokens > 0 || s.CompletionTokens > 0) {
 			s.Cost = CalculateCost(s.Provider, s.Model, s.PromptTokens, s.CompletionTokens, s.CachedTokens)
+			if s.Cost == 0 {
+				s.Cost = float64(s.PromptTokens+s.CompletionTokens) * 0.000002
+			}
 		}
 		s.Cost = math.Round(s.Cost*10000) / 10000
 		summaries = append(summaries, s)

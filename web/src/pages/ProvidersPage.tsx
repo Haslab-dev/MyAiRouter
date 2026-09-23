@@ -5,7 +5,7 @@ import { useSnackbar } from '@/stores/snackbar'
 import ProviderIcon from '@/components/ProviderIcon'
 import { Badge, Button, Card, Field, Input, Modal, PageContainer, PageHeader, Select, Spinner, Toggle } from '@/components/ui'
 import { cn } from '@/lib/cn'
-import type { ModelEntry, ProviderConnection } from '@/lib/types'
+import type { ModelEntry, ProviderConnection, ProxyRoute } from '@/lib/types'
 
 interface ProviderNode {
   id: string
@@ -36,30 +36,51 @@ interface ProviderMetrics {
 }
 
 const CORE_PROVIDERS = [
-  { id: 'kilocode', name: 'Kilo Code', type: 'oauth', desc: 'Secure authorization code login', group: '' },
-  { id: 'opencode-go', name: 'OpenCode Go', type: 'apikey', desc: 'Fast, secure open code credentials', group: 'OpenCode' },
-  { id: 'opencode-zen', name: 'OpenCode Zen', type: 'apikey', desc: 'Custom code generation engine', group: 'OpenCode' },
-  { id: 'kenari', name: 'Kenari', type: 'apikey', desc: 'Kenari AI intelligent routing', group: '' },
-  { id: 'sumopod', name: 'Sumopod', type: 'apikey', desc: 'Sumopod high-performance endpoints', group: '' },
-  { id: 'mistral', name: 'Mistral AI', type: 'apikey', desc: 'Frontier AI models by Mistral', group: '' },
-  { id: 'meta', name: 'Meta AI', type: 'apikey', desc: 'Meta Llama foundation models', group: '' },
-  { id: 'ollama', name: 'Ollama', type: 'apikey', desc: 'Local & server inference engine', group: '' },
-  { id: 'qwen', name: 'Qwen', type: 'apikey', desc: 'Alibaba Cloud Tongyi Qianwen', group: '' },
-  { id: 'tencent', name: 'Tencent Hunyuan', type: 'apikey', desc: 'Tencent Cloud Hunyuan LLMs', group: '' },
-  { id: 'vercel', name: 'Vercel AI', type: 'apikey', desc: 'Vercel AI Gateway integration', group: '' },
-  { id: 'fireworks', name: 'Fireworks AI', type: 'apikey', desc: 'Fast generative AI inference', group: '' },
-  { id: 'cloudflare-ai', name: 'Cloudflare AI', type: 'apikey', desc: 'Cloudflare Workers AI platform', group: '' },
-  { id: 'glm', name: 'GLM API', type: 'apikey', desc: 'General LLM access keys', group: 'GLM' },
-  { id: 'glm-coding', name: 'GLM Coding Plan', type: 'apikey', desc: 'Targeted coding intelligence', group: 'GLM' },
-  { id: 'mimo', name: 'MIMO', type: 'apikey', desc: 'Xiaomi MiMo open models', group: '' },
-  { id: 'nvidia', name: 'NVIDIA NIM', type: 'apikey', desc: 'NVIDIA API Catalog & NIM endpoints', group: '' },
-  { id: 'groq', name: 'Groq', type: 'apikey', desc: 'LPU inference engine for fast LLMs', group: '' },
-  { id: 'openrouter', name: 'OpenRouter', type: 'apikey', desc: 'Unified API for top AI models', group: '' },
-  { id: 'deepseek', name: 'DeepSeek', type: 'apikey', desc: 'DeepSeek AI reasoning & chat models', group: '' },
-  { id: 'cerebras', name: 'Cerebras', type: 'apikey', desc: 'Ultra-fast inference on Cerebras hardware', group: '' },
+  { id: 'opencode-go', name: 'OpenCode Go', type: 'apikey', desc: 'Fast, secure open code credentials' },
+  { id: 'opencode-zen', name: 'OpenCode Zen', type: 'apikey', desc: 'Custom code generation engine' },
+  { id: 'kenari', name: 'Kenari', type: 'apikey', desc: 'Kenari AI intelligent routing' },
+  { id: 'sumopod', name: 'Sumopod', type: 'apikey', desc: 'Sumopod high-performance endpoints' },
+  { id: 'mistral', name: 'Mistral AI', type: 'apikey', desc: 'Frontier AI models by Mistral' },
+  { id: 'meta', name: 'Meta AI', type: 'apikey', desc: 'Meta Llama foundation models' },
+  { id: 'ollama', name: 'Ollama', type: 'apikey', desc: 'Local & server inference engine' },
+  { id: 'qwen', name: 'Qwen', type: 'apikey', desc: 'Alibaba Cloud Tongyi Qianwen' },
+  { id: 'tencent', name: 'Tencent Hunyuan', type: 'apikey', desc: 'Tencent Cloud Hunyuan LLMs' },
+  { id: 'vercel', name: 'Vercel AI', type: 'apikey', desc: 'Vercel AI Gateway integration' },
+  { id: 'fireworks', name: 'Fireworks AI', type: 'apikey', desc: 'Fast generative AI inference' },
+  { id: 'cloudflare-ai', name: 'Cloudflare AI', type: 'apikey', desc: 'Cloudflare Workers AI platform' },
+  { id: 'glm', name: 'GLM API', type: 'apikey', desc: 'General LLM access keys' },
+  { id: 'glm-coding', name: 'GLM Coding Plan', type: 'apikey', desc: 'Targeted coding intelligence' },
+  { id: 'nvidia', name: 'NVIDIA NIM', type: 'apikey', desc: 'NVIDIA API Catalog & NIM endpoints' },
+  { id: 'groq', name: 'Groq', type: 'apikey', desc: 'LPU inference engine for fast LLMs' },
+  { id: 'openrouter', name: 'OpenRouter', type: 'apikey', desc: 'Unified API for top AI models' },
+  { id: 'deepseek', name: 'DeepSeek', type: 'apikey', desc: 'DeepSeek AI reasoning & chat models' },
+  { id: 'cerebras', name: 'Cerebras', type: 'apikey', desc: 'Ultra-fast inference on Cerebras hardware' },
+] as const
+
+const OAUTH_PROVIDERS = [
+  { id: 'xai', name: 'xAI (Grok)', desc: 'Device code via auth.x.ai' },
+  { id: 'grok-cli', name: 'Grok CLI (Grok Build)', desc: 'Device code, subscription credits' },
+  { id: 'kimi', name: 'Kimi', desc: 'Device code via kimi.com' },
+  { id: 'copilot', name: 'GitHub Copilot', desc: 'Device code via github.com' },
+  { id: 'qoder', name: 'Qoder', desc: 'Device token via qoder.com' },
+  { id: 'codebuddy', name: 'CodeBuddy', desc: 'QR state flow, international' },
+  { id: 'codebuddy-cn', name: 'CodeBuddy CN', desc: 'QR state flow, China' },
+  { id: 'cline', name: 'Cline', desc: 'Browser callback flow (batch 2)' },
+  { id: 'clinepass', name: 'ClinePass', desc: 'Browser callback flow (batch 2)' },
+  { id: 'kilocode', name: 'Kilo Code', desc: 'Secure authorization code login' },
 ] as const
 
 const PROVIDER_URLS: Record<string, string> = {
+  xai: 'https://api.x.ai/v1',
+  'grok-cli': 'https://cli-chat-proxy.grok.com/v1',
+  kimi: 'https://api.kimi.com/coding',
+  copilot: 'https://api.githubcopilot.com',
+  qoder: 'https://api3.qoder.sh',
+  codebuddy: 'https://www.codebuddy.ai/v2',
+  'codebuddy-cn': 'https://copilot.tencent.com/v2',
+  cline: 'https://api.cline.bot/api/v1',
+  clinepass: 'https://api.cline.bot/api/v1',
+  kilocode: 'https://api.kilo.ai/api/openrouter',
   'opencode-go': 'https://opencode.ai/zen/go/v1',
   'opencode-zen': 'https://opencode.ai/zen/v1',
   kenari: 'https://kenari.id/v1',
@@ -74,7 +95,6 @@ const PROVIDER_URLS: Record<string, string> = {
   'cloudflare-ai': 'https://api.cloudflare.com/client/v4/accounts/{account_id}/ai/v1',
   glm: 'https://open.bigmodel.cn/api/paas/v4',
   'glm-coding': 'https://open.bigmodel.cn/api/coding/paas/v4',
-  mimo: 'https://api.xiaomimimo.com/v1',
   nvidia: 'https://integrate.api.nvidia.com/v1',
   groq: 'https://api.groq.com/openai/v1',
   openrouter: 'https://openrouter.ai/api/v1',
@@ -101,12 +121,21 @@ function CredentialEditor({ title, providerId, existing, defaultBaseUrl, onDone,
   const [credName, setCredName] = useState(existing?.name ?? '')
   const [credKey, setCredKey] = useState(existing?.data?.apiKey ?? '')
   const [credPriority, setCredPriority] = useState(existing?.priority ?? 1)
+  const [proxyRouteId, setProxyRouteId] = useState<string>(existing?.data?.proxyRouteId ?? '')
+  const [proxyRoutes, setProxyRoutes] = useState<ProxyRoute[]>([])
   const [customHeaders, setCustomHeaders] = useState<HeaderRow[]>(() => {
     const hdrs = existing?.data?.headers ?? {}
     const list = Object.keys(hdrs).map((k) => ({ key: k, value: String(hdrs[k]) }))
     return list.length > 0 ? list : [{ key: '', value: '' }]
   })
   const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    api
+      .get<{ routes: ProxyRoute[] }>('/api/proxies')
+      .then((d) => setProxyRoutes((d.routes ?? []).filter((r) => r.isEnabled)))
+      .catch(() => {})
+  }, [])
 
   const save = async () => {
     if (!credKey.trim()) {
@@ -117,11 +146,12 @@ function CredentialEditor({ title, providerId, existing, defaultBaseUrl, onDone,
     for (const h of customHeaders) {
       if (h.key.trim() && h.value.trim()) headersMap[h.key.trim()] = h.value.trim()
     }
+    const proxyData = proxyRouteId ? { proxyRouteId } : {}
     const payload = existing
       ? {
           name: credName || 'ProdKey',
           priority: credPriority || 1,
-          data: { apiKey: credKey, baseUrl: existing.data?.baseUrl || defaultBaseUrl, headers: headersMap },
+          data: { apiKey: credKey, baseUrl: existing.data?.baseUrl || defaultBaseUrl, headers: headersMap, ...proxyData },
         }
       : {
           id: `${providerId}-conn-${Date.now()}`,
@@ -131,7 +161,7 @@ function CredentialEditor({ title, providerId, existing, defaultBaseUrl, onDone,
           email: '',
           priority: credPriority || 1,
           isActive: true,
-          data: { apiKey: credKey, baseUrl: defaultBaseUrl, headers: headersMap },
+          data: { apiKey: credKey, baseUrl: defaultBaseUrl, headers: headersMap, ...proxyData },
         }
     setSaving(true)
     try {
@@ -173,6 +203,16 @@ function CredentialEditor({ title, providerId, existing, defaultBaseUrl, onDone,
         </Field>
         <Field label="Priority" hint="Lower number = tried first within the provider.">
           <Input type="number" min={1} value={credPriority} onChange={(e) => setCredPriority(parseInt(e.target.value, 10) || 1)} />
+        </Field>
+        <Field label="Proxy route" hint="Outbound requests go through this proxy — masks your IP from the provider.">
+          <Select value={proxyRouteId} onChange={(e) => setProxyRouteId(e.target.value)}>
+            <option value="">Direct (no proxy)</option>
+            {proxyRoutes.map((r) => (
+              <option key={r.id} value={r.id}>
+                {r.name} — {r.scheme}://{r.host}:{r.port}
+              </option>
+            ))}
+          </Select>
         </Field>
 
         <div>
@@ -220,9 +260,10 @@ export default function ProvidersPage() {
   const [nodeUrl, setNodeUrl] = useState('')
   const [nodeApiKey, setNodeApiKey] = useState('')
 
-  // Kilo Code OAuth
+  // OAuth (any provider)
+  const [oauthProvider, setOauthProvider] = useState<string>('')
   const [showOauth, setShowOauth] = useState(false)
-  const [oauthData, setOauthData] = useState<{ verification_url?: string; user_code?: string; device_code?: string } | null>(null)
+  const [oauthData, setOauthData] = useState<{ verification_uri?: string; verification_url?: string; user_code?: string; device_code?: string } | null>(null)
   const [oauthStatus, setOauthStatus] = useState<'idle' | 'initiating' | 'pending' | 'success' | 'error'>('idle')
   const [oauthEmail, setOauthEmail] = useState('')
   const [oauthError, setOauthError] = useState('')
@@ -230,6 +271,7 @@ export default function ProvidersPage() {
   // Detail: models / testing
   const [enabledModelIds, setEnabledModelIds] = useState<string[] | null>(null)
   const [thinkingMap, setThinkingMap] = useState<Record<string, boolean>>({})
+  const [pricingOverrides, setPricingOverrides] = useState<Record<string, Record<string, number>>>({})
   const [customModelIdInput, setCustomModelIdInput] = useState('')
   const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | null>(null)
   const [testing, setTesting] = useState(false)
@@ -241,7 +283,7 @@ export default function ProvidersPage() {
         api.get<ProviderConnection[]>('/api/providers'),
         api.get<{ nodes: ProviderNode[] }>('/api/provider-nodes'),
         api.get<{ models: CustomModel[] }>('/api/models/custom'),
-        api.get<{ data: ModelEntry[] }>('/v1/models'),
+        api.get<{ data: ModelEntry[] }>('/api/models'),
         api.get<{ logs: UsageLog[] }>('/api/usage/logs?perPage=500&page=1'),
       ])
       setConnections(conns ?? [])
@@ -329,20 +371,22 @@ export default function ProvidersPage() {
       .get<{ thinkingMap: Record<string, boolean> }>(`/api/models/thinking?providerAlias=${encodeURIComponent(providerId)}`)
       .then((data) => setThinkingMap(data.thinkingMap ?? {}))
       .catch(() => {})
+    api
+      .get<{ overrides: Record<string, Record<string, number>> }>(`/api/models/pricing?providerAlias=${encodeURIComponent(providerId)}`)
+      .then((data) => setPricingOverrides(data.overrides ?? {}))
+      .catch(() => {})
     setTestResult(null)
     const conn = connections.find((c) => c.provider === providerId)
     setModelPrefix(conn?.data?.modelPrefix ?? '')
   }, [viewingDetailProvider, connections])
 
-  // OAuth polling
+  // OAuth polling (generic: /api/oauth/{provider}/initiate|poll)
   useEffect(() => {
     let timer: ReturnType<typeof setInterval> | undefined
-    if (oauthStatus === 'pending' && oauthData?.device_code) {
+    if (oauthStatus === 'pending' && oauthProvider) {
       timer = setInterval(async () => {
         try {
-          const data = await api.post<{ status: string; email?: string; error?: string }>('/api/oauth/kilocode/poll', {
-            device_code: oauthData.device_code,
-          })
+          const data = await api.post<{ status: string; email?: string; error?: string }>(`/api/oauth/${oauthProvider}/poll`, {})
           if (data.status === 'success') {
             setOauthStatus('success')
             setOauthEmail(data.email ?? '')
@@ -350,6 +394,9 @@ export default function ProvidersPage() {
           } else if (data.status === 'error') {
             setOauthStatus('error')
             setOauthError(data.error ?? 'Authorization rejected or expired')
+          } else if (data.status === 'expired') {
+            setOauthStatus('error')
+            setOauthError('Login expired — initiate again.')
           }
         } catch (err) {
           console.error(err)
@@ -357,14 +404,16 @@ export default function ProvidersPage() {
       }, 3000)
     }
     return () => clearInterval(timer)
-  }, [oauthStatus, oauthData, fetchData])
+  }, [oauthStatus, oauthProvider, fetchData])
 
-  const handleStartOauth = () => {
+  const handleStartOauth = (providerId: string) => {
+    const initUrl = providerId === 'kilocode' ? '/api/oauth/kilocode/initiate' : `/api/oauth/${providerId}/initiate`
+    setOauthProvider(providerId)
     setOauthStatus('initiating')
     setShowOauth(true)
     setOauthError('')
     api
-      .post<{ verification_url?: string; user_code?: string; device_code?: string }>('/api/oauth/kilocode/initiate')
+      .post<{ verification_uri?: string; verification_url?: string; user_code?: string; device_code?: string }>(initUrl)
       .then((data) => {
         setOauthData(data)
         setOauthStatus('pending')
@@ -443,12 +492,15 @@ export default function ProvidersPage() {
     setTesting(true)
     setTestResult(null)
     try {
-      const data = await api.post<{ success?: boolean; latencyMs?: number; error?: string; message?: string }>(
+      const data = await api.post<{ valid?: boolean; success?: boolean; latencyMs?: number; error?: string; message?: string; lastError?: string }>(
         `/api/providers/${conn.id}/test`,
       )
+      const isValid = Boolean(data.valid ?? data.success)
       setTestResult({
-        ok: Boolean(data.success),
-        message: data.success ? `Connection OK${data.latencyMs ? ` — ${data.latencyMs}ms` : ''}` : data.error ?? data.message ?? 'Test failed',
+        ok: isValid,
+        message: isValid
+          ? `Connection OK${data.latencyMs ? ` — ${data.latencyMs}ms` : ''}`
+          : data.error ?? data.lastError ?? data.message ?? 'Test failed',
       })
     } catch (err) {
       setTestResult({ ok: false, message: err instanceof Error ? err.message : 'Test failed' })
@@ -551,6 +603,7 @@ export default function ProvidersPage() {
 
   const allProviderEntries = useMemo(() => {
     const entries = [
+      ...OAUTH_PROVIDERS.map((p) => ({ id: p.id, name: p.name, type: 'oauth', desc: p.desc, isNode: false })),
       ...CORE_PROVIDERS.map((p) => ({ id: p.id, name: p.name, type: p.type, desc: p.desc, isNode: false })),
       ...nodes.map((n) => ({ id: n.id, name: n.name, type: n.type, desc: n.data?.baseUrl ?? '', isNode: true })),
     ]
@@ -558,32 +611,19 @@ export default function ProvidersPage() {
     return q ? entries.filter((e) => e.name.toLowerCase().includes(q) || e.id.toLowerCase().includes(q)) : entries
   }, [nodes, providerSearchQuery])
 
-  const getConnectionFor = (providerId: string) => connections.find((c) => c.provider === providerId)
-
-  const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({})
-
-  // Collapse grouped providers (e.g. OpenCode Go + Zen -> OpenCode) into one
-  // parent card with expandable sub-provider entries.
-  const groupedProviderEntries = useMemo(() => {
-    type Entry = (typeof allProviderEntries)[number]
-    type Grouped = Entry & { subs: Entry[] }
-    const out: Grouped[] = []
-    const byGroup: Record<string, Entry[]> = {}
-    for (const e of allProviderEntries) {
-      // group key only applies to core providers with a non-empty group
-      const groupKey = (!e.isNode && CORE_PROVIDERS.find((c) => c.id === e.id && c.group)?.group) || ''
-      if (groupKey) {
-        ;(byGroup[groupKey] ??= []).push(e)
-      } else {
-        out.push({ ...e, subs: [] })
-      }
-    }
-    for (const members of Object.values(byGroup)) {
-      const [head, ...subs] = members
-      out.push({ ...head, subs })
-    }
-    return out
+  // Grid is grouped: OAuth logins / Connect (API key) / Custom (nodes).
+  const providerGroups = useMemo(() => {
+    const oauth = allProviderEntries.filter((e) => e.type === 'oauth')
+    const custom = allProviderEntries.filter((e) => e.isNode)
+    const connect = allProviderEntries.filter((e) => e.type !== 'oauth' && !e.isNode)
+    return [
+      { key: 'oauth', title: 'OAuth', hint: 'Sign in with a subscription account — no API key needed.', entries: oauth },
+      { key: 'connect', title: 'Connect', hint: 'Paste an API key for these upstream providers.', entries: connect },
+      { key: 'custom', title: 'Custom', hint: 'Your own OpenAI- or Anthropic-compatible endpoints.', entries: custom },
+    ].filter((g) => g.entries.length > 0)
   }, [allProviderEntries])
+
+  const getConnectionFor = (providerId: string) => connections.find((c) => c.provider === providerId)
 
   if (viewingDetailProvider) {
     const provider = viewingDetailProvider
@@ -700,6 +740,22 @@ export default function ProvidersPage() {
             </div>
             <div className="mt-2 text-[11px] text-subtle">Thinking mode marks models whose reasoning stream should render as thinking.</div>
           </Card>
+
+          {Object.keys(pricingOverrides).length > 0 && (
+            <Card className="lg:col-span-2">
+              <h3 className="mb-3 text-sm font-semibold">Pricing overrides</h3>
+              <div className="tnum grid gap-2 text-xs sm:grid-cols-2 lg:grid-cols-3">
+                {Object.entries(pricingOverrides).map(([model, prices]) => (
+                  <div key={model} className="rounded-md bg-surface-2 px-3 py-2">
+                    <code className="block truncate font-mono text-[11px]">{model}</code>
+                    <span className="text-muted">
+                      in {prices.Input ?? prices.input ?? 0} / out {prices.Output ?? prices.output ?? 0} / cached {prices.Cached ?? prices.cached ?? 0}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </Card>
+          )}
         </div>
 
         {credEditor && (
@@ -735,21 +791,22 @@ export default function ProvidersPage() {
         <Input placeholder="Search providers…" value={providerSearchQuery} onChange={(e) => setProviderSearchQuery(e.target.value)} className="max-w-sm" />
       </div>
 
-      <div className="grid gap-3 grid-cols-1 sm:[grid-template-columns:repeat(auto-fill,minmax(300px,1fr))]">
-        {groupedProviderEntries.map((p) => {
+      {providerGroups.map((group) => (
+        <section key={group.key} className="mb-6">
+          <div className="mb-2 flex items-baseline gap-2">
+            <h2 className="text-sm font-semibold text-text">{group.title}</h2>
+            <span className="text-[11px] text-muted">{group.hint}</span>
+          </div>
+          <div className="grid gap-3 grid-cols-1 sm:[grid-template-columns:repeat(auto-fill,minmax(300px,1fr))]">
+            {group.entries.map((p) => {
           const conn = getConnectionFor(p.id)
           const metrics = getProviderMetrics(p.id)
-          const connected = Boolean(conn) || p.subs.some((s) => getConnectionFor(s.id))
-          const expanded = !!expandedGroups[p.id]
+          const connected = Boolean(conn)
           return (
             <Card
               key={p.id}
               interactive
-              onClick={() =>
-                p.subs.length > 0
-                  ? setExpandedGroups((prev) => ({ ...prev, [p.id]: !expanded }))
-                  : setViewingDetailProvider({ id: p.id, name: p.name, type: p.type, baseUrl: p.isNode ? nodes.find((n) => n.id === p.id)?.data?.baseUrl ?? '' : PROVIDER_URLS[p.id] ?? '', isNode: p.isNode })
-              }
+              onClick={() => setViewingDetailProvider({ id: p.id, name: p.name, type: p.type, baseUrl: p.isNode ? nodes.find((n) => n.id === p.id)?.data?.baseUrl ?? '' : PROVIDER_URLS[p.id] ?? '', isNode: p.isNode })}
             >
               <div className="flex items-start gap-3">
                 <ProviderIcon id={p.id} name={p.name} size={34} />
@@ -770,12 +827,8 @@ export default function ProvidersPage() {
                   </div>
                 </div>
                 <div className="flex shrink-0 items-center gap-1" onClick={(e) => e.stopPropagation()}>
-                  {p.subs.length > 0 ? (
-                    <Button size="sm" variant="ghost" onClick={() => setExpandedGroups((prev) => ({ ...prev, [p.id]: !expanded }))}>
-                      {expanded ? 'Hide' : `${p.subs.length + 1} services`}
-                    </Button>
-                  ) : p.type === 'oauth' && p.id === 'kilocode' && !connected ? (
-                    <Button size="sm" variant="primary" onClick={handleStartOauth}>
+                  {p.type === 'oauth' && !connected ? (
+                    <Button size="sm" variant="primary" onClick={() => handleStartOauth(p.id)}>
                       <KeyRound size={12} /> Authorize
                     </Button>
                   ) : (
@@ -793,55 +846,41 @@ export default function ProvidersPage() {
                       {connected ? 'Edit' : 'Connect'}
                     </Button>
                   )}
-                  {connected && p.subs.length === 0 && (
+                  {connected && (
                     <Button size="sm" variant="ghost" className="text-danger hover:bg-danger-subtle hover:text-danger" onClick={() => handleRemoveConnection(p.id)}>
                       <Trash2 size={12} />
                     </Button>
                   )}
                 </div>
               </div>
-              {p.subs.length > 0 && expanded && (
-                <div className="mt-3 flex flex-col gap-2 border-t border-border/60 pt-3">
-                  {[p, ...p.subs].map((s) => {
-                    const sConn = getConnectionFor(s.id)
-                    return (
-                      <div
-                        key={s.id}
-                        className="flex cursor-pointer items-center gap-2.5 rounded-md px-2 py-1.5 transition-colors hover:bg-surface-2"
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          setViewingDetailProvider({ id: s.id, name: s.name, type: s.type, baseUrl: PROVIDER_URLS[s.id] ?? '', isNode: false })
-                        }}
-                      >
-                        <ProviderIcon id={s.id} name={s.name} size={24} />
-                        <div className="min-w-0 flex-1">
-                          <div className="truncate text-[12px] font-medium text-text">{s.name}</div>
-                          <div className="truncate text-[10px] text-muted">{s.desc}</div>
-                        </div>
-                        <span className={cn('h-1.5 w-1.5 rounded-full', sConn ? 'bg-success' : 'bg-subtle')} title={sConn ? 'Connected' : 'Not connected'} />
-                      </div>
-                    )
-                  })}
-                </div>
-              )}
             </Card>
           )
         })}
-      </div>
+          </div>
+        </section>
+      ))}
 
       {/* OAuth modal */}
-      <Modal open={showOauth} onClose={() => setShowOauth(false)} title="Kilo Code authorization" width="max-w-md">
+      <Modal open={showOauth} onClose={() => setShowOauth(false)} title={`${OAUTH_PROVIDERS.find((p) => p.id === oauthProvider)?.name ?? 'Provider'} authorization`} width="max-w-md">
+        {oauthStatus === 'initiating' && (
+          <div className="flex flex-col items-center gap-3 py-4 text-center">
+            <Spinner size={20} />
+            <p className="text-[13px] text-muted">Requesting device code…</p>
+          </div>
+        )}
         {oauthStatus === 'pending' && oauthData && (
           <div className="flex flex-col items-center gap-3 py-4 text-center">
             <Spinner size={20} />
             <p className="text-[13px] text-muted">
               Open{' '}
-              <a href={oauthData.verification_url} target="_blank" rel="noreferrer" className="text-accent underline">
-                {oauthData.verification_url}
-              </a>{' '}
-              and enter the code:
+              <a href={oauthData.verification_uri ?? oauthData.verification_url} target="_blank" rel="noreferrer" className="text-accent underline">
+                {oauthData.verification_uri ?? oauthData.verification_url}
+              </a>
+              {oauthData.user_code ? ' and enter the code:' : ' and approve access.'}
             </p>
-            <code className="rounded-md border border-border bg-surface-2 px-4 py-2 font-mono text-lg font-semibold tracking-widest">{oauthData.user_code}</code>
+            {oauthData.user_code && (
+              <code className="rounded-md border border-border bg-surface-2 px-4 py-2 font-mono text-lg font-semibold tracking-widest">{oauthData.user_code}</code>
+            )}
             <p className="text-[11px] text-subtle">Waiting for authorization…</p>
           </div>
         )}

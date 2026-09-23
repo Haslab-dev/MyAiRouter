@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"myAiRouter/pkg/db"
+	pkgGateway "myAiRouter/pkg/gateway"
 )
 
 type TraceStep struct {
@@ -65,8 +66,20 @@ type GatewayContext struct {
 	IsStream       bool
 	Stream         io.ReadCloser
 
+	// ResponseWritten tracks whether the client socket already received
+	// headers+body (WriteError/WriteJSON/Provider relay). The fallback engine
+	// checks it to avoid double-writing a second JSON error after Guardrail
+	// or a previous attempt already responded.
+	ResponseWritten bool
+
 	// Connection details
 	Connection *db.ProviderConnection
+
+	// Live-activity tracking key (see pkg/gateway/live.go). Empty means this
+	// context is not tracked — the passthrough/auth-only contexts and every
+	// test-built context take that path and pay nothing.
+	LiveID       string
+	LiveFinished bool
 
 	// Fallback/Retry state
 	RetryCount    int
@@ -86,6 +99,35 @@ func NewGatewayContext(w http.ResponseWriter, r *http.Request) *GatewayContext {
 		Metadata:       make(map[string]any),
 		Steps:          make([]TraceStep, 0),
 	}
+}
+
+// BeginLiveActivity opens the live-activity record the Overview animation
+// reads. It is deliberately driven by the caller (which knows the request id
+// and model) rather than by NewGatewayContext, because the passthrough
+// endpoints build a context for auth only and would otherwise emit phantom
+// sessions. Safe to call with an empty id: it becomes a no-op.
+func (c *GatewayContext) BeginLiveActivity(model string) {
+	c.LiveID = pkgGateway.BeginActivity(c.RequestID, model, c.Request.URL.Path)
+}
+
+// FinishLiveActivity closes the record with the final accounting. Nil-safe:
+// contexts built by tests (no RequestID) simply skip it.
+func (c *GatewayContext) FinishLiveActivity() {
+	if c.LiveID == "" || c.LiveFinished {
+		return
+	}
+	c.LiveFinished = true
+	ok := c.ResponseCode < 400
+	pkgGateway.FinishActivity(c.LiveID, c.ResponseCode, ok, c.PromptTokens, c.CompletionTokens, c.CachedTokens)
+}
+
+// TrackStep mirrors one pipeline step into the live record so the Overview
+// can show *which* stage is running, not just a spinner.
+func (c *GatewayContext) TrackStep(step string) {
+	if c.LiveID == "" {
+		return
+	}
+	pkgGateway.SetStep(c.LiveID, step)
 }
 
 func (c *GatewayContext) AddStep(name string, status string, details string) {
@@ -122,6 +164,10 @@ func (c *GatewayContext) AddStepWithError(name string, status string, details st
 }
 
 func (c *GatewayContext) WriteError(code int, msg string) {
+	if c.ResponseWritten {
+		return
+	}
+	c.ResponseWritten = true
 	c.ResponseCode = code
 	c.ResponseWriter.Header().Set("Content-Type", "application/json")
 	c.ResponseWriter.WriteHeader(code)
@@ -134,6 +180,10 @@ func (c *GatewayContext) WriteError(code int, msg string) {
 }
 
 func (c *GatewayContext) WriteJSON(code int, data interface{}) {
+	if c.ResponseWritten {
+		return
+	}
+	c.ResponseWritten = true
 	c.ResponseCode = code
 	c.ResponseWriter.Header().Set("Content-Type", "application/json")
 	c.ResponseWriter.WriteHeader(code)
@@ -164,6 +214,10 @@ func (c *GatewayContext) CloneForTarget(ctx context.Context, conn *db.ProviderCo
 		StartTime:      time.Now(),
 		LastStepTime:   time.Now(),
 		Steps:          make([]TraceStep, 0),
+		// Child attempts share the parent's live-activity record: from the
+		// operator's point of view one client request is one session, even
+		// when a combo fans it out to N upstreams.
+		LiveID: c.LiveID,
 	}
 }
 

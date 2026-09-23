@@ -13,7 +13,7 @@ import {
 import { Loader2, X } from 'lucide-react'
 
 /*
- * UI primitives for the myAiRouter dashboard.
+ * UI primitives for the MyAiRouter dashboard.
  *
  * Design contract: flat surfaces, 1px borders, ONE blue accent, semantic
  * colors only for status. No gradients, no glow, no backdrop blur.

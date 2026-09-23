@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"time"
 
 	"myAiRouter/pkg/db"
 )
@@ -30,6 +31,9 @@ func (p *AnthropicProvider) Capabilities(conn *db.ProviderConnection) ProviderCa
 // sets the anthropic-version header, supports streaming, and allows custom header injection.
 func (p *AnthropicProvider) Execute(ctx context.Context, conn *db.ProviderConnection, body map[string]interface{}) *ExecutionResult {
 	apiKey, _ := conn.Data["apiKey"].(string)
+	if oauthTok, err := OAuthAccessToken(conn); err == nil && oauthTok != "" {
+		apiKey = oauthTok // OAuth connection: token wins over any stored key
+	}
 	if apiKey == "" {
 		apiKey = conn.Name
 	}
@@ -37,7 +41,11 @@ func (p *AnthropicProvider) Execute(ctx context.Context, conn *db.ProviderConnec
 
 	baseUrl, _ := conn.Data["baseUrl"].(string)
 	if baseUrl == "" {
-		baseUrl = "https://api.anthropic.com/v1"
+		if oauthBase := OAuthBaseURL(conn); oauthBase != "" {
+			baseUrl = oauthBase
+		} else {
+			baseUrl = "https://api.anthropic.com/v1"
+		}
 	}
 
 	url := strings.TrimSuffix(baseUrl, "/") + "/messages"
@@ -64,7 +72,11 @@ func (p *AnthropicProvider) Execute(ctx context.Context, conn *db.ProviderConnec
 		}
 	}
 
-	resp, err := SharedHTTPClient.Do(req)
+	ApplyAntiDetect(req, conn)
+
+	start := time.Now()
+	resp, err := ClientFor(conn).Do(req)
+	latencyMs := float64(time.Since(start).Microseconds()) / 1000.0
 	if err != nil {
 		return &ExecutionResult{Err: err}
 	}
@@ -74,6 +86,7 @@ func (p *AnthropicProvider) Execute(ctx context.Context, conn *db.ProviderConnec
 			ResponseCode: resp.StatusCode,
 			Stream:       resp.Body,
 			IsStream:     true,
+			LatencyMs:    latencyMs,
 		}
 	}
 
@@ -83,6 +96,7 @@ func (p *AnthropicProvider) Execute(ctx context.Context, conn *db.ProviderConnec
 		ResponseCode: resp.StatusCode,
 		Body:         respBody,
 		IsStream:     false,
+		LatencyMs:    latencyMs,
 		Err:          err,
 	}
 }

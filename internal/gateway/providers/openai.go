@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"time"
 
 	"myAiRouter/pkg/db"
 )
@@ -34,102 +35,92 @@ func (p *OpenAIProvider) Capabilities(conn *db.ProviderConnection) ProviderCapab
 
 func (p *OpenAIProvider) Execute(ctx context.Context, conn *db.ProviderConnection, body map[string]interface{}) *ExecutionResult {
 	apiKey, _ := conn.Data["apiKey"].(string)
+	if oauthTok, err := OAuthAccessToken(conn); err == nil && oauthTok != "" {
+		apiKey = oauthTok // OAuth connection: token wins over any stored key
+	}
 	if apiKey == "" {
 		apiKey = conn.Name
+	}
+	// OAuth connections sometimes need a forced upstream model id
+	// (e.g. Grok Build) — see oauth_registry.go.
+	if oauthAlias := OAuthModelAlias(conn); oauthAlias != "" {
+		body["model"] = oauthAlias
 	}
 	stream, _ := body["stream"].(bool)
 
 	baseUrl, _ := conn.Data["baseUrl"].(string)
 	if baseUrl == "" {
-		switch conn.Provider {
-		case "groq":
-			baseUrl = "https://api.groq.com/openai/v1"
-		case "nvidia":
-			baseUrl = "https://integrate.api.nvidia.com/v1"
-		case "openrouter":
-			baseUrl = "https://openrouter.ai/api/v1"
-		case "deepseek":
-			baseUrl = "https://api.deepseek.com/v1"
-		case "glm":
-			baseUrl = "https://open.bigmodel.cn/api/paas/v4"
-		case "glm-coding":
-			baseUrl = "https://open.bigmodel.cn/api/coding/paas/v4"
-		case "mimo":
-			baseUrl = "https://api.xiaomimimo.com/v1"
-		case "cerebras":
-			baseUrl = "https://api.cerebras.ai/v1"
-		case "opencode-zen", "opencode":
-			baseUrl = "https://opencode.ai/zen/v1"
-		case "opencode-go":
-			baseUrl = "https://opencode.ai/zen/go/v1"
-		default:
-			baseUrl = "https://api.openai.com/v1"
+		if oauthBase := OAuthBaseURL(conn); oauthBase != "" {
+			baseUrl = oauthBase
+		} else {
+			switch conn.Provider {
+			case "groq":
+				baseUrl = "https://api.groq.com/openai/v1"
+			case "nvidia":
+				baseUrl = "https://integrate.api.nvidia.com/v1"
+			case "openrouter":
+				baseUrl = "https://openrouter.ai/api/v1"
+			case "deepseek":
+				baseUrl = "https://api.deepseek.com/v1"
+			case "glm":
+				baseUrl = "https://open.bigmodel.cn/api/paas/v4"
+			case "glm-coding":
+				baseUrl = "https://open.bigmodel.cn/api/coding/paas/v4"
+			case "cerebras":
+				baseUrl = "https://api.cerebras.ai/v1"
+			case "opencode-zen", "opencode":
+				baseUrl = "https://opencode.ai/zen/v1"
+			case "opencode-go":
+				baseUrl = "https://opencode.ai/zen/go/v1"
+			default:
+				baseUrl = "https://api.openai.com/v1"
+			}
 		}
 	}
 
 	url := strings.TrimSuffix(baseUrl, "/") + "/chat/completions"
-
-	// Strip fields this provider is known to reject (strict validation).
-	SanitizeRequestBody(conn.Provider, body)
-
-	doRequest := func(bodyBytes []byte) (*http.Response, error) {
-		req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(bodyBytes))
-		if err != nil {
-			return nil, err
-		}
-
-		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("Authorization", "Bearer "+apiKey)
-		if conn.Provider == "opencode" || conn.Provider == "opencode-go" {
-			req.Header.Set("x-opencode-client", "desktop")
-		}
-		if conn.Provider == "kilocode" {
-			if orgId, ok := conn.Data["orgId"].(string); ok && orgId != "" {
-				req.Header.Set("X-Kilocode-OrganizationID", orgId)
-			}
-		}
-
-		// Inject custom headers
-		if headers, ok := conn.Data["headers"].(map[string]interface{}); ok {
-			for k, v := range headers {
-				if valStr, ok := v.(string); ok {
-					req.Header.Set(k, valStr)
-				}
-			}
-		}
-
-		return SharedHTTPClient.Do(req)
-	}
-
 	bodyBytes, err := json.Marshal(body)
 	if err != nil {
 		return &ExecutionResult{Err: fmt.Errorf("marshalling body: %w", err)}
 	}
 
-	resp, err := doRequest(bodyBytes)
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(bodyBytes))
 	if err != nil {
 		return &ExecutionResult{Err: err}
 	}
 
-	// Future-proofing: if a provider still rejects unknown extra fields,
-	// strip them from the body and retry once.
-	if resp.StatusCode == http.StatusUnprocessableEntity {
-		respBody, readErr := io.ReadAll(resp.Body)
-		_ = resp.Body.Close()
-		if readErr == nil {
-			if rejected := RejectedFieldsFrom422(respBody); len(rejected) > 0 {
-				for _, field := range rejected {
-					delete(body, field)
-				}
-				if retryBytes, mErr := json.Marshal(body); mErr == nil {
-					if retryResp, dErr := doRequest(retryBytes); dErr == nil {
-						resp = retryResp
-					}
-				}
-			} else {
-				return &ExecutionResult{ResponseCode: resp.StatusCode, Body: respBody, IsStream: false}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+apiKey)
+	// OAuth per-provider spoof headers land before custom headers so
+	// connection-level overrides (if any) still win.
+	for k, v := range OAuthHeaders(conn) {
+		req.Header.Set(k, v)
+	}
+	if conn.Provider == "opencode" || conn.Provider == "opencode-go" {
+		req.Header.Set("x-opencode-client", "desktop")
+	}
+	if conn.Provider == "kilocode" {
+		if orgId, ok := conn.Data["orgId"].(string); ok && orgId != "" {
+			req.Header.Set("X-Kilocode-OrganizationID", orgId)
+		}
+	}
+
+	// Inject custom headers
+	if headers, ok := conn.Data["headers"].(map[string]interface{}); ok {
+		for k, v := range headers {
+			if valStr, ok := v.(string); ok {
+				req.Header.Set(k, valStr)
 			}
 		}
+	}
+
+	ApplyAntiDetect(req, conn)
+
+	start := time.Now()
+	resp, err := ClientFor(conn).Do(req)
+	latencyMs := float64(time.Since(start).Microseconds()) / 1000.0
+	if err != nil {
+		return &ExecutionResult{Err: err}
 	}
 
 	if stream && resp.StatusCode == http.StatusOK {
@@ -137,6 +128,7 @@ func (p *OpenAIProvider) Execute(ctx context.Context, conn *db.ProviderConnectio
 			ResponseCode: resp.StatusCode,
 			Stream:       resp.Body,
 			IsStream:     true,
+			LatencyMs:    latencyMs,
 		}
 	}
 
@@ -146,6 +138,7 @@ func (p *OpenAIProvider) Execute(ctx context.Context, conn *db.ProviderConnectio
 		ResponseCode: resp.StatusCode,
 		Body:         respBody,
 		IsStream:     false,
+		LatencyMs:    latencyMs,
 		Err:          err,
 	}
 }

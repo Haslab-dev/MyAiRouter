@@ -2,13 +2,14 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"embed"
 	"fmt"
 	"io"
 	"io/fs"
 	"net/http"
 	"os"
-	"path/filepath"
+	"path"
 	"regexp"
 	"runtime/debug"
 	"strings"
@@ -34,10 +35,15 @@ func main() {
 	if len(os.Args) > 1 {
 		switch os.Args[1] {
 		case "start":
-			if len(os.Args) > 2 && os.Args[2] == "-d" {
-				startBackground()
+			// Default: background, no console popup. Control via terminal only.
+			// Use `myairouter start -f` for foreground (debug) mode.
+			if len(os.Args) > 2 && (os.Args[2] == "-f" || os.Args[2] == "--foreground") {
+				stopExistingDuplicates()
+				startServer()
 				return
 			}
+			startBackground()
+			return
 		case "background", "bg":
 			startBackground()
 			return
@@ -51,6 +57,15 @@ func main() {
 			stopProcess()
 			startBackground()
 			return
+		case "install":
+			installAutostart()
+			return
+		case "install-global", "global", "setup":
+			installGlobal()
+			return
+		case "uninstall":
+			uninstallAutostart()
+			return
 		case "help", "--help", "-h":
 			printHelp()
 			return
@@ -59,24 +74,35 @@ func main() {
 			return
 		}
 	}
-	stopExistingDuplicates()
-	startServer()
+	// No args: background too — no console popup, control via terminal only.
+	startBackground()
 }
 
 func printHelp() {
 	fmt.Print(`myairouter - AI model router and gateway
 
 Usage:
-  myairouter            start server (foreground)
-  myairouter start      start server (foreground)
-  myairouter start -d   start server (background daemon)
+  myairouter            start server (background, no popup)
+  myairouter start      start server (background, no popup)
+  myairouter start -f   start server (foreground, debug)
   myairouter status     show server status & running processes
   myairouter stop       stop all running daemon processes
   myairouter restart    restart daemon
+  myairouter install    auto-start on boot + crash watchdog (Windows scheduled task)
+  myairouter install-global  copy exe to ~/.local/bin + add to PATH (global call)
+  myairouter uninstall  remove auto-start (daemon keeps running)
   myairouter bg         start server (background alias)
   myairouter version    print version
   myairouter help       show this help
 `)
+}
+
+func embedPath(urlPath string) string {
+	clean := path.Clean("/" + strings.TrimPrefix(urlPath, "/"))
+	if clean == "/" {
+		return "index.html"
+	}
+	return strings.TrimPrefix(clean, "/")
 }
 
 func startServer() {
@@ -85,18 +111,20 @@ func startServer() {
 		debug.SetMemoryLimit(128 * 1024 * 1024)
 	}
 
-	// Periodic background memory scavenger
+	// Periodic background memory scavenger + WAL checkpoint so usage rows
+	// are durable even if the process is force-killed later.
 	go func() {
 		ticker := time.NewTicker(5 * time.Minute)
 		for range ticker.C {
 			if db.DB != nil {
 				_, _ = db.DB.Exec("PRAGMA shrink_memory;")
+				db.Checkpoint()
 			}
 			debug.FreeOSMemory()
 		}
 	}()
 
-	logger.LogMessage("Starting myAiRouter...")
+	logger.LogMessage("Starting MyAiRouter...")
 
 	if err := db.InitDB(); err != nil {
 		logger.LogError(fmt.Sprintf("Failed to initialize database: %v", err))
@@ -109,6 +137,7 @@ func startServer() {
 	internalGateway.RegisterGatewayRoutes(mux)
 	gateway.RegisterAdminRoutes(mux)
 	gateway.StartMetricsCollector(30 * time.Second)
+	db.StartBackupScheduler()
 	skillsFS, err := fs.Sub(embedFS, "skills")
 	if err == nil {
 		mux.Handle("/skills/", http.StripPrefix("/skills/", http.FileServer(http.FS(skillsFS))))
@@ -131,12 +160,7 @@ func startServer() {
 		w.Header().Set("Pragma", "no-cache")
 		w.Header().Set("Expires", "0")
 
-		cleanPath := filepath.Clean(r.URL.Path)
-		if cleanPath == "/" {
-			cleanPath = "index.html"
-		} else {
-			cleanPath = strings.TrimPrefix(cleanPath, "/")
-		}
+		cleanPath := embedPath(r.URL.Path)
 
 		_, err := distFS.Open(cleanPath)
 		if err != nil {
@@ -158,6 +182,7 @@ func startServer() {
 
 	port := os.Getenv("PORT")
 	if port == "" {
+		// Default: 20128 (upstream default). Override with PORT env var.
 		port = "20128"
 	}
 	host := os.Getenv("HOST")
@@ -172,10 +197,35 @@ func startServer() {
 		IdleTimeout:       120 * time.Second,
 	}
 
-	logger.LogMessage(fmt.Sprintf("myAiRouter listening on %s", addr))
-	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-		logger.LogError(fmt.Sprintf("Server failed to start: %v", err))
-		os.Exit(1)
+	logger.LogMessage(fmt.Sprintf("MyAiRouter listening on %s", addr))
+
+	// Graceful shutdown: SIGINT (Ctrl+C) / SIGTERM (service stop) stop accepting
+	// new connections, in-flight streaming requests drain for up to 10s, then
+	// the process exits cleanly instead of dropping sockets mid-stream.
+	serverErr := make(chan error, 1)
+	go func() { serverErr <- srv.ListenAndServe() }()
+
+	sigCh := make(chan os.Signal, 1)
+	notifySig(sigCh)
+
+	select {
+	case err := <-serverErr:
+		if err != nil && err != http.ErrServerClosed {
+			logger.LogError(fmt.Sprintf("Server failed to start: %v", err))
+			os.Exit(1)
+		}
+	case <-sigCh:
+		logger.LogMessage("Shutdown signal received, draining connections…")
+		_ = os.Remove(pidFilePath())
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if err := srv.Shutdown(ctx); err != nil {
+			logger.LogError(fmt.Sprintf("Forced shutdown after timeout: %v", err))
+		} else {
+			logger.LogMessage("Shutdown complete.")
+		}
+		db.Checkpoint()
+		db.CloseDB()
 	}
 }
 

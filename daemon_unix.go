@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"syscall"
@@ -118,7 +119,11 @@ func stopProcess() {
 func startBackground() {
 	stopExistingDuplicates()
 
-	cmd := exec.Command(os.Args[0])
+	exe := os.Args[0]
+	if abs, err := filepath.Abs(exe); err == nil {
+		exe = abs
+	}
+	cmd := exec.Command(exe, "start", "-f")
 	cmd.Stdout = nil
 	cmd.Stderr = nil
 	cmd.Env = os.Environ()

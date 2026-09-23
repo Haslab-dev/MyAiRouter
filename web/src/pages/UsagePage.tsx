@@ -2,7 +2,9 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Download, RefreshCw } from 'lucide-react'
 import { api } from '@/lib/api'
 import { useSnackbar } from '@/stores/snackbar'
-import { Badge, Button, Card, CardHeader, Field, Input, Modal, PageContainer, PageHeader, Select, StatCard, Tabs } from '@/components/ui'
+import { Badge, Button, Card, CardHeader, Field, Input, Modal, PageContainer, PageHeader, Select, StatCard, StatusDot, Tabs } from '@/components/ui'
+import LiveActivityAnimation from '@/components/LiveActivityAnimation'
+import { useLiveActivity } from '@/lib/useLiveActivity'
 import { formatCost, formatNumber, type ProviderConnection } from '@/lib/types'
 import { cn } from '@/lib/cn'
 
@@ -30,8 +32,33 @@ interface ModelSummaryRow {
   cost: number
 }
 
+interface UsageLogRow {
+  id: number
+  timestamp: string
+  provider: string
+  model: string
+  endpoint: string
+  promptTokens: number
+  completionTokens: number
+  cachedTokens: number
+  cost: number
+  status: string
+  meta: string
+}
+
+/** Relative "x s ago" label used by the live activity feed. */
+function timeAgo(iso: string): string {
+  const t = Date.parse(iso.endsWith('Z') || iso.includes('T') ? iso : iso.replace(' ', 'T') + 'Z')
+  if (Number.isNaN(t)) return iso
+  const s = Math.max(0, Math.round((Date.now() - t) / 1000))
+  if (s < 60) return `${s}s ago`
+  if (s < 3600) return `${Math.floor(s / 60)}m ago`
+  if (s < 86400) return `${Math.floor(s / 3600)}h ago`
+  return `${Math.floor(s / 86400)}d ago`
+}
+
 const PERIODS = [
-  { value: 'today', label: 'Today' },
+  { value: '', label: 'Today' },
   { value: '7d', label: '7 days' },
   { value: '30d', label: '30 days' },
   { value: 'all', label: 'All time' },
@@ -82,9 +109,12 @@ export default function UsagePage() {
   const [stats, setStats] = useState<UsageStats>({ totalRequests: 0, totalPromptTokens: 0, totalCompletionTokens: 0, totalCachedTokens: 0, totalCost: 0 })
   const [chartData, setChartData] = useState<ChartPoint[]>([])
   const [modelSummaries, setModelSummaries] = useState<ModelSummaryRow[]>([])
+  const [recentLogs, setRecentLogs] = useState<UsageLogRow[]>([])
+  const [lastActivityAt, setLastActivityAt] = useState<number | null>(null)
+  const [nowTick, setNowTick] = useState(Date.now())
   const [connections, setConnections] = useState<ProviderConnection[]>([])
   const [providerFilter, setProviderFilter] = useState('')
-  const [period, setPeriod] = useState('today')
+  const [period, setPeriod] = useState('')
   const [chartMode, setChartMode] = useState<'tokens' | 'cost'>('tokens')
   const [tableMode, setTableMode] = useState<'models' | 'providers'>('models')
   const [isRefreshing, setIsRefreshing] = useState(false)
@@ -101,14 +131,22 @@ export default function UsagePage() {
     async (p: string, period_: string) => {
       const qs = (extra = '') => `?provider=${encodeURIComponent(p)}&period=${encodeURIComponent(period_)}${extra}`
       try {
-        const [statsData, chart, modelRows] = await Promise.all([
+        const [statsData, chart, modelRows, logsResp] = await Promise.all([
           api.get<UsageStats>(`/api/usage/stats${qs()}`),
           api.get<ChartPoint[]>(`/api/usage/charts${qs()}`),
           api.get<ModelSummaryRow[]>(`/api/usage/models${qs()}`),
+          api.get<{ logs: UsageLogRow[] }>(`/api/usage/logs?page=1&perPage=10`),
         ])
         setStats(statsData)
         setChartData(chart ?? [])
         setModelSummaries(modelRows ?? [])
+        const rows = (logsResp.logs ?? []).slice().sort((a, b) => b.id - a.id)
+        setRecentLogs(rows)
+        const newest = rows[0]
+        if (newest) {
+          const t = Date.parse(newest.timestamp.endsWith('Z') || newest.timestamp.includes('T') ? newest.timestamp : newest.timestamp.replace(' ', 'T') + 'Z')
+          if (!Number.isNaN(t)) setLastActivityAt(t)
+        }
       } catch (err) {
         console.error('Error loading usage:', err)
       }
@@ -125,7 +163,13 @@ export default function UsagePage() {
     const interval = setInterval(() => {
       if (!document.hidden) fetchData(providerFilter, period)
     }, 15_000)
-    return () => clearInterval(interval)
+    // Re-render every second so the "last activity x s ago" label counts up
+    // live without refetching.
+    const tick = setInterval(() => setNowTick(Date.now()), 1000)
+    return () => {
+      clearInterval(interval)
+      clearInterval(tick)
+    }
   }, [providerFilter, period, fetchData])
 
   const refresh = async () => {
@@ -148,6 +192,34 @@ export default function UsagePage() {
       notify('Usage data exported', 'success')
     } catch {
       notify('Export failed', 'error')
+    }
+  }
+
+  // Full configuration (providers, routes, models, proxies) as one portable
+  // JSON file — credentials included, so treat the download as a secret.
+  const handleConfigExport = async () => {
+    try {
+      const res = await fetch('/api/config/export')
+      if (!res.ok) throw new Error('Config export failed')
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `myairouter-config-${new Date().toISOString().slice(0, 10)}.json`
+      a.click()
+      URL.revokeObjectURL(url)
+      notify('Config exported (contains API keys)', 'success')
+    } catch {
+      notify('Config export failed', 'error')
+    }
+  }
+
+  const handleBackupNow = async () => {
+    try {
+      await api.post('/api/backup')
+      notify('Database backup created in ~/.myairouter/backups', 'success')
+    } catch {
+      notify('Backup failed', 'error')
     }
   }
 
@@ -208,35 +280,37 @@ export default function UsagePage() {
   const totalTokens = stats.totalPromptTokens + stats.totalCompletionTokens
   const rows = tableMode === 'models' ? modelSummariesMerged : providerSummaries
 
-  // Column sorting (click a header to sort, click again to flip direction)
-  type SortKey = 'name' | 'requests' | 'promptTokens' | 'completionTokens' | 'cachedTokens' | 'cost'
-  const [sortKey, setSortKey] = useState<SortKey>('cost')
-  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc')
+  // Live activity state: "running" when a request landed within the last 5 min
+  // and the gateway itself responds to /api/health.
+  const [gatewayUp, setGatewayUp] = useState(true)
+  useEffect(() => {
+    let alive = true
+    api.get<{ ok: boolean }>('/api/health').then(() => alive && setGatewayUp(true)).catch(() => alive && setGatewayUp(false))
+    return () => {
+      alive = false
+    }
+  }, [stats])
+  const secondsSinceActivity = lastActivityAt !== null ? Math.max(0, Math.round((nowTick - lastActivityAt) / 1000)) : null
+  const isLive = gatewayUp && secondsSinceActivity !== null && secondsSinceActivity < 300
 
-  const sortedRows = useMemo(() => {
-    const arr = [...rows]
-    arr.sort((a, b) => {
-      const rec = (o: (typeof rows)[number]) => o as unknown as Record<SortKey, string | number>
-      const av = rec(a)[sortKey]
-      const bv = rec(b)[sortKey]
-      const cmp = typeof av === 'string' || typeof bv === 'string'
-        ? String(av).localeCompare(String(bv))
-        : (av as number) - (bv as number)
-      return sortDir === 'asc' ? cmp : -cmp
-    })
-    return arr
-  }, [rows, sortKey, sortDir])
+  // Live in-flight animation feed. Polling pauses while the tab is hidden so
+  // a backgrounded dashboard costs nothing.
+  const [tabVisible, setTabVisible] = useState(() => !document.hidden)
+  useEffect(() => {
+    const onVis = () => setTabVisible(!document.hidden)
+    document.addEventListener('visibilitychange', onVis)
+    return () => document.removeEventListener('visibilitychange', onVis)
+  }, [])
+  const { snapshot: live, stale: liveStale } = useLiveActivity(1200, tabVisible)
 
-  const toggleSort = (key: SortKey) => {
-    if (sortKey === key) setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'))
-    else {
-      setSortKey(key)
-      setSortDir(key === 'name' ? 'asc' : 'desc')
+  const parseMetaNum = (meta: string, key: string): number | null => {
+    try {
+      const v = JSON.parse(meta || '{}')
+      return typeof v[key] === 'number' ? v[key] : null
+    } catch {
+      return null
     }
   }
-
-  const sortIndicator = (key: SortKey) =>
-    sortKey === key ? (sortDir === 'asc' ? ' ↑' : ' ↓') : ''
 
   return (
     <PageContainer>
@@ -250,6 +324,12 @@ export default function UsagePage() {
             </Button>
             <Button size="sm" onClick={handleExport}>
               <Download size={13} /> Export
+            </Button>
+            <Button size="sm" onClick={handleConfigExport}>
+              Config
+            </Button>
+            <Button size="sm" onClick={handleBackupNow}>
+              Backup
             </Button>
             <Button size="sm" variant="primary" loading={isRefreshing} onClick={refresh}>
               <RefreshCw size={13} /> Refresh
@@ -293,14 +373,67 @@ export default function UsagePage() {
         <StatCard label="Requests" value={formatNumber(stats.totalRequests)} />
         <StatCard label="Prompt tokens" value={formatNumber(stats.totalPromptTokens)} />
         <StatCard label="Completion tokens" value={formatNumber(stats.totalCompletionTokens)} />
-        <StatCard
-          label="Cached (upstream)"
-          value={formatNumber(stats.totalCachedTokens)}
-          hint={stats.totalPromptTokens > 0 ? `${((stats.totalCachedTokens / stats.totalPromptTokens) * 100).toFixed(1)}% of prompt` : 'Reported by providers'}
-          tone="success"
-        />
+        <StatCard label="Cached (upstream)" value={formatNumber(stats.totalCachedTokens)} hint="Reported by providers" tone="success" />
         <StatCard label="Cost" value={formatCost(stats.totalCost)} />
       </div>
+
+      {/* In-flight animation (live) */}
+      <div className="mb-5">
+        <LiveActivityAnimation snapshot={live} stale={liveStale} />
+      </div>
+
+      {/* Live activity */}
+      <Card className="mb-5" padded={false}>
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-4 py-3">
+          <div className="flex items-center gap-2">
+            <StatusDot tone={isLive ? 'success' : gatewayUp ? 'warning' : 'danger'} pulse={isLive} />
+            <h3 className="text-sm font-semibold">Recent requests</h3>
+            <Badge tone={isLive ? 'success' : gatewayUp ? 'warning' : 'danger'}>
+              {isLive ? 'Active' : gatewayUp ? 'Quiet' : 'Down'}
+            </Badge>
+          </div>
+          <span className="tnum text-[11px] text-subtle">
+            {secondsSinceActivity !== null
+              ? `last request ${secondsSinceActivity < 60 ? `${secondsSinceActivity}s` : timeAgo(recentLogs[0]?.timestamp ?? '')} ago`
+              : 'no requests recorded yet'}
+          </span>
+        </div>
+        <div className="max-h-64 overflow-y-auto">
+          {recentLogs.length === 0 ? (
+            <div className="px-4 py-6 text-center text-xs text-subtle">No requests recorded for this view yet.</div>
+          ) : (
+            <table className="w-full text-[12px]">
+              <tbody>
+                {recentLogs.slice(0, 10).map((log, i) => {
+                  const ok = log.status === 'ok' || log.status === ''
+                  const ttfb = parseMetaNum(log.meta, 'ttfb_ms')
+                  const dur = parseMetaNum(log.meta, 'duration_ms')
+                  return (
+                    <tr key={log.id} className={cn('border-b border-border/60 last:border-b-0', i % 2 === 1 && 'bg-surface-2/40')}>
+                      <td className="w-20 px-4 py-1.5">
+                        <span className={cn('inline-flex items-center gap-1 rounded px-1.5 py-px font-mono text-[10px] font-semibold', ok ? 'bg-success-subtle text-success' : 'bg-danger-subtle text-danger')}>
+                          <StatusDot tone={ok ? 'success' : 'danger'} />
+                          {ok ? '200' : 'ERR'}
+                        </span>
+                      </td>
+                      <td className="max-w-44 px-2 py-1.5">
+                        <code className="block truncate font-mono text-[11px]">{log.model}</code>
+                        <span className="text-[10px] text-subtle">{log.provider}</span>
+                      </td>
+                      <td className="tnum px-2 py-1.5 text-right text-muted">{formatNumber(log.promptTokens + log.completionTokens)} tok</td>
+                      <td className="tnum px-2 py-1.5 text-right text-muted">{formatCost(log.cost)}</td>
+                      <td className="tnum px-4 py-1.5 text-right text-subtle">
+                        {ttfb !== null && <span title={`duration ${dur ?? '?'} ms`}>{ttfb >= 1000 ? `${(ttfb / 1000).toFixed(1)}s ttfb` : `${ttfb}ms ttfb`}</span>}
+                        <span className="ml-2">{timeAgo(log.timestamp)}</span>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          )}
+        </div>
+      </Card>
 
       {/* Chart */}
       <Card className="mb-5">
@@ -344,60 +477,37 @@ export default function UsagePage() {
           <table className="w-full text-[13px]">
             <thead>
               <tr className="border-b border-border">
-                {([
-                  { key: 'name' as const, label: tableMode === 'models' ? 'Model (provider)' : 'Provider', align: 'text-left' },
-                  { key: 'requests' as const, label: 'Requests', align: 'text-right' },
-                  { key: 'promptTokens' as const, label: 'Prompt', align: 'text-right' },
-                  { key: 'completionTokens' as const, label: 'Completion', align: 'text-right' },
-                  { key: 'cachedTokens' as const, label: 'Cached', align: 'text-right' },
-                  { key: 'cost' as const, label: 'Cost', align: 'text-right' },
-                ]).map((col) => (
-                  <th key={col.key} className={`px-4 py-2 ${col.align}`}>
-                    <button
-                      type="button"
-                      onClick={() => toggleSort(col.key)}
-                      className={cn(
-                        'text-[11px] font-medium uppercase tracking-wide transition-colors hover:text-text',
-                        sortKey === col.key ? 'text-accent' : 'text-subtle',
-                      )}
-                      title="Click to sort, click again to flip direction"
-                    >
-                      {col.label}
-                      <span className="tnum">{sortIndicator(col.key)}</span>
-                    </button>
-                  </th>
-                ))}
+                <th className="px-4 py-2 text-left text-[11px] font-medium uppercase tracking-wide text-subtle">{tableMode === 'models' ? 'Model (provider)' : 'Provider'}</th>
+                <th className="px-4 py-2 text-right text-[11px] font-medium uppercase tracking-wide text-subtle">Requests</th>
+                <th className="px-4 py-2 text-right text-[11px] font-medium uppercase tracking-wide text-subtle">Prompt</th>
+                <th className="px-4 py-2 text-right text-[11px] font-medium uppercase tracking-wide text-subtle">Completion</th>
+                <th className="px-4 py-2 text-right text-[11px] font-medium uppercase tracking-wide text-subtle">Cached</th>
+                <th className="px-4 py-2 text-right text-[11px] font-medium uppercase tracking-wide text-subtle">Cost</th>
               </tr>
             </thead>
             <tbody>
-              {sortedRows.length === 0 ? (
+              {rows.length === 0 ? (
                 <tr>
                   <td colSpan={6} className="px-4 py-8 text-center text-subtle">
                     No usage recorded for this period.
                   </td>
                 </tr>
               ) : (
-                sortedRows.map((row, i) => {
-                  const cachedPct = row.promptTokens > 0 ? ((row.cachedTokens / row.promptTokens) * 100).toFixed(1) : null
-                  return (
-                    <tr key={`${row.model}-${i}`} className={cn('border-b border-border/60', i % 2 === 1 && 'bg-surface-2/40')}>
-                      <td className="max-w-64 px-4 py-2.5">
-                        <code className="block truncate font-mono text-xs">{row.model}</code>
-                        {tableMode === 'models' && row.provider && (
-                          <span className="text-[10px] text-subtle">{row.provider}</span>
-                        )}
-                      </td>
-                      <td className="tnum px-4 py-2.5 text-right">{formatNumber(row.requests)}</td>
-                      <td className="tnum px-4 py-2.5 text-right text-muted">{formatNumber(row.promptTokens)}</td>
-                      <td className="tnum px-4 py-2.5 text-right text-muted">{formatNumber(row.completionTokens)}</td>
-                      <td className="tnum px-4 py-2.5 text-right text-muted">
-                        {formatNumber(row.cachedTokens)}
-                        {cachedPct && <span className="ml-1 text-[10px] text-success">({cachedPct}%)</span>}
-                      </td>
-                      <td className="tnum px-4 py-2.5 text-right font-medium">{formatCost(row.cost)}</td>
-                    </tr>
-                  )
-                })
+                rows.map((row, i) => (
+                  <tr key={`${row.model}-${i}`} className={cn('border-b border-border/60', i % 2 === 1 && 'bg-surface-2/40')}>
+                    <td className="max-w-64 px-4 py-2.5">
+                      <code className="block truncate font-mono text-xs">{row.model}</code>
+                      {tableMode === 'models' && row.provider && (
+                        <span className="text-[10px] text-subtle">{row.provider}</span>
+                      )}
+                    </td>
+                    <td className="tnum px-4 py-2.5 text-right">{formatNumber(row.requests)}</td>
+                    <td className="tnum px-4 py-2.5 text-right text-muted">{formatNumber(row.promptTokens)}</td>
+                    <td className="tnum px-4 py-2.5 text-right text-muted">{formatNumber(row.completionTokens)}</td>
+                    <td className="tnum px-4 py-2.5 text-right text-muted">{formatNumber(row.cachedTokens)}</td>
+                    <td className="tnum px-4 py-2.5 text-right font-medium">{formatCost(row.cost)}</td>
+                  </tr>
+                ))
               )}
             </tbody>
           </table>

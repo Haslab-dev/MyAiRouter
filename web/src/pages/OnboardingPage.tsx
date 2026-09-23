@@ -22,7 +22,7 @@ const PROVIDERS = [
 function StepWelcome({ onNext }: { onNext: () => void }) {
   return (
     <div className="text-center">
-      <h1 className="mb-3 text-xl font-semibold tracking-tight text-text">Welcome to myAiRouter</h1>
+      <h1 className="mb-3 text-xl font-semibold tracking-tight text-text">Welcome to MyAiRouter</h1>
       <p className="mx-auto mb-8 max-w-sm text-[13px] leading-relaxed text-muted">
         Your self-hosted AI gateway. Route requests across multiple providers, manage keys, and monitor traffic — all from one place.
       </p>

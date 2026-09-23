@@ -14,7 +14,7 @@ interface Skill {
 const SKILLS: Skill[] = [
   {
     id: 'myairouter',
-    name: 'myAiRouter (Entry)',
+    name: 'MyAiRouter (Entry)',
     description: 'Setup + index of all capabilities. Covers base URL, auth, model discovery, and lists capability details.',
     endpoint: null,
     icon: Network,

@@ -32,7 +32,7 @@ export interface Skill {
 }
 
 const DEFAULT_SKILLS: Skill[] = [
-  { id: 'myairouter', name: 'myAiRouter (Entry)', description: 'Setup + index of all capabilities', icon: 'hub', isEntry: true, content: '' },
+  { id: 'myairouter', name: 'MyAiRouter (Entry)', description: 'Setup + index of all capabilities', icon: 'hub', isEntry: true, content: '' },
   { id: 'myairouter-chat', name: 'Chat / Code-gen', description: 'Multi-turn conversation and stream completions', endpoint: '/v1/chat/completions', icon: 'chat', content: '' },
   { id: 'myairouter-token-saver', name: 'Token Saving', description: 'Compression specifications (Bolt, Headroom, Caveman, Ponytail)', endpoint: '/api/settings', icon: 'bolt', content: '' },
 ]

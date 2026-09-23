@@ -1,4 +1,7 @@
-myAiRouter
+MyAiRouter
+myairouter
+myairouter.exe
+myairouter.pid
 .env
 web/dist
 web/node_modules
@@ -11,3 +14,4 @@ web/node_modules
 
 # ZCode session artifacts
 .zcode/
+.vscode/

@@ -1,4 +1,4 @@
-/** Typed fetch wrapper for the myAiRouter admin + gateway API. */
+/** Typed fetch wrapper for the MyAiRouter admin + gateway API. */
 
 export class ApiRequestError extends Error {
   status: number
@@ -32,6 +32,7 @@ async function request<T>(
   const { body, ...rest } = init ?? {}
   const res = await fetch(url, {
     ...rest,
+    credentials: 'include',
     headers: {
       ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}),
       ...(rest.headers ?? {}),

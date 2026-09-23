@@ -9,6 +9,7 @@ import (
 
 	"myAiRouter/internal/gateway/context"
 	"myAiRouter/pkg/db"
+	pkgGateway "myAiRouter/pkg/gateway"
 )
 
 func Observability(ctx *context.GatewayContext, next HandlerFunc) error {
@@ -83,6 +84,7 @@ func Observability(ctx *context.GatewayContext, next HandlerFunc) error {
 	}
 
 	ctx.TPS = math.Round((float64(ctx.PromptTokens+ctx.CompletionTokens)/latSec)*10) / 10
+	pkgGateway.ObserveRate(ctx.RPS, ctx.TPS, ctx.RetryCount)
 
 	// Calculate upstream API cost
 	ctx.Cost = db.CalculateCost(ctx.Provider, ctx.Model, ctx.PromptTokens, ctx.CompletionTokens, ctx.CachedTokens)

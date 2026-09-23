@@ -15,6 +15,7 @@ import {
   DollarSign,
   Route as RouteIcon,
   ScanSearch,
+  ShieldCheck,
   Sun,
   Moon,
   Workflow,
@@ -31,6 +32,7 @@ import UserMenu from '@/components/UserMenu'
 
 const EndpointPage = lazy(() => import('@/pages/EndpointPage'))
 const ProvidersPage = lazy(() => import('@/pages/ProvidersPage'))
+const ProxyPage = lazy(() => import('@/pages/ProxyPage'))
 const CombosPage = lazy(() => import('@/pages/CombosPage'))
 const UsagePage = lazy(() => import('@/pages/UsagePage'))
 const ModelsPage = lazy(() => import('@/pages/ModelsPage'))
@@ -50,6 +52,7 @@ const NAV_ITEMS = [
   { to: '/benchmark', label: 'Benchmark', icon: GitCompare },
   { to: '/endpoint', label: 'Gateway', icon: Network },
   { to: '/providers', label: 'Providers', icon: HardDrive },
+  { to: '/proxy', label: 'Proxy', icon: ShieldCheck },
   { to: '/combos', label: 'Routes', icon: RouteIcon },
   { to: '/models', label: 'Models', icon: Workflow },
   { to: '/pricing', label: 'Pricing', icon: DollarSign },
@@ -241,8 +244,8 @@ function AppShell() {
     )
   }
 
-  if (!onboardingDone) return <OnboardingPage />
   if (status.requireLogin && !status.authenticated) return <LoginPage />
+  if (!onboardingDone) return <OnboardingPage />
 
   // /api/auth/status returns the version already prefixed with "v".
   const version = status.version ?? ''
@@ -275,7 +278,7 @@ function AppShell() {
             <div className="flex h-7 w-7 items-center justify-center rounded-md bg-accent text-on-accent shadow-xs">
               <RouteIcon size={15} />
             </div>
-            <span className="text-sm font-semibold tracking-tight">myAiRouter</span>
+            <span className="text-sm font-semibold tracking-tight">MyAiRouter</span>
             {version && <span className="tnum hidden text-[10px] text-subtle sm:inline">{version}</span>}
           </div>
         </div>
@@ -382,6 +385,7 @@ function AppShell() {
               <Route path="/usage" element={<UsagePage />} />
               <Route path="/endpoint" element={<EndpointPage />} />
               <Route path="/providers" element={<ProvidersPage />} />
+              <Route path="/proxy" element={<ProxyPage />} />
               <Route path="/combos" element={<CombosPage />} />
               <Route path="/models" element={<ModelsPage />} />
               <Route path="/pricing" element={<PricingPage />} />

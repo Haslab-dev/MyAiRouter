@@ -62,9 +62,16 @@ func ensureSchemaColumns() error {
 		// apiKeys
 		{"apiKeys", "isActive", "INTEGER DEFAULT 1"},
 		{"apiKeys", "machineId", "TEXT"},
+		{"apiKeys", "scope", "TEXT"},
 
 		// combos
 		{"combos", "kind", "TEXT"},
+
+		// proxyRoutes
+		{"proxyRoutes", "scheme", "TEXT DEFAULT 'http'"},
+		{"proxyRoutes", "username", "TEXT"},
+		{"proxyRoutes", "password", "TEXT"},
+		{"proxyRoutes", "isEnabled", "INTEGER DEFAULT 1"},
 
 		// traces
 		{"traces", "totalAttempts", "INTEGER DEFAULT 1"},

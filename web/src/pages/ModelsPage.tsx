@@ -8,21 +8,12 @@ import type { ModelConfig, ModelEntry, ProviderConnection } from '@/lib/types'
 const isPrefixCacheSupported = (provider?: string) =>
   ['openai', 'deepseek', 'anthropic'].includes((provider ?? '').toLowerCase())
 
-interface ModelRate {
-  input: number
-  output: number
-  cached: number
-}
-
-const formatRate = (v: number) => `$${v < 1 ? v.toFixed(3).replace(/0+$/, '').replace(/\.$/, '') : v.toFixed(2)}`
-
 export default function ModelsPage() {
   const notify = useSnackbar((s) => s.notify)
 
   const [models, setModels] = useState<ModelEntry[]>([])
   const [policies, setPolicies] = useState<ModelConfig[]>([])
   const [providers, setProviders] = useState<ProviderConnection[]>([])
-  const [pricing, setPricing] = useState<Record<string, ModelRate>>({})
   const [searchQuery, setSearchQuery] = useState('')
 
   const [editorOpen, setEditorOpen] = useState(false)
@@ -42,16 +33,14 @@ export default function ModelsPage() {
 
   const fetchInitData = async () => {
     try {
-      const [modelsData, policiesData, providersData, pricingData] = await Promise.all([
-        api.get<{ data: ModelEntry[] }>('/v1/models').catch(() => ({ data: [] })),
+      const [modelsData, policiesData, providersData] = await Promise.all([
+        api.get<{ data: ModelEntry[] }>('/api/models').catch(() => ({ data: [] })),
         api.get<{ policies: ModelConfig[] }>('/api/models/policies').catch(() => ({ policies: [] })),
         api.get<ProviderConnection[]>('/api/providers').catch(() => []),
-        api.get<{ rates: Record<string, ModelRate> }>('/api/models/pricing?all=1').catch(() => ({ rates: {} })),
       ])
       setModels(modelsData.data ?? [])
       setPolicies(policiesData.policies ?? [])
       setProviders(providersData ?? [])
-      setPricing((prev) => ({ ...prev, ...pricingData.rates }))
     } catch (err) {
       console.error('Error fetching models setup data:', err)
     }
@@ -140,10 +129,10 @@ export default function ModelsPage() {
       </div>
 
       <Card padded={false} className="overflow-hidden">
-        <Table headers={['Model ID', 'Primary provider', 'Pricing ($/1M)', 'Fallback model', 'Compression', '']}>
+        <Table headers={['Model ID', 'Primary provider', 'Fallback model', 'Compression', '']}>
           {filteredModels.length === 0 ? (
             <tr>
-              <Td colSpan={5} className="py-10 text-center text-subtle">
+              <Td colSpan={4} className="py-10 text-center text-subtle">
                 No models found matching your search.
               </Td>
             </tr>
@@ -162,18 +151,6 @@ export default function ModelsPage() {
                   </Td>
                   <Td>
                     <Badge tone="accent">{primary}</Badge>
-                  </Td>
-                  <Td>
-                    {(() => {
-                      const rate = pricing[model.id] ?? pricing[model.id.split('/').pop() ?? '']
-                      if (!rate) return <span className="text-xs text-subtle">—</span>
-                      const custom = pricing[model.id] ? 'text-accent' : 'text-muted'
-                      return (
-                        <span className={`tnum text-xs ${custom}`} title={pricing[model.id] ? 'Custom override' : 'Default pricing'}>
-                          {formatRate(rate.input)} / {formatRate(rate.output)} / {formatRate(rate.cached)}
-                        </span>
-                      )
-                    })()}
                   </Td>
                   <Td>{fallback ? <code className="font-mono text-xs text-muted">{fallback}</code> : <span className="text-subtle">None</span>}</Td>
                   <Td>
