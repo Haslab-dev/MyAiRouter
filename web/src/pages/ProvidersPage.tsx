@@ -271,7 +271,6 @@ export default function ProvidersPage() {
   // Detail: models / testing
   const [enabledModelIds, setEnabledModelIds] = useState<string[] | null>(null)
   const [thinkingMap, setThinkingMap] = useState<Record<string, boolean>>({})
-  const [pricingOverrides, setPricingOverrides] = useState<Record<string, Record<string, number>>>({})
   const [customModelIdInput, setCustomModelIdInput] = useState('')
   const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | null>(null)
   const [testing, setTesting] = useState(false)
@@ -370,10 +369,6 @@ export default function ProvidersPage() {
     api
       .get<{ thinkingMap: Record<string, boolean> }>(`/api/models/thinking?providerAlias=${encodeURIComponent(providerId)}`)
       .then((data) => setThinkingMap(data.thinkingMap ?? {}))
-      .catch(() => {})
-    api
-      .get<{ overrides: Record<string, Record<string, number>> }>(`/api/models/pricing?providerAlias=${encodeURIComponent(providerId)}`)
-      .then((data) => setPricingOverrides(data.overrides ?? {}))
       .catch(() => {})
     setTestResult(null)
     const conn = connections.find((c) => c.provider === providerId)
@@ -741,21 +736,6 @@ export default function ProvidersPage() {
             <div className="mt-2 text-[11px] text-subtle">Thinking mode marks models whose reasoning stream should render as thinking.</div>
           </Card>
 
-          {Object.keys(pricingOverrides).length > 0 && (
-            <Card className="lg:col-span-2">
-              <h3 className="mb-3 text-sm font-semibold">Pricing overrides</h3>
-              <div className="tnum grid gap-2 text-xs sm:grid-cols-2 lg:grid-cols-3">
-                {Object.entries(pricingOverrides).map(([model, prices]) => (
-                  <div key={model} className="rounded-md bg-surface-2 px-3 py-2">
-                    <code className="block truncate font-mono text-[11px]">{model}</code>
-                    <span className="text-muted">
-                      in {prices.Input ?? prices.input ?? 0} / out {prices.Output ?? prices.output ?? 0} / cached {prices.Cached ?? prices.cached ?? 0}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </Card>
-          )}
         </div>
 
         {credEditor && (

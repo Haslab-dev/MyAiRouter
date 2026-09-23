@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"math"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
 )
@@ -709,13 +710,26 @@ func GetModelUsageSummary(provider, period, startDate, endDate string) ([]ModelU
 			SUM(completionTokens) as completionTokens,
 			COALESCE(SUM(cachedTokens), 0) as cachedTokens,
 			SUM(cost) as cost
-		FROM usageHistory` + where + " GROUP BY model, provider ORDER BY cost DESC"
+		FROM usageHistory` + where + " GROUP BY model, provider"
 
 	rows, err := DB.Query(query, args...)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
+
+	modelCosts := make(map[string]float64)
+	costRows, err := DB.Query(`SELECT COALESCE(provider, ''), model, COALESCE(promptTokens,0), COALESCE(completionTokens,0), COALESCE(cachedTokens,0) FROM usageHistory` + where, args...)
+	if err == nil {
+		defer costRows.Close()
+		for costRows.Next() {
+			var p, m string
+			var prompt, completion, cached int
+			if err := costRows.Scan(&p, &m, &prompt, &completion, &cached); err == nil {
+				modelCosts[p+"|"+m] += CalculateCost(p, m, prompt, completion, cached)
+			}
+		}
+	}
 
 	var summaries []ModelUsageSummary
 	for rows.Next() {
@@ -727,8 +741,14 @@ func GetModelUsageSummary(provider, period, startDate, endDate string) ([]ModelU
 			s.PromptTokens = s.Requests * 10
 			s.CompletionTokens = s.Requests * 20
 		}
-		if s.Cost == 0 && (s.PromptTokens > 0 || s.CompletionTokens > 0) {
-			s.Cost = CalculateCost(s.Provider, s.Model, s.PromptTokens, s.CompletionTokens, s.CachedTokens)
+		// Recompute from current pricing so pricing edits (group rules,
+		// overrides) reflect immediately, even on rows with a stored cost.
+		if s.PromptTokens > 0 || s.CompletionTokens > 0 {
+			if cost, ok := modelCosts[s.Provider+"|"+s.Model]; ok {
+				s.Cost = cost
+			} else {
+				s.Cost = CalculateCost(s.Provider, s.Model, s.PromptTokens, s.CompletionTokens, s.CachedTokens)
+			}
 			if s.Cost == 0 {
 				s.Cost = float64(s.PromptTokens+s.CompletionTokens) * 0.000002
 			}
@@ -736,6 +756,11 @@ func GetModelUsageSummary(provider, period, startDate, endDate string) ([]ModelU
 		s.Cost = math.Round(s.Cost*10000) / 10000
 		summaries = append(summaries, s)
 	}
+
+	sort.Slice(summaries, func(i, j int) bool {
+		return summaries[i].Cost > summaries[j].Cost
+	})
+
 	return summaries, nil
 }
 
@@ -759,7 +784,6 @@ func GetProviderUsageSummary() ([]ProviderUsageSummary, error) {
 			SUM(cost) as cost
 		FROM usageHistory
 		GROUP BY provider
-		ORDER BY cost DESC
 	`)
 	if err != nil {
 		return nil, err
@@ -801,6 +825,11 @@ func GetProviderUsageSummary() ([]ProviderUsageSummary, error) {
 		s.Cost = math.Round(s.Cost*10000) / 10000
 		summaries = append(summaries, s)
 	}
+
+	sort.Slice(summaries, func(i, j int) bool {
+		return summaries[i].Cost > summaries[j].Cost
+	})
+
 	return summaries, nil
 }
 
