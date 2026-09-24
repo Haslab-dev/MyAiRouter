@@ -24,8 +24,6 @@ import (
 //go:embed web/dist skills
 var embedFS embed.FS
 
-const pidFile = "/tmp/myairouter.pid"
-
 // versionString is the single source of truth for the app version; the
 // Makefile's *-version targets rewrite this literal in place.
 const versionString = "myairouter v0.4.0"
@@ -88,7 +86,7 @@ Usage:
   myairouter status     show server status & running processes
   myairouter stop       stop all running daemon processes
   myairouter restart    restart daemon
-  myairouter install    auto-start on boot + crash watchdog (Windows scheduled task)
+  myairouter install    auto-start on boot + crash watchdog
   myairouter install-global  copy exe to ~/.local/bin + add to PATH (global call)
   myairouter uninstall  remove auto-start (daemon keeps running)
   myairouter bg         start server (background alias)
