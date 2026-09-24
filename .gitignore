@@ -3,6 +3,10 @@ myAiRouter
 myairouter
 myairouter.exe
 myairouter.pid
+myairouter.log
+*~
+*.bak
+*.tmp
 .env
 web/dist
 web/node_modules

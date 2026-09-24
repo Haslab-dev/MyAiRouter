@@ -10,11 +10,7 @@ import (
 
 const taskName = "MyAiRouter Gateway"
 
-// taskXML is the scheduled-task definition: run at user logon AND system
-// boot (laptop 켜면 langsung jalan tanpa perlu dinyalakan manual), restart
-// the process if it crashes (restart interval acts as the watchdog), and
-// run hidden. Note: the schema element is a single <Arguments> (plural) —
-// multiple <Argument> nodes are silently ignored by schtasks.
+// Runs at logon and boot, restarts on crash, stays hidden.
 func taskXML(exePath string) string {
 	return fmt.Sprintf(`<?xml version="1.0" encoding="UTF-16"?>
 <Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
@@ -45,7 +41,7 @@ func taskXML(exePath string) string {
   <Actions Context="Author">
     <Exec>
       <Command>%s</Command>
-      <Arguments>start -d</Arguments>
+      <Arguments>start -f</Arguments>
     </Exec>
   </Actions>
 </Task>`, exePath)
@@ -55,8 +51,6 @@ func runSchTasks(args ...string) error {
 	return exec.Command("schtasks", args...).Run()
 }
 
-// installAutostart registers a boot-time scheduled task that (re)starts the
-// daemon if it is not running — both auto-start on boot and a crash watchdog.
 func installAutostart() {
 	exe, err := os.Executable()
 	if err != nil {
