@@ -5,8 +5,9 @@ tmp_dir = "tmp"
 
 [build]
 cmd = "go build -o ./tmp/main ."
-bin = "tmp/main"
-full_bin = "./tmp/main"
+entrypoint = ["./tmp/main", "start", "-f"]
+full_bin = "./tmp/main start -f"
+args_bin = ["start", "-f"]
 include_ext = ["go", "tpl", "tmpl", "html"]
 exclude_dir = ["assets", "tmp", "vendor", "web", "website", "obsidian-docs", ".git", ".cortex", ".kilo"]
 include_dir = []

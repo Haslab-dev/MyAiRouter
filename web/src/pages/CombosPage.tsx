@@ -162,11 +162,11 @@ export default function CombosPage() {
 
   const fetchAvailableModels = async () => {
     try {
-      // /api/models is the full admin registry (not the /v1/models whitelist),
-      // so a freshly added provider model is immediately selectable here.
+      // /api/models returns only active and enabled models.
       const json = await api.get<{ data: ModelEntry[] }>('/api/models')
       const grouped: Record<string, ModelEntry[]> = {}
       for (const m of json.data ?? []) {
+        if (m.owned_by === 'combo') continue
         grouped[m.owned_by] = grouped[m.owned_by] ?? []
         grouped[m.owned_by].push(m)
       }

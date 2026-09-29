@@ -38,7 +38,8 @@ export default function ModelsPage() {
         api.get<{ policies: ModelConfig[] }>('/api/models/policies').catch(() => ({ policies: [] })),
         api.get<ProviderConnection[]>('/api/providers').catch(() => []),
       ])
-      setModels(modelsData.data ?? [])
+      const available = (modelsData.data ?? []).filter((m) => m.owned_by !== 'combo')
+      setModels(available)
       setPolicies(policiesData.policies ?? [])
       setProviders(providersData ?? [])
     } catch (err) {

@@ -21,7 +21,7 @@ dev-server:
 	@if [ -f $$HOME/go/bin/air ]; then \
 		$$HOME/go/bin/air; \
 	else \
-		go run .; \
+		go run . start -f; \
 	fi
 dev-client:
 	cd web && npm run dev

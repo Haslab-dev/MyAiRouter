@@ -126,14 +126,18 @@ func buildModelList(r *http.Request) []ModelListEntry {
 		seenProviders[c.Provider] = true
 	}
 
-	// The enabled-models whitelist restricts what gateway clients may call on
-	// /v1/models. The admin dashboard (/api/models) must always see the full
-	// registry, otherwise a stale whitelist hides newly added models and the
-	// Providers page can never offer them to re-enable.
-	enforceWhitelist := !strings.HasPrefix(r.URL.Path, "/api/")
+	// By default, only available (active and whitelisted/enabled) models are returned.
+	// When ?all=1 or ?all=true is explicitly requested on /api/models (e.g. by Providers configuration page),
+	// the full catalog is returned so users can toggle and re-enable models.
+	includeAll := false
+	if r != nil && r.URL != nil && strings.HasPrefix(r.URL.Path, "/api/models") {
+		allParam := r.URL.Query().Get("all")
+		includeAll = allParam == "1" || allParam == "true"
+	}
+	enforceWhitelist := !includeAll
 
 	for provider, models := range defaultModels {
-		if !seenProviders[provider] {
+		if !includeAll && !seenProviders[provider] {
 			continue
 		}
 
@@ -145,6 +149,12 @@ func buildModelList(r *http.Request) []ModelListEntry {
 			enabledSet[e] = true
 		}
 
+		disabled, _ := db.GetDisabledModels(provider)
+		disabledSet := make(map[string]bool)
+		for _, d := range disabled {
+			disabledSet[d] = true
+		}
+
 		// Apply custom modelPrefix from connection data if set
 		prefix := provider + "/"
 		prefConn, _ := db.GetActiveConnectionsForProvider(provider)
@@ -152,15 +162,29 @@ func buildModelList(r *http.Request) []ModelListEntry {
 			if p, ok := prefConn[0].Data["modelPrefix"].(string); ok && p != "" {
 				prefix = p
 			}
+		} else if includeAll {
+			for _, c := range conns {
+				if c.Provider == provider {
+					if p, ok := c.Data["modelPrefix"].(string); ok && p != "" {
+						prefix = p
+						break
+					}
+				}
+			}
 		}
 
 		for _, model := range models {
-			if hasWhitelist && !enabledSet[model] {
-				continue
-			}
 			displayID := prefix + model
 			if !strings.Contains(prefix, "/") {
 				displayID = prefix + "/" + model
+			}
+			if enforceWhitelist {
+				if disabledSet[model] || disabledSet[displayID] {
+					continue
+				}
+				if hasWhitelist && !enabledSet[model] && !enabledSet[displayID] {
+					continue
+				}
 			}
 			data = append(data, ModelListEntry{
 				ID:      displayID,
@@ -173,12 +197,17 @@ func buildModelList(r *http.Request) []ModelListEntry {
 		// Include custom models (whitelist-filtered)
 		customs, _ := db.GetCustomModelsByProvider(provider)
 		for _, cm := range customs {
-			if hasWhitelist && !enabledSet[cm.ID] {
-				continue
-			}
 			displayID := prefix + cm.ID
 			if !strings.Contains(prefix, "/") {
 				displayID = prefix + "/" + cm.ID
+			}
+			if enforceWhitelist {
+				if disabledSet[cm.ID] || disabledSet[displayID] {
+					continue
+				}
+				if hasWhitelist && !enabledSet[cm.ID] && !enabledSet[displayID] {
+					continue
+				}
 			}
 			data = append(data, ModelListEntry{
 				ID:      displayID,
@@ -192,29 +221,18 @@ func buildModelList(r *http.Request) []ModelListEntry {
 	// Add custom provider models (providers NOT in defaultModels — e.g. openai-compatible-*)
 	allCustom, _ := db.GetCustomModels()
 	for _, cm := range allCustom {
-		if _, has := seenProviders[cm.ProviderAlias]; !has {
-			continue
+		if !includeAll {
+			if _, has := seenProviders[cm.ProviderAlias]; !has {
+				continue
+			}
 		}
 		if _, inDefault := defaultModels[cm.ProviderAlias]; inDefault {
 			continue // already handled by default loop above
 		}
 
-		// Whitelist check
-		if enforceWhitelist {
-			if enabled, _ := db.GetEnabledModels(cm.ProviderAlias); enabled != nil {
-				enabledSet := make(map[string]bool)
-				for _, e := range enabled {
-					enabledSet[e] = true
-				}
-				if !enabledSet[cm.ID] {
-					continue
-				}
-			}
-		}
-
 		prefix := cm.ProviderAlias + "/"
 		for _, c := range conns {
-			if c.Provider == cm.ProviderAlias && c.IsActive {
+			if c.Provider == cm.ProviderAlias && (c.IsActive || includeAll) {
 				if p, ok := c.Data["modelPrefix"].(string); ok && p != "" {
 					prefix = p
 				}
@@ -225,6 +243,29 @@ func buildModelList(r *http.Request) []ModelListEntry {
 		if !strings.Contains(prefix, "/") {
 			displayID = prefix + "/" + cm.ID
 		}
+
+		// Whitelist & disabled check
+		if enforceWhitelist {
+			disabled, _ := db.GetDisabledModels(cm.ProviderAlias)
+			disabledSet := make(map[string]bool)
+			for _, d := range disabled {
+				disabledSet[d] = true
+			}
+			if disabledSet[cm.ID] || disabledSet[displayID] {
+				continue
+			}
+
+			if enabled, _ := db.GetEnabledModels(cm.ProviderAlias); enabled != nil {
+				enabledSet := make(map[string]bool)
+				for _, e := range enabled {
+					enabledSet[e] = true
+				}
+				if !enabledSet[cm.ID] && !enabledSet[displayID] {
+					continue
+				}
+			}
+		}
+
 		data = append(data, ModelListEntry{
 			ID:      displayID,
 			Object:  "model",

@@ -282,7 +282,7 @@ export default function ProvidersPage() {
         api.get<ProviderConnection[]>('/api/providers'),
         api.get<{ nodes: ProviderNode[] }>('/api/provider-nodes'),
         api.get<{ models: CustomModel[] }>('/api/models/custom'),
-        api.get<{ data: ModelEntry[] }>('/api/models'),
+        api.get<{ data: ModelEntry[] }>('/api/models?all=true'),
         api.get<{ logs: UsageLog[] }>('/api/usage/logs?perPage=500&page=1'),
       ])
       setConnections(conns ?? [])
