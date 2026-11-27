@@ -163,25 +163,17 @@ export async function streamChatCompletion(
     }
 
     if (chunk.content) {
-      // Inline <think> tags arrive as content; route them to reasoning.
-      let text = chunk.content
-      if (insideThinkTag(text, insideThink)) {
-        const { out, opened, closed } = splitThink(text, insideThink)
-        insideThink = !closed
-        if (out) {
-          if (opened) {
-            reasoning += out
-            onEvent?.({ reasoning: out })
-          } else {
-            content += out
-            onEvent?.({ content: out })
-          }
-        }
-        text = ''
+      // Inline <think> tags arrive as content; route them to reasoning while
+      // preserving any non-thinking text before <think> or after </think>.
+      const { reasoningPart, contentPart, nextInside } = splitThinkParts(chunk.content, insideThink)
+      insideThink = nextInside
+      if (reasoningPart) {
+        reasoning += reasoningPart
+        onEvent?.({ reasoning: reasoningPart })
       }
-      if (text) {
-        content += text
-        onEvent?.({ content: text })
+      if (contentPart) {
+        content += contentPart
+        onEvent?.({ content: contentPart })
       }
     }
 
@@ -212,22 +204,40 @@ export async function streamChatCompletion(
   return { content, reasoning, usage, finishReason }
 }
 
-function insideThinkTag(text: string, currentlyInside: boolean): boolean {
-  return currentlyInside || text.includes('<think>')
-}
+function splitThinkParts(
+  text: string,
+  alreadyInside: boolean,
+): { reasoningPart: string; contentPart: string; nextInside: boolean } {
+  let remaining = text
+  let inside = alreadyInside
+  let reasoningPart = ''
+  let contentPart = ''
 
-function splitThink(text: string, alreadyInside: boolean): { out: string; opened: boolean; closed: boolean } {
-  if (alreadyInside) {
-    const idx = text.indexOf('</think>')
-    if (idx === -1) return { out: text, opened: true, closed: false }
-    return { out: text.slice(0, idx), opened: true, closed: true }
+  while (remaining.length > 0) {
+    if (inside) {
+      const closeIdx = remaining.indexOf('</think>')
+      if (closeIdx === -1) {
+        reasoningPart += remaining
+        remaining = ''
+      } else {
+        reasoningPart += remaining.slice(0, closeIdx)
+        remaining = remaining.slice(closeIdx + 8)
+        inside = false
+      }
+    } else {
+      const openIdx = remaining.indexOf('<think>')
+      if (openIdx === -1) {
+        contentPart += remaining
+        remaining = ''
+      } else {
+        contentPart += remaining.slice(0, openIdx)
+        remaining = remaining.slice(openIdx + 7)
+        inside = true
+      }
+    }
   }
-  const open = text.indexOf('<think>')
-  if (open === -1) return { out: text, opened: false, closed: false }
-  const after = text.slice(open + 7)
-  const close = after.indexOf('</think>')
-  if (close === -1) return { out: after, opened: true, closed: false }
-  return { out: after.slice(0, close), opened: true, closed: true }
+
+  return { reasoningPart, contentPart, nextInside: inside }
 }
 
 /** Non-streaming chat completion (used by simple helpers / title generation). */

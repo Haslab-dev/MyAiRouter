@@ -126,13 +126,29 @@ func Retry(ctx *gwContext.GatewayContext, next HandlerFunc) error {
 
 		// Fast per-node attempt timeout while more targets remain so slow or
 		// hanging nodes are abandoned quickly; the last target is allowed to
-		// run to completion. Both are tunable per combo via AttemptPolicy.
+		// run to completion. For streaming requests, AttemptTimeout only bounds
+		// time-to-first-headers (via ttfbTimeout) so active thinking/streaming
+		// responses are never killed mid-stream at 3.5s.
 		var attemptCtx context.Context
 		var cancelAttempt context.CancelFunc
-		if i < len(targets)-1 {
-			attemptCtx, cancelAttempt = context.WithTimeout(ctx.Context, policy.AttemptTimeout())
+		if ctx.IsStream {
+			if i < len(targets)-1 {
+				ctx.Metadata["ttfbTimeout"] = policy.AttemptTimeout()
+			} else {
+				delete(ctx.Metadata, "ttfbTimeout")
+			}
+			streamTimeout := policy.FinalTimeout()
+			if streamTimeout < 5*time.Minute {
+				streamTimeout = 5 * time.Minute
+			}
+			attemptCtx, cancelAttempt = context.WithTimeout(ctx.Context, streamTimeout)
 		} else {
-			attemptCtx, cancelAttempt = context.WithTimeout(ctx.Context, policy.FinalTimeout())
+			delete(ctx.Metadata, "ttfbTimeout")
+			if i < len(targets)-1 {
+				attemptCtx, cancelAttempt = context.WithTimeout(ctx.Context, policy.AttemptTimeout())
+			} else {
+				attemptCtx, cancelAttempt = context.WithTimeout(ctx.Context, policy.FinalTimeout())
+			}
 		}
 
 		oldCtx := ctx.Context

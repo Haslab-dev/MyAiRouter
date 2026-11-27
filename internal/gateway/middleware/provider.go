@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"bufio"
+	gocontext "context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -35,7 +36,18 @@ func Provider(ctx *context.GatewayContext, next HandlerFunc) error {
 	}
 
 	startTime := time.Now()
-	res := p.Execute(ctx.Context, ctx.Connection, ctx.RequestBody)
+	execCtx := ctx.Context
+	var cancelExec gocontext.CancelFunc
+	var ttfbTimer *time.Timer
+	if ttfbTimeout, ok := ctx.Metadata["ttfbTimeout"].(time.Duration); ok && ttfbTimeout > 0 {
+		execCtx, cancelExec = gocontext.WithCancel(ctx.Context)
+		ttfbTimer = time.AfterFunc(ttfbTimeout, cancelExec)
+	}
+	res := p.Execute(execCtx, ctx.Connection, ctx.RequestBody)
+	if ttfbTimer != nil {
+		ttfbTimer.Stop()
+		defer cancelExec()
+	}
 	ctx.Latency = time.Since(startTime)
 
 	if res.Err != nil {

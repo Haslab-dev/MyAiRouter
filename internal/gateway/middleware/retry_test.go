@@ -4,6 +4,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	gwContext "myAiRouter/internal/gateway/context"
 	"myAiRouter/pkg/db"
@@ -281,6 +282,30 @@ func TestRetry_Matrix(t *testing.T) {
 		}
 		if ctx.ResponseCode < 500 {
 			t.Fatalf("ResponseCode = %d, want 5xx", ctx.ResponseCode)
+		}
+	})
+
+	t.Run("streaming combo does not cancel active stream at attemptTimeoutMs", func(t *testing.T) {
+		ctx := newRetryTestContext("fallback")
+		ctx.IsStream = true
+		ctx.Metadata["routingTargets"] = makeTargets("s1-conn", "s2-conn")
+		ctx.Metadata["attemptPolicy"] = &db.AttemptPolicy{AttemptTimeoutMs: 50, FinalTimeoutMs: 5000}
+
+		next := func(c *gwContext.GatewayContext) error {
+			// Simulate streaming longer than AttemptTimeoutMs (50ms).
+			time.Sleep(80 * time.Millisecond)
+			if c.Context.Err() != nil {
+				return c.Context.Err()
+			}
+			c.ResponseCode = 200
+			return nil
+		}
+
+		if err := Retry(ctx, next); err != nil {
+			t.Fatalf("streaming attempt was canceled prematurely: %v", err)
+		}
+		if ctx.ResponseCode != 200 {
+			t.Fatalf("ResponseCode = %d, want 200", ctx.ResponseCode)
 		}
 	})
 }

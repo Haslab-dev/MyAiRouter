@@ -152,6 +152,20 @@ func TranslateClaudeChunkToOpenAI(raw []byte) ([]byte, bool) {
 	switch tType {
 	case "content_block_delta":
 		if delta, ok := data["delta"].(map[string]interface{}); ok {
+			if thinking, ok := delta["thinking"].(string); ok && thinking != "" {
+				oaiChunk := map[string]interface{}{
+					"object": "chat.completion.chunk",
+					"choices": []interface{}{
+						map[string]interface{}{
+							"delta": map[string]interface{}{
+								"reasoning_content": thinking,
+							},
+						},
+					},
+				}
+				oaiBytes, _ := json.Marshal(oaiChunk)
+				return append([]byte("data: "), append(oaiBytes, []byte("\n\n")...)...), false
+			}
 			if text, ok := delta["text"].(string); ok {
 				oaiChunk := map[string]interface{}{
 					"object": "chat.completion.chunk",
@@ -186,12 +200,16 @@ func TranslateGeminiChunkToOpenAI(raw []byte) ([]byte, bool) {
 				if parts, ok := content["parts"].([]interface{}); ok && len(parts) > 0 {
 					if firstPart, ok := parts[0].(map[string]interface{}); ok {
 						if text, ok := firstPart["text"].(string); ok {
+							deltaKey := "content"
+							if isThought, _ := firstPart["thought"].(bool); isThought {
+								deltaKey = "reasoning_content"
+							}
 							oaiChunk := map[string]interface{}{
 								"object": "chat.completion.chunk",
 								"choices": []interface{}{
 									map[string]interface{}{
 										"delta": map[string]interface{}{
-											"content": text,
+											deltaKey: text,
 										},
 									},
 								},
