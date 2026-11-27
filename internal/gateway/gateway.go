@@ -3,8 +3,10 @@ package gateway
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
+	"runtime/debug"
 	"strings"
 
 	"github.com/google/uuid"
@@ -94,6 +96,15 @@ func HandleChatCompletions(w http.ResponseWriter, r *http.Request) {
 	// lifecycle the pipeline owns end to end.
 	modelName, _ := body["model"].(string)
 	ctx.BeginLiveActivity(modelName)
+	defer func() {
+		if rec := recover(); rec != nil {
+			fmt.Printf("myairouter: recovered panic in HandleChatCompletions: %v\n%s\n", rec, debug.Stack())
+			if !ctx.ResponseWritten {
+				ctx.WriteError(http.StatusInternalServerError, "Internal gateway error")
+			}
+		}
+		ctx.FinishLiveActivity()
+	}()
 
 	pipe := middleware.NewPipeline()
 
@@ -110,9 +121,4 @@ func HandleChatCompletions(w http.ResponseWriter, r *http.Request) {
 	pipe.Use(middleware.Provider)
 
 	_ = pipe.Run(ctx)
-
-	// The pipeline returned, so the response is on the wire. Close the live
-	// record unconditionally: a session that never finalizes would animate
-	// forever in the dashboard.
-	ctx.FinishLiveActivity()
 }

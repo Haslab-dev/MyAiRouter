@@ -68,6 +68,22 @@ func (p *OpenAIProvider) Execute(ctx context.Context, conn *db.ProviderConnectio
 				baseUrl = "https://open.bigmodel.cn/api/coding/paas/v4"
 			case "cerebras":
 				baseUrl = "https://api.cerebras.ai/v1"
+			case "qwen":
+				baseUrl = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+			case "mistral":
+				baseUrl = "https://api.mistral.ai/v1"
+			case "ollama":
+				baseUrl = "http://localhost:11434/v1"
+			case "sumopod":
+				baseUrl = "https://ai.sumopod.com/v1"
+			case "kenari":
+				baseUrl = "https://kenari.id/v1"
+			case "tencent":
+				baseUrl = "https://api.hunyuan.cloud.tencent.com/v1"
+			case "fireworks":
+				baseUrl = "https://api.fireworks.ai/inference/v1"
+			case "vercel":
+				baseUrl = "https://api.vercel.ai/v1"
 			case "opencode-zen", "opencode":
 				baseUrl = "https://opencode.ai/zen/v1"
 			case "opencode-go":

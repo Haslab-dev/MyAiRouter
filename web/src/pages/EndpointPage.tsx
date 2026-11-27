@@ -173,15 +173,15 @@ export default function EndpointPage() {
                   )}
                 </Td>
                 <Td>
-                  <div className="flex justify-end gap-1.5">
-                    <Button size="sm" onClick={() => openScope(k)}>
-                      Scope
+                  <div className="flex justify-end gap-2">
+                    <Button size="md" onClick={() => openScope(k)}>
+                      Limits
                     </Button>
-                    <Button size="sm" onClick={() => copy(k.key, k.id)}>
-                      {copiedId === k.id ? <Check size={12} /> : <Copy size={12} />}
+                    <Button size="md" onClick={() => copy(k.key, k.id)}>
+                      {copiedId === k.id ? <Check size={14} /> : <Copy size={14} />}
                       {copiedId === k.id ? 'Copied' : 'Copy'}
                     </Button>
-                    <Button size="sm" variant="danger" onClick={() => handleDeleteKey(k.id)}>
+                    <Button size="md" variant="danger" onClick={() => handleDeleteKey(k.id)}>
                       Delete
                     </Button>
                   </div>

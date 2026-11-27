@@ -82,13 +82,15 @@ type memoryStatusEx struct {
 	ullAvailExtendedVirtual uint64
 }
 
-// processorPerformanceInfo mirrors SYSTEM_PROCESSOR_PERFORMANCE_INFORMATION.
+// processorPerformanceInfo mirrors Win32 SYSTEM_PROCESSOR_PERFORMANCE_INFORMATION (48 bytes on 64-bit).
 type processorPerformanceInfo struct {
-	IdleTime   int64
-	KernelTime int64
-	UserTime   int64
-	// Reserved fields follow on 64-bit; we only need the first three.
-	Reserved1 [2]int64
+	IdleTime       int64
+	KernelTime     int64
+	UserTime       int64
+	DpcTime        int64
+	InterruptTime  int64
+	InterruptCount uint32
+	Reserved       uint32
 }
 
 func winStorage() (m struct {
@@ -165,17 +167,29 @@ func winMemory() (m struct {
 // NtQuerySystemInformation needs headroom beyond the exact struct count.
 func winCPUSample() (idle, kernel, user uint64, ok bool) {
 	count := runtime.NumCPU()
+	if count <= 0 {
+		return 0, 0, 0, false
+	}
 	buf := make([]processorPerformanceInfo, count+4)
+	elemSize := unsafe.Sizeof(processorPerformanceInfo{})
+	var retLen uint32
 	r1, _, _ := procNtQuerySysInfo.Call(
 		uintptr(systemProcessorPerformanceInformation),
 		uintptr(unsafe.Pointer(&buf[0])),
-		uintptr(len(buf)*int(unsafe.Sizeof(processorPerformanceInfo{}))),
-		0,
+		uintptr(len(buf))*elemSize,
+		uintptr(unsafe.Pointer(&retLen)),
 	)
 	if r1 != 0 {
 		return 0, 0, 0, false
 	}
-	for i := 0; i < count; i++ {
+	n := count
+	if retLen > 0 {
+		returned := int(uintptr(retLen) / elemSize)
+		if returned < n {
+			n = returned
+		}
+	}
+	for i := 0; i < n; i++ {
 		idle += uint64(buf[i].IdleTime)
 		kernel += uint64(buf[i].KernelTime) // kernel time includes idle
 		user += uint64(buf[i].UserTime)

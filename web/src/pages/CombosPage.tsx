@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react'
-import { ArrowRight, GripVertical, Plus, Route as RouteIcon, Trash2, X } from 'lucide-react'
+import { ArrowDown, ArrowRight, ArrowUp, ChevronDown, ChevronRight, GripVertical, Plus, Route as RouteIcon, Trash2, X } from 'lucide-react'
 import { api } from '@/lib/api'
 import { useSnackbar } from '@/stores/snackbar'
-import { Badge, Button, Card, Field, Input, PageContainer, PageHeader, Select, Modal, EmptyState } from '@/components/ui'
+import { Badge, Button, Card, EmptyState, Field, Input, Modal, PageContainer, PageHeader, Select } from '@/components/ui'
 import type { AttemptPolicy, Combo, ComboKind, ModelEntry } from '@/lib/types'
 
 interface StrategyInfo {
@@ -14,52 +14,52 @@ interface StrategyInfo {
 
 const STRATEGY_DETAILS: Record<ComboKind, StrategyInfo> = {
   fallback: {
-    label: 'Fallback Chain',
-    cost: '1x tokens',
-    desc: 'Tries models sequentially; moves to the next only if the primary fails. Best default.',
+    label: 'Backup Chain',
+    cost: 'Normal usage',
+    desc: 'Uses your #1 model first. Automatically switches to #2 only if #1 fails or is busy.',
     needsNonStream: false,
   },
   smart: {
-    label: 'Smart Route',
-    cost: '1x tokens',
-    desc: 'Classifies prompt intent (coding, long context, math, chat) to pick the optimal model first.',
+    label: 'Smart Pick',
+    cost: 'Normal usage',
+    desc: 'Automatically picks the best model in your list for coding, math, long text, or chat.',
     needsNonStream: false,
   },
   load_balance: {
-    label: 'Load Balance',
-    cost: '1x tokens',
-    desc: 'Distributes requests round-robin across target models to bypass quota bottlenecks.',
+    label: 'Share Load',
+    cost: 'Normal usage',
+    desc: 'Rotates requests evenly across your models to avoid rate limits.',
     needsNonStream: false,
   },
   progressive: {
-    label: 'Progressive',
-    cost: '1x–2x tokens',
-    desc: 'Queries the fast/cheap model first, runs a confidence check, escalates if output looks weak.',
+    label: 'Fast First, Upgrade if Needed',
+    cost: '1x–2x usage',
+    desc: 'Starts with your fastest model and escalates to the next if the reply looks incomplete.',
     needsNonStream: false,
   },
   race: {
-    label: 'Race (Hedged)',
-    cost: 'Speculative',
-    desc: 'Launches the primary model; hedges to the next after 400ms. First success wins. Requires stream:false.',
+    label: 'Fastest Wins (Hedged)',
+    cost: 'May use 2x',
+    desc: 'Starts with #1; if it takes over 400ms, asks #2 too and keeps whichever finishes first.',
     needsNonStream: true,
   },
   parallel: {
-    label: 'Parallel',
+    label: 'All at Once',
     cost: 'Multi-model',
-    desc: 'Dispatches to all models at once and returns the fastest successful response. Requires stream:false.',
+    desc: 'Sends to every model at the same time and returns the fastest successful reply.',
     needsNonStream: true,
   },
   ensemble: {
-    label: 'Ensemble',
+    label: 'Best of All',
     cost: 'Multi-model',
-    desc: 'Queries all models concurrently and keeps the strongest response. Requires stream:false.',
+    desc: 'Queries all models and picks the most complete answer.',
     needsNonStream: true,
   },
 }
 
 const DEFAULT_POLICY: AttemptPolicy = {
   attemptTimeoutMs: 3500,
-  finalTimeoutMs: 60000,
+  finalTimeoutMs: 300000,
   maxFallbacks: 0,
   fallbackPolicy: 'auto',
 }
@@ -80,29 +80,39 @@ function ModelPicker({ availableModels, selected, onAdd, onRemove, onMove }: Mod
   )
 
   return (
-    <div>
-      <Field label="Available models">
-        <Input placeholder="Filter models…" value={query} onChange={(e) => setQuery(e.target.value)} />
-      </Field>
-      <div className="mt-2 flex max-h-36 flex-wrap gap-1.5 overflow-y-auto">
-        {filtered.map((m) => (
-          <button
-            key={m.id}
-            type="button"
-            onClick={() => onAdd(m.id)}
-            disabled={selected.includes(m.id)}
-            className="rounded border border-border bg-surface-2 px-2 py-1 font-mono text-[11px] text-muted transition-colors enabled:hover:border-accent enabled:hover:text-text disabled:opacity-30"
-          >
-            {m.id}
-          </button>
-        ))}
-        {filtered.length === 0 && <span className="py-2 text-xs text-subtle">No matching models.</span>}
+    <div className="flex flex-col gap-4">
+      <div>
+        <Field label="2. Pick models to include" hint="Click any active model below to add it to this route.">
+          <Input placeholder="Search models (e.g. deepseek, qwen, glm)…" value={query} onChange={(e) => setQuery(e.target.value)} />
+        </Field>
+        <div className="mt-2.5 flex max-h-44 flex-wrap gap-2 overflow-y-auto rounded-lg border border-border bg-bg p-3">
+          {filtered.map((m) => {
+            const already = selected.includes(m.id)
+            return (
+              <button
+                key={m.id}
+                type="button"
+                onClick={() => onAdd(m.id)}
+                disabled={already}
+                className="inline-flex min-h-8 items-center gap-1.5 rounded-md border border-border bg-surface px-2.5 py-1 font-mono text-xs text-text transition-colors enabled:hover:border-accent enabled:hover:bg-accent-subtle enabled:hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-35"
+              >
+                {!already && <Plus size={12} className="text-accent" />}
+                {m.id}
+              </button>
+            )
+          })}
+          {filtered.length === 0 && (
+            <span className="py-3 text-xs text-subtle">
+              No matching active models. Enable a provider first in the Providers menu.
+            </span>
+          )}
+        </div>
       </div>
 
       {selected.length > 0 && (
-        <div className="mt-4">
-          <div className="mb-1.5 text-xs font-medium text-muted">Priority order — top is tried first</div>
-          <div className="flex flex-col gap-1.5">
+        <div>
+          <div className="mb-2 text-xs font-medium text-muted">Priority order — #1 is tried first</div>
+          <div className="flex flex-col gap-2">
             {selected.map((m, i) => (
               <div
                 key={m}
@@ -114,19 +124,39 @@ function ModelPicker({ availableModels, selected, onAdd, onRemove, onMove }: Mod
                   const from = parseInt(e.dataTransfer.getData('text/plain'), 10)
                   if (!Number.isNaN(from) && from !== i) onMove(from, i)
                 }}
-                className="flex cursor-grab items-center gap-2 rounded-md border border-border bg-surface-2 px-3 py-2"
+                className="flex items-center gap-2.5 rounded-lg border border-border bg-surface-2 px-3.5 py-2.5"
               >
-                <GripVertical size={13} className="text-subtle" />
-                <span className="tnum w-6 text-[11px] text-subtle">#{i + 1}</span>
-                <code className="font-mono text-xs font-medium">{m}</code>
-                <button
-                  type="button"
-                  onClick={() => onRemove(m)}
-                  className="ml-auto text-subtle transition-colors hover:text-danger"
-                  aria-label={`Remove ${m}`}
-                >
-                  <X size={13} />
-                </button>
+                <GripVertical size={15} className="shrink-0 cursor-grab text-subtle" aria-hidden="true" />
+                <Badge tone={i === 0 ? 'accent' : 'neutral'}>#{i + 1}</Badge>
+                <code className="min-w-0 flex-1 truncate font-mono text-xs font-medium text-text">{m}</code>
+                <div className="flex shrink-0 items-center gap-1">
+                  <button
+                    type="button"
+                    disabled={i === 0}
+                    onClick={() => onMove(i, i - 1)}
+                    aria-label={`Move ${m} up`}
+                    className="inline-flex h-8 w-8 items-center justify-center rounded-md text-muted transition-colors hover:bg-surface hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-30"
+                  >
+                    <ArrowUp size={14} />
+                  </button>
+                  <button
+                    type="button"
+                    disabled={i === selected.length - 1}
+                    onClick={() => onMove(i, i + 1)}
+                    aria-label={`Move ${m} down`}
+                    className="inline-flex h-8 w-8 items-center justify-center rounded-md text-muted transition-colors hover:bg-surface hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-30"
+                  >
+                    <ArrowDown size={14} />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onRemove(m)}
+                    aria-label={`Remove ${m}`}
+                    className="inline-flex h-8 w-8 items-center justify-center rounded-md text-muted transition-colors hover:bg-danger-subtle hover:text-danger focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                  >
+                    <X size={14} />
+                  </button>
+                </div>
               </div>
             ))}
           </div>
@@ -146,6 +176,7 @@ export default function CombosPage() {
   const [kind, setKind] = useState<ComboKind>('fallback')
   const [selectedModels, setSelectedModels] = useState<string[]>([])
   const [policy, setPolicy] = useState<AttemptPolicy>(DEFAULT_POLICY)
+  const [showAdvanced, setShowAdvanced] = useState(false)
 
   useEffect(() => {
     fetchCombos()
@@ -162,7 +193,6 @@ export default function CombosPage() {
 
   const fetchAvailableModels = async () => {
     try {
-      // /api/models returns only active and enabled models.
       const json = await api.get<{ data: ModelEntry[] }>('/api/models')
       const grouped: Record<string, ModelEntry[]> = {}
       for (const m of json.data ?? []) {
@@ -177,9 +207,8 @@ export default function CombosPage() {
   }
 
   const openEditor = (combo?: Combo) => {
-    // Refresh the model registry each time the editor opens so providers/models
-    // added earlier in the session show up without a page reload.
     fetchAvailableModels()
+    setShowAdvanced(false)
     if (combo) {
       setEditCombo(combo)
       setName(combo.name)
@@ -205,7 +234,7 @@ export default function CombosPage() {
         notify('Route updated', 'success')
       } else {
         await api.post('/api/combos', payload)
-        notify('Route saved', 'success')
+        notify('Route created', 'success')
       }
       setEditorOpen(false)
       await fetchCombos()
@@ -214,10 +243,10 @@ export default function CombosPage() {
     }
   }
 
-  const handleDelete = async (id: string) => {
-    if (!confirm('Delete this route?')) return
+  const handleDelete = async (combo: Combo) => {
+    if (!confirm(`Delete route "${combo.name}"?`)) return
     try {
-      await api.del(`/api/combos?id=${id}`)
+      await api.del(`/api/combos?id=${combo.id}`)
       await fetchCombos()
       notify('Route deleted', 'info')
     } catch {
@@ -238,10 +267,10 @@ export default function CombosPage() {
     <PageContainer>
       <PageHeader
         title="Routes"
-        description="Chain models behind one route key with fallback, balancing, or speculative strategies."
+        description="Group multiple models under one simple name — automatically switch to a backup if one is busy or down."
         actions={
-          <Button variant="primary" size="md" onClick={() => openEditor()}>
-            <Plus size={14} /> New route
+          <Button variant="primary" size="lg" onClick={() => openEditor()}>
+            <Plus size={16} /> New route
           </Button>
         }
       />
@@ -249,67 +278,64 @@ export default function CombosPage() {
       {combos.length === 0 ? (
         <Card>
           <EmptyState
-            icon={<RouteIcon size={28} />}
-            title="No active routes"
-            hint="Create a route to chain backup models, balance load, or pick the best model per prompt."
+            icon={<RouteIcon size={32} />}
+            title="No routes yet"
+            hint="Create a route to combine models (for example DeepSeek + Qwen + GLM) behind one name."
             action={
-              <Button variant="primary" size="sm" onClick={() => openEditor()}>
-                <Plus size={13} /> New route
+              <Button variant="primary" size="md" onClick={() => openEditor()}>
+                <Plus size={15} /> Create your first route
               </Button>
             }
           />
         </Card>
       ) : (
-        <div className="flex flex-col gap-3">
+        <div className="grid gap-4 lg:grid-cols-2">
           {combos.map((combo) => {
             const info = STRATEGY_DETAILS[combo.kind] ?? STRATEGY_DETAILS.fallback
             return (
-              <Card key={combo.id}>
-                <div className="mb-3 flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <Badge tone="accent">{info.label}</Badge>
-                      <h3 className="font-mono text-sm font-semibold text-text">{combo.name}</h3>
+              <Card key={combo.id} className="flex flex-col justify-between gap-4">
+                <div>
+                  <div className="mb-2 flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <h3 className="truncate font-mono text-base font-semibold text-text">{combo.name}</h3>
+                        <Badge tone="accent">{info.label}</Badge>
+                      </div>
+                      <p className="mt-1 text-xs leading-relaxed text-muted">{info.desc}</p>
                     </div>
-                    <div className="mt-1 text-[11px] text-subtle">{info.cost}</div>
                   </div>
-                  <div className="flex shrink-0 gap-1.5">
-                    <Button size="sm" onClick={() => openEditor(combo)}>
+
+                  <div className="mt-3 flex flex-wrap items-center gap-2 rounded-lg border border-border bg-bg p-3">
+                    {(combo.models ?? []).map((m, i) => (
+                      <span key={`${m}-${i}`} className="flex items-center gap-2">
+                        <code className="rounded-md border border-border bg-surface px-2.5 py-1 font-mono text-xs text-text">
+                          {m}
+                        </code>
+                        {i < (combo.models?.length ?? 0) - 1 && (
+                          <ArrowRight size={14} className="text-subtle" aria-hidden="true" />
+                        )}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between gap-3 border-t border-border pt-3">
+                  <span className="text-xs text-subtle">{combo.models?.length ?? 0} model{(combo.models?.length ?? 0) === 1 ? '' : 's'} • {info.cost}</span>
+                  <div className="flex items-center gap-2">
+                    <Button size="md" variant="secondary" onClick={() => openEditor(combo)}>
                       Edit
                     </Button>
-                    <Button size="sm" variant="ghost" className="text-danger hover:bg-danger-subtle hover:text-danger" onClick={() => handleDelete(combo.id)}>
-                      <Trash2 size={13} />
+                    <Button
+                      size="md"
+                      variant="ghost"
+                      className="text-danger hover:bg-danger-subtle hover:text-danger"
+                      aria-label={`Delete route ${combo.name}`}
+                      onClick={() => handleDelete(combo)}
+                    >
+                      <Trash2 size={15} />
                     </Button>
                   </div>
                 </div>
-
-                <div className="flex flex-wrap items-center gap-1.5">
-                  {(combo.models ?? []).map((m, i) => (
-                    <span key={`${m}-${i}`} className="flex items-center gap-1.5">
-                      <code className="rounded border border-border bg-surface-2 px-2 py-1 font-mono text-[11px]">{m}</code>
-                      {i < (combo.models?.length ?? 0) - 1 && <ArrowRight size={12} className="text-subtle" />}
-                    </span>
-                  ))}
-                </div>
-
-                {combo.policy && (combo.policy.attemptTimeoutMs || combo.policy.fallbackPolicy || combo.policy.maxFallbacks || combo.policy.finalTimeoutMs) && (
-                  <div className="tnum mt-3 flex flex-wrap gap-x-4 gap-y-1 border-t border-border pt-2.5 text-[11px] text-muted">
-                    <span>
-                      Attempt timeout <strong className="text-text">{combo.policy.attemptTimeoutMs ?? 3500}ms</strong>
-                    </span>
-                    <span>
-                      Final timeout <strong className="text-text">{combo.policy.finalTimeoutMs ?? 60000}ms</strong>
-                    </span>
-                    {combo.policy.maxFallbacks ? (
-                      <span>
-                        Max fallbacks <strong className="text-text">{combo.policy.maxFallbacks}</strong>
-                      </span>
-                    ) : null}
-                    <span>
-                      Policy <strong className="text-text capitalize">{combo.policy.fallbackPolicy ?? 'auto'}</strong>
-                    </span>
-                  </div>
-                )}
               </Card>
             )
           })}
@@ -319,36 +345,43 @@ export default function CombosPage() {
       <Modal
         open={editorOpen}
         onClose={() => setEditorOpen(false)}
-        title={editCombo ? 'Edit route' : 'New route'}
-        subtitle="Clients request the route key as the model name."
+        title={editCombo ? `Edit route — ${editCombo.name}` : 'Create a new route'}
+        subtitle="Use the route name as the model name in your app or chat."
         width="max-w-2xl"
         footer={
           <>
-            <Button onClick={() => setEditorOpen(false)}>Cancel</Button>
-            <Button variant="primary" disabled={!name.trim() || selectedModels.length === 0} onClick={handleSubmit}>
-              {editCombo ? 'Update route' : 'Save route'}
+            <Button size="md" onClick={() => setEditorOpen(false)}>
+              Cancel
+            </Button>
+            <Button size="md" variant="primary" disabled={!name.trim() || selectedModels.length === 0} onClick={handleSubmit}>
+              {editCombo ? 'Save changes' : 'Save route'}
             </Button>
           </>
         }
       >
-        <div className="flex flex-col gap-4">
-          <div className="grid gap-3 sm:grid-cols-2">
-            <Field label="Route key">
-              <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. my-smart-route" />
+        <div className="flex flex-col gap-5">
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field label="1. Route name" hint="Pick any short name, e.g. my-daily-ai">
+              <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. smart-coding" />
             </Field>
-            <Field label="Strategy">
+            <Field label="How should it choose?">
               <Select value={kind} onChange={(e) => setKind(e.target.value as ComboKind)}>
                 {Object.entries(STRATEGY_DETAILS).map(([key, info]) => (
                   <option key={key} value={key}>
-                    {info.label} ({info.cost})
+                    {info.label}
                   </option>
                 ))}
               </Select>
             </Field>
           </div>
 
-          <div className="rounded-md border border-border bg-surface-2 px-3 py-2.5 text-xs text-muted">
-            <strong className="text-text">{strat.label}</strong> — {strat.desc}
+          <div className="rounded-lg border border-border bg-surface-2 px-4 py-3 text-xs leading-relaxed text-muted">
+            <strong className="text-text">{strat.label}:</strong> {strat.desc}
+            {strat.needsNonStream && (
+              <span className="mt-1 block text-[11px] text-subtle">
+                Note: For streaming chats, this automatically runs sequentially so responses stream smoothly.
+              </span>
+            )}
           </div>
 
           <ModelPicker
@@ -359,41 +392,51 @@ export default function CombosPage() {
             onMove={moveModel}
           />
 
-          <div className="border-t border-border pt-4">
-            <div className="mb-3 text-xs font-semibold text-text">Attempt policy</div>
-            <div className="grid gap-3 sm:grid-cols-2">
-              <Field label="Attempt timeout (ms)" hint="Applied while more targets remain. Default 3500.">
-                <Input
-                  type="number"
-                  min={500}
-                  value={policy.attemptTimeoutMs ?? 3500}
-                  onChange={(e) => setPolicy({ ...policy, attemptTimeoutMs: parseInt(e.target.value, 10) || 0 })}
-                />
-              </Field>
-              <Field label="Final timeout (ms)" hint="Applied to the last target. Default 60000.">
-                <Input
-                  type="number"
-                  min={1000}
-                  value={policy.finalTimeoutMs ?? 60000}
-                  onChange={(e) => setPolicy({ ...policy, finalTimeoutMs: parseInt(e.target.value, 10) || 0 })}
-                />
-              </Field>
-              <Field label="Max fallbacks" hint="0 = unlimited (all targets).">
-                <Input
-                  type="number"
-                  min={0}
-                  value={policy.maxFallbacks ?? 0}
-                  onChange={(e) => setPolicy({ ...policy, maxFallbacks: parseInt(e.target.value, 10) || 0 })}
-                />
-              </Field>
-              <Field label="Fallback policy" hint="auto: 429/5xx/timeout retry, 400/401/403 stop.">
-                <Select value={policy.fallbackPolicy ?? 'auto'} onChange={(e) => setPolicy({ ...policy, fallbackPolicy: e.target.value as AttemptPolicy['fallbackPolicy'] })}>
-                  <option value="auto">Auto (recommended)</option>
-                  <option value="aggressive">Aggressive — fall back on any error</option>
-                  <option value="conservative">Conservative — only transient errors</option>
-                </Select>
-              </Field>
-            </div>
+          <div className="border-t border-border pt-3">
+            <button
+              type="button"
+              onClick={() => setShowAdvanced(!showAdvanced)}
+              className="inline-flex items-center gap-1.5 text-xs font-medium text-muted transition-colors hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+            >
+              {showAdvanced ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+              Advanced timing & retry settings (optional)
+            </button>
+
+            {showAdvanced && (
+              <div className="mt-3 grid gap-4 sm:grid-cols-2">
+                <Field label="Switch timeout (ms)" hint="Wait time before trying next model if no response starts. Default 3500.">
+                  <Input
+                    type="number"
+                    min={500}
+                    value={policy.attemptTimeoutMs ?? 3500}
+                    onChange={(e) => setPolicy({ ...policy, attemptTimeoutMs: parseInt(e.target.value, 10) || 0 })}
+                  />
+                </Field>
+                <Field label="Final timeout (ms)" hint="Max wait for the last model. Default 300000 (5 min).">
+                  <Input
+                    type="number"
+                    min={1000}
+                    value={policy.finalTimeoutMs ?? 300000}
+                    onChange={(e) => setPolicy({ ...policy, finalTimeoutMs: parseInt(e.target.value, 10) || 0 })}
+                  />
+                </Field>
+                <Field label="Max retries" hint="0 = try every model in the list.">
+                  <Input
+                    type="number"
+                    min={0}
+                    value={policy.maxFallbacks ?? 0}
+                    onChange={(e) => setPolicy({ ...policy, maxFallbacks: parseInt(e.target.value, 10) || 0 })}
+                  />
+                </Field>
+                <Field label="Retry rule" hint="Auto retries busy/server errors and stops on bad requests.">
+                  <Select value={policy.fallbackPolicy ?? 'auto'} onChange={(e) => setPolicy({ ...policy, fallbackPolicy: e.target.value as AttemptPolicy['fallbackPolicy'] })}>
+                    <option value="auto">Auto (recommended)</option>
+                    <option value="aggressive">Aggressive — retry on any error</option>
+                    <option value="conservative">Conservative — temporary errors only</option>
+                  </Select>
+                </Field>
+              </div>
+            )}
           </div>
         </div>
       </Modal>

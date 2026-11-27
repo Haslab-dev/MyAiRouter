@@ -24,7 +24,11 @@ func pidFilePath() string {
 
 func findRunningPIDs() []int {
 	myPID := os.Getpid()
-	out, err := exec.Command("tasklist", "/FI", "IMAGENAME eq myairouter.exe", "/FO", "CSV", "/NH").Output()
+	imgName := filepath.Base(resolveExePath())
+	if imgName == "" {
+		imgName = "myairouter.exe"
+	}
+	out, err := exec.Command("tasklist", "/FI", "IMAGENAME eq "+imgName, "/FO", "CSV", "/NH").Output()
 	if err != nil {
 		return nil
 	}
@@ -35,7 +39,7 @@ func findRunningPIDs() []int {
 			continue
 		}
 		name := strings.Trim(fields[0], `"`)
-		if !strings.EqualFold(name, "myairouter.exe") {
+		if !strings.EqualFold(name, imgName) {
 			continue
 		}
 		if p, e := strconv.Atoi(strings.Trim(fields[1], `"`)); e == nil && p != myPID {
@@ -120,11 +124,19 @@ func resolveExePath() string {
 func startBackground() {
 	stopExistingDuplicates()
 
+	exe := resolveExePath()
 	// Child runs "start -f" directly to avoid re-entering startBackground().
-	cmd := exec.Command(resolveExePath(), "start", "-f")
+	cmd := exec.Command(exe, "start", "-f")
 	// Child output goes to a log file so startup crashes stay diagnosable.
-	logPath := filepath.Join(filepath.Dir(resolveExePath()), "myairouter.log")
+	logPath := filepath.Join(filepath.Dir(exe), "myairouter.log")
 	logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
+	if err != nil {
+		if home, herr := os.UserHomeDir(); herr == nil {
+			logPath = filepath.Join(home, ".myairouter", "myairouter.log")
+			_ = os.MkdirAll(filepath.Dir(logPath), 0755)
+			logFile, err = os.OpenFile(logPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
+		}
+	}
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error opening log file: %v\n", err)
 		os.Exit(1)

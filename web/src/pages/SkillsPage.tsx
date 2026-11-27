@@ -55,41 +55,42 @@ export default function SkillsPage() {
       />
 
       <button
+        type="button"
         onClick={() => copy('myairouter')}
-        className="mb-6 flex w-full items-center justify-between gap-3 rounded-lg border border-accent bg-accent-subtle px-4 py-3 text-left transition-colors hover:brightness-[1.02]"
+        className="mb-6 flex w-full items-center justify-between gap-4 rounded-xl border border-accent bg-accent-subtle px-5 py-4 text-left transition-colors hover:brightness-[1.02] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
       >
         <div>
-          <div className="mb-1 text-[13px] text-muted">Paste this instruction URL into your AI agent:</div>
+          <div className="mb-1 text-sm text-muted">Paste this instruction URL into your AI agent:</div>
           <code className="font-mono text-xs text-text">{getSkillUrl('myairouter')}</code>
         </div>
-        <span className="inline-flex shrink-0 items-center gap-1 text-xs font-medium text-accent">
-          {copiedId === 'myairouter' ? <Check size={13} /> : <Copy size={13} />}
+        <span className="inline-flex shrink-0 items-center gap-1.5 text-sm font-medium text-accent">
+          {copiedId === 'myairouter' ? <Check size={15} /> : <Copy size={15} />}
           {copiedId === 'myairouter' ? 'Copied' : 'Copy'}
         </span>
       </button>
 
-      <div className="flex flex-col gap-3">
+      <div className="flex flex-col gap-4">
         {SKILLS.map((skill) => {
           const Icon = skill.icon
           return (
-            <Card key={skill.id} className="flex items-center justify-between gap-4" padded={false}>
-              <div className="flex min-w-0 items-start gap-3 p-4">
-                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-border bg-surface-2 text-muted">
-                  <Icon size={15} />
+            <Card key={skill.id} className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
+              <div className="flex min-w-0 items-start gap-3.5">
+                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-border bg-surface-2 text-muted">
+                  <Icon size={18} />
                 </span>
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
-                    <span className="text-[13px] font-semibold text-text">{skill.name}</span>
+                    <span className="text-sm font-semibold text-text">{skill.name}</span>
                     {skill.isEntry && <Badge tone="accent">START HERE</Badge>}
                     {skill.endpoint && <Badge className="font-mono">{skill.endpoint}</Badge>}
                   </div>
-                  <p className="mt-1 text-xs text-muted">{skill.description}</p>
+                  <p className="mt-1 text-xs leading-relaxed text-muted">{skill.description}</p>
                   <code className="mt-1.5 block truncate font-mono text-[11px] text-subtle">{getSkillUrl(skill.id)}</code>
                 </div>
               </div>
-              <div className="shrink-0 p-4">
-                <Button size="sm" onClick={() => copy(skill.id)}>
-                  {copiedId === skill.id ? <Check size={12} /> : <Copy size={12} />}
+              <div className="shrink-0">
+                <Button size="md" onClick={() => copy(skill.id)}>
+                  {copiedId === skill.id ? <Check size={14} /> : <Copy size={14} />}
                   {copiedId === skill.id ? 'Copied' : 'Copy link'}
                 </Button>
               </div>

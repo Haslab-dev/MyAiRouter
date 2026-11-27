@@ -48,9 +48,16 @@ func installGlobal() {
 		}
 	}
 	if !found {
-		cmd := exec.Command("setx", "PATH", cur+";"+binDir)
+		psScript := fmt.Sprintf(
+			`$u = [Environment]::GetEnvironmentVariable('Path','User'); `+
+				`$parts = @(); if ($u) { $parts = $u -split ';' | Where-Object { $_ } }; `+
+				`if ($parts -notcontains '%s') { [Environment]::SetEnvironmentVariable('Path', (($parts + '%s') -join ';'), 'User') }`,
+			strings.ReplaceAll(binDir, `'`, `''`),
+			strings.ReplaceAll(binDir, `'`, `''`),
+		)
+		cmd := exec.Command("powershell", "-NoProfile", "-Command", psScript)
 		if out, err := cmd.CombinedOutput(); err != nil {
-			fmt.Fprintf(os.Stderr, "Installed to %s but PATH update failed: %v\n%s\nAdd manually: setx PATH \"%%PATH%%;%s\"\n", dst, err, out, binDir)
+			fmt.Fprintf(os.Stderr, "Installed to %s but PATH update failed: %v\n%s\nAdd manually: %s\n", dst, err, out, binDir)
 			os.Exit(1)
 		}
 		fmt.Printf("myairouter installed globally to %s\nPATH updated — buka terminal BARU lalu jalankan: myairouter status\n", dst)

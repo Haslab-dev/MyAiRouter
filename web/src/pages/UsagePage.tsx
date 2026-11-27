@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Download, RefreshCw } from 'lucide-react'
+import { ChevronDown, Download, RefreshCw } from 'lucide-react'
 import { api } from '@/lib/api'
 import { useSnackbar } from '@/stores/snackbar'
 import { Badge, Button, Card, CardHeader, Field, Input, Modal, PageContainer, PageHeader, Select, StatCard, StatusDot, Tabs } from '@/components/ui'
 import LiveActivityAnimation from '@/components/LiveActivityAnimation'
+import RouteTopologyCard from '@/components/RouteTopologyCard'
 import { useLiveActivity } from '@/lib/useLiveActivity'
-import { formatCost, formatNumber, type ProviderConnection } from '@/lib/types'
+import { formatCost, formatNumber, type Combo, type ProviderConnection } from '@/lib/types'
 import { cn } from '@/lib/cn'
 
 interface UsageStats {
@@ -113,6 +114,8 @@ export default function UsagePage() {
   const [lastActivityAt, setLastActivityAt] = useState<number | null>(null)
   const [nowTick, setNowTick] = useState(Date.now())
   const [connections, setConnections] = useState<ProviderConnection[]>([])
+  const [combos, setCombos] = useState<Combo[]>([])
+  const [showToolsMenu, setShowToolsMenu] = useState(false)
   const [providerFilter, setProviderFilter] = useState('')
   const [period, setPeriod] = useState('all')
   const [chartMode, setChartMode] = useState<'tokens' | 'cost'>('tokens')
@@ -125,7 +128,6 @@ export default function UsagePage() {
   const [injectCached, setInjectCached] = useState('0')
 
   const providers = useMemo(() => Array.from(new Set(connections.map((c) => c.provider))).sort(), [connections])
-  const activeProviders = useMemo(() => new Set(connections.filter((c) => c.isActive).map((c) => c.provider)), [connections])
 
   const fetchData = useCallback(
     async (p: string, period_: string) => {
@@ -156,6 +158,7 @@ export default function UsagePage() {
 
   useEffect(() => {
     api.get<ProviderConnection[]>('/api/providers').then((c) => setConnections(c ?? [])).catch(() => {})
+    api.get<Combo[]>('/api/combos').then((c) => setCombos(c ?? [])).catch(() => {})
   }, [])
 
   useEffect(() => {
@@ -316,25 +319,50 @@ export default function UsagePage() {
     <PageContainer>
       <PageHeader
         title="Overview"
-        description="Gateway usage, spend, and traffic distribution."
+        description="Live gateway topology, active routes, and usage summary."
         actions={
-          <>
-            <Button size="sm" onClick={() => setShowInject(true)}>
-              Inject
+          <div className="relative flex items-center gap-2">
+            <div className="relative">
+              <Button size="md" onClick={() => setShowToolsMenu(!showToolsMenu)}>
+                <Download size={15} /> Tools <ChevronDown size={14} />
+              </Button>
+              {showToolsMenu && (
+                <div className="absolute right-0 top-full z-20 mt-1.5 w-48 rounded-lg border border-border bg-surface p-1.5 shadow-lg">
+                  <button
+                    type="button"
+                    onClick={() => { setShowToolsMenu(false); handleBackupNow() }}
+                    className="flex w-full items-center rounded-md px-3 py-2 text-left text-xs font-medium text-text hover:bg-surface-2"
+                  >
+                    Backup database
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setShowToolsMenu(false); handleConfigExport() }}
+                    className="flex w-full items-center rounded-md px-3 py-2 text-left text-xs font-medium text-text hover:bg-surface-2"
+                  >
+                    Export config (JSON)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setShowToolsMenu(false); handleExport() }}
+                    className="flex w-full items-center rounded-md px-3 py-2 text-left text-xs font-medium text-text hover:bg-surface-2"
+                  >
+                    Export usage (JSON)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setShowToolsMenu(false); setShowInject(true) }}
+                    className="flex w-full items-center rounded-md px-3 py-2 text-left text-xs font-medium text-muted hover:bg-surface-2 hover:text-text"
+                  >
+                    Inject test usage
+                  </button>
+                </div>
+              )}
+            </div>
+            <Button size="md" variant="primary" loading={isRefreshing} onClick={refresh}>
+              <RefreshCw size={15} /> Refresh
             </Button>
-            <Button size="sm" onClick={handleExport}>
-              <Download size={13} /> Export
-            </Button>
-            <Button size="sm" onClick={handleConfigExport}>
-              Config
-            </Button>
-            <Button size="sm" onClick={handleBackupNow}>
-              Backup
-            </Button>
-            <Button size="sm" variant="primary" loading={isRefreshing} onClick={refresh}>
-              <RefreshCw size={13} /> Refresh
-            </Button>
-          </>
+          </div>
         }
       />
 
@@ -359,13 +387,6 @@ export default function UsagePage() {
             ))}
           </Select>
         </div>
-        <div className="ml-2 flex flex-wrap items-center gap-1.5">
-          {Array.from(activeProviders).map((p) => (
-            <Badge key={p} tone="success">
-              {p}
-            </Badge>
-          ))}
-        </div>
       </div>
 
       {/* Stats */}
@@ -375,6 +396,11 @@ export default function UsagePage() {
         <StatCard label="Completion tokens" value={formatNumber(stats.totalCompletionTokens)} />
         <StatCard label="Cached (upstream)" value={formatNumber(stats.totalCachedTokens)} hint="Reported by providers" tone="success" />
         <StatCard label="Cost" value={formatCost(stats.totalCost)} />
+      </div>
+
+      {/* Live Routing Topology: Gateway -> Routes -> Providers */}
+      <div className="mb-5">
+        <RouteTopologyCard connections={connections} combos={combos} live={live} gatewayUp={gatewayUp} />
       </div>
 
       {/* In-flight animation (live) */}

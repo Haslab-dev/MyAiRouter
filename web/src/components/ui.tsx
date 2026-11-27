@@ -22,7 +22,7 @@ import { Loader2, X } from 'lucide-react'
 /* ---------------------------------- Button --------------------------------- */
 
 type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger'
-type ButtonSize = 'sm' | 'md'
+type ButtonSize = 'sm' | 'md' | 'lg'
 
 interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: ButtonVariant
@@ -38,18 +38,20 @@ const buttonVariants: Record<ButtonVariant, string> = {
 }
 
 const buttonSizes: Record<ButtonSize, string> = {
-  sm: 'h-7 px-2.5 text-xs gap-1.5 rounded-md',
-  md: 'h-9 px-3.5 text-sm gap-2 rounded-md',
+  sm: 'h-8 px-3 text-xs gap-1.5 rounded-md',
+  md: 'h-10 px-4 text-sm gap-2 rounded-md',
+  lg: 'h-11 px-5 text-sm gap-2 rounded-lg',
 }
 
-export function Button({ variant = 'secondary', size = 'md', loading, className = '', children, disabled, ...rest }: ButtonProps) {
+export function Button({ variant = 'secondary', size = 'md', loading, className = '', children, disabled, type = 'button', ...rest }: ButtonProps) {
   return (
     <button
-      className={`inline-flex items-center justify-center font-medium transition-colors select-none disabled:opacity-50 disabled:pointer-events-none ${buttonVariants[variant]} ${buttonSizes[size]} ${className}`}
+      type={type}
+      className={`inline-flex items-center justify-center font-medium transition-colors select-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-1 focus-visible:ring-offset-bg disabled:opacity-50 disabled:pointer-events-none ${buttonVariants[variant]} ${buttonSizes[size]} ${className}`}
       disabled={disabled || loading}
       {...rest}
     >
-      {loading && <Loader2 size={size === 'sm' ? 12 : 14} className="animate-spin" />}
+      {loading && <Loader2 size={size === 'sm' ? 13 : 15} className="animate-spin" />}
       {children}
     </button>
   )
@@ -60,12 +62,13 @@ interface IconButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   active?: boolean
 }
 
-export function IconButton({ label, active, className = '', children, ...rest }: IconButtonProps) {
+export function IconButton({ label, active, className = '', children, type = 'button', ...rest }: IconButtonProps) {
   return (
     <button
+      type={type}
       title={label}
       aria-label={label}
-      className={`inline-flex items-center justify-center h-8 w-8 rounded-md border transition-colors ${
+      className={`inline-flex items-center justify-center h-9 w-9 rounded-md border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-1 focus-visible:ring-offset-bg ${
         active
           ? 'border-accent text-accent bg-accent-subtle'
           : 'border-transparent text-muted hover:bg-surface-2 hover:text-text'
@@ -87,7 +90,7 @@ interface CardProps extends HTMLAttributes<HTMLDivElement> {
 export function Card({ padded = true, interactive, className = '', children, ...rest }: CardProps) {
   return (
     <div
-      className={`bg-surface border border-border rounded-lg ${padded ? 'p-4' : ''} ${
+      className={`bg-surface border border-border rounded-xl ${padded ? 'p-5' : ''} ${
         interactive ? 'cursor-pointer hover:border-border-strong transition-colors' : ''
       } ${className}`}
       {...rest}
@@ -173,20 +176,22 @@ export function StatusDot({ tone = 'neutral', pulse }: { tone?: BadgeTone; pulse
 
 /* ---------------------------------- Toggle --------------------------------- */
 
-export function Toggle({ checked, onChange, label }: { checked: boolean; onChange: (checked: boolean) => void; label?: string }) {
+export function Toggle({ checked, onChange, label, disabled }: { checked: boolean; onChange: (checked: boolean) => void; label?: string; disabled?: boolean }) {
   return (
     <button
+      type="button"
       role="switch"
       aria-checked={checked}
       aria-label={label}
+      disabled={disabled}
       onClick={() => onChange(!checked)}
-      className={`relative inline-flex h-5 w-9 shrink-0 rounded-full border transition-colors ${
-        checked ? 'bg-accent border-accent' : 'bg-surface-2 border-border'
+      className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-1 focus-visible:ring-offset-bg disabled:opacity-50 disabled:cursor-not-allowed ${
+        checked ? 'bg-accent border-accent' : 'bg-surface-2 border-border-strong'
       }`}
     >
       <span
-        className="absolute left-0.5 top-0.5 h-3.5 w-3.5 rounded-full bg-white shadow-sm transition-transform"
-        style={{ transform: checked ? 'translateX(16px)' : 'translateX(0)' }}
+        className="absolute left-0.5 top-0.5 h-4.5 w-4.5 rounded-full bg-white shadow-sm transition-transform"
+        style={{ transform: checked ? 'translateX(20px)' : 'translateX(0)' }}
       />
     </button>
   )

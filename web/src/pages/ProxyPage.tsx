@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { Check, Copy, Globe, Plus, ShieldCheck, Trash2, Zap } from 'lucide-react'
 import { api } from '@/lib/api'
 import { useSnackbar } from '@/stores/snackbar'
-import { Badge, Button, Card, EmptyState, Field, Input, Modal, PageContainer, PageHeader, Select } from '@/components/ui'
+import { Badge, Button, Card, EmptyState, Field, Input, Modal, PageContainer, PageHeader, Select, Toggle } from '@/components/ui'
 import type { ProxyRoute } from '@/lib/types'
 import { cn } from '@/lib/cn'
 
@@ -140,41 +140,41 @@ export default function ProxyPage() {
     <PageContainer>
       <PageHeader
         title="Proxy"
-        description="Outbound routes that hide your origin from providers. Attach a route to any provider connection in Providers."
+        description="Optional outbound proxies to route provider requests through a different IP."
         actions={
-          <Button size="md" variant="primary" onClick={() => setShowAdd(true)}>
-            <Plus size={14} /> Add proxy
+          <Button size="lg" variant="primary" onClick={() => setShowAdd(true)}>
+            <Plus size={16} /> Add proxy
           </Button>
         }
       />
 
       {loading ? (
         <Card>
-          <div className="flex flex-col gap-2.5">
-            <div className="h-14 animate-pulse rounded-md bg-surface-2" />
-            <div className="h-14 animate-pulse rounded-md bg-surface-2" />
+          <div className="flex flex-col gap-3">
+            <div className="h-16 animate-pulse rounded-md bg-surface-2" />
+            <div className="h-16 animate-pulse rounded-md bg-surface-2" />
           </div>
         </Card>
       ) : routes.length === 0 ? (
         <Card>
           <EmptyState
-            icon={<Globe size={28} />}
+            icon={<Globe size={32} />}
             title="No proxy routes"
-            hint="Add a route and attach it to a provider connection to mask your outbound traffic."
+            hint="Add a proxy only if you need requests to exit through a specific server."
             action={
-              <Button variant="primary" size="sm" onClick={() => setShowAdd(true)}>
-                <Plus size={13} /> Add proxy
+              <Button variant="primary" size="md" onClick={() => setShowAdd(true)}>
+                <Plus size={15} /> Add proxy
               </Button>
             }
           />
         </Card>
       ) : (
-        <div className="flex flex-col gap-3">
+        <div className="flex flex-col gap-4">
           {routes.map((r) => {
             const res = testResult[r.id]
             return (
               <Card key={r.id}>
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                   {/* Left: identity + URL */}
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2">
@@ -182,27 +182,28 @@ export default function ProxyPage() {
                         <span className={cn('h-1.5 w-1.5 rounded-full', r.isEnabled ? 'bg-success' : 'bg-subtle')} />
                         {r.isEnabled ? 'Active' : 'Disabled'}
                       </Badge>
-                      <h3 className="truncate text-sm font-semibold text-text">{r.name}</h3>
+                      <h3 className="truncate text-base font-semibold text-text">{r.name}</h3>
                       <Badge tone="accent">{r.scheme.toUpperCase()}</Badge>
                     </div>
-                    <div className="mt-2 flex items-center gap-1.5">
-                      <code className="tnum min-w-0 truncate rounded border border-border bg-surface-2 px-2 py-1 font-mono text-[11px] text-muted">
+                    <div className="mt-2.5 flex items-center gap-2">
+                      <code className="tnum min-w-0 truncate rounded-md border border-border bg-bg px-3 py-1.5 font-mono text-xs text-muted">
                         {proxyUrl(r)}
                       </code>
                       <button
+                        type="button"
                         onClick={() => copy(proxyUrl(r), r.id)}
-                        className="shrink-0 text-subtle transition-colors hover:text-text"
+                        className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-subtle transition-colors hover:bg-surface-2 hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
                         title="Copy URL"
                         aria-label="Copy proxy URL"
                       >
-                        {copiedId === r.id ? <Check size={13} /> : <Copy size={13} />}
+                        {copiedId === r.id ? <Check size={14} /> : <Copy size={14} />}
                       </button>
                     </div>
                     {res && (
-                      <div className="mt-2 text-[11px]">
+                      <div className="mt-2 text-xs">
                         {res.valid ? (
                           <span className="text-success">
-                            <ShieldCheck size={11} className="mr-1 inline" />
+                            <ShieldCheck size={13} className="mr-1 inline" />
                             Verified — exit IP <strong className="tnum">{res.ip ?? 'unknown'}</strong>
                             {res.latencyMs ? <> · <span className="tnum">{Math.round(res.latencyMs)}ms</span></> : null}
                           </span>
@@ -214,15 +215,13 @@ export default function ProxyPage() {
                   </div>
 
                   {/* Right: actions */}
-                  <div className="flex shrink-0 items-center gap-1.5">
-                    <Button size="sm" loading={testing === r.id} onClick={() => handleTest(r)} disabled={!r.isEnabled}>
-                      <Zap size={12} /> Test
+                  <div className="flex shrink-0 items-center gap-3">
+                    <Toggle checked={r.isEnabled} onChange={() => handleToggle(r)} label={`Enable or disable proxy ${r.name}`} />
+                    <Button size="md" loading={testing === r.id} onClick={() => handleTest(r)} disabled={!r.isEnabled}>
+                      <Zap size={14} /> Test
                     </Button>
-                    <Button size="sm" onClick={() => handleToggle(r)}>
-                      {r.isEnabled ? 'Disable' : 'Enable'}
-                    </Button>
-                    <Button size="sm" variant="ghost" className="text-danger hover:bg-danger-subtle hover:text-danger" onClick={() => handleDelete(r)} aria-label={`Delete ${r.name}`}>
-                      <Trash2 size={13} />
+                    <Button size="md" variant="ghost" className="text-danger hover:bg-danger-subtle hover:text-danger" onClick={() => handleDelete(r)} aria-label={`Delete ${r.name}`}>
+                      <Trash2 size={15} />
                     </Button>
                   </div>
                 </div>

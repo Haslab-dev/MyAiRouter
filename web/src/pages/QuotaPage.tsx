@@ -69,10 +69,10 @@ export default function QuotaPage() {
     <PageContainer>
       <PageHeader
         title="Health"
-        description="Upstream connection state: routing cooldowns, observed latency, and rate-limit headroom."
+        description="See how each connected provider is performing and pause any connection with one click."
         actions={
-          <Button size="sm" onClick={fetchAll}>
-            <RefreshCw size={13} /> Refresh
+          <Button size="md" onClick={fetchAll}>
+            <RefreshCw size={15} /> Refresh
           </Button>
         }
       />
@@ -82,36 +82,36 @@ export default function QuotaPage() {
           <Spinner />
         </div>
       ) : error ? (
-        <div className="py-16 text-center text-[13px] text-danger">{error}</div>
+        <div className="py-16 text-center text-sm text-danger">{error}</div>
       ) : connections.length === 0 ? (
         <Card>
           <EmptyState
-            icon={<ShieldCheck size={28} />}
-            title="No connected nodes"
-            hint="Register provider access keys in the Providers page to see connection health here."
+            icon={<ShieldCheck size={32} />}
+            title="No connected providers"
+            hint="Connect a provider in the Providers menu to monitor its health here."
           />
         </Card>
       ) : (
-        <div className="grid gap-4 grid-cols-1 sm:[grid-template-columns:repeat(auto-fill,minmax(340px,1fr))]">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
           {connections.map((conn) => {
             const h = health[conn.id]
             const tone = healthTone(conn)
+            const displayProvider = conn.provider.replace(/^(openai|anthropic)-compatible-/, '')
             return (
-              <Card key={conn.id}>
-                <div className="mb-4 flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <ProviderIcon id={conn.provider} name={conn.provider} size={32} />
-                    <div>
-                      <div className="text-sm font-semibold capitalize">{conn.provider}</div>
-                      <div className="text-xs text-muted">{conn.name || conn.email || 'Unnamed key'}</div>
+              <Card key={conn.id} className="flex flex-col justify-between gap-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex min-w-0 items-center gap-3">
+                    <ProviderIcon id={conn.provider} name={displayProvider} size={38} />
+                    <div className="min-w-0">
+                      <div className="truncate text-sm font-semibold capitalize text-text">{displayProvider}</div>
+                      <div className="truncate text-xs text-muted">{conn.name || conn.email || 'Default key'}</div>
                     </div>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <Button size="sm" variant="ghost" onClick={() => handleDeleteConnection(conn.id)} className="text-danger hover:bg-danger-subtle hover:text-danger">
-                      Remove
-                    </Button>
-                    <Toggle checked={conn.isActive} onChange={() => handleToggleActive(conn.id, conn.isActive)} label="Toggle connection" />
-                  </div>
+                  <Toggle
+                    checked={conn.isActive}
+                    onChange={() => handleToggleActive(conn.id, conn.isActive)}
+                    label={`Enable or disable ${displayProvider}`}
+                  />
                 </div>
 
                 <div className="flex items-center justify-between border-t border-border pt-3">

@@ -116,10 +116,10 @@ export default function PricingPage() {
     <PageContainer>
       <PageHeader
         title="Pricing"
-        description="Group pricing by model name — one rule applies to every provider serving that model. Provider-specific overrides set on the provider page take precedence."
+        description="Set token rates per model name to track estimated spending in Overview."
         actions={
-          <Button size="md" variant="primary" onClick={() => openEditor()}>
-            <Plus size={14} /> Add rule
+          <Button size="lg" variant="primary" onClick={() => openEditor()}>
+            <Plus size={16} /> Add rule
           </Button>
         }
       />
@@ -128,13 +128,13 @@ export default function PricingPage() {
         <Table headers={['Model', 'Scope', 'Input $/1M', 'Output $/1M', 'Cache hit $/1M', '']}>
           {rules.length === 0 && !loading ? (
             <tr>
-              <Td colSpan={5} className="py-10 text-center text-subtle">
-                No pricing rules yet. Add one — e.g. "mimo-v2.6-flash" — and it will match any provider's model with the same name.
+              <Td colSpan={6} className="py-10 text-center text-sm text-subtle">
+                No custom pricing rules yet. Click "Add rule" to set rates for any model.
               </Td>
             </tr>
           ) : (
             rules.map((rule) => (
-              <tr key={`${rule.provider}:${rule.model}`} className="text-[13px]">
+              <tr key={`${rule.provider}:${rule.model}`} className="text-sm">
                 <Td>
                   <code className="font-mono text-xs font-medium">{rule.model}</code>
                 </Td>
@@ -149,12 +149,12 @@ export default function PricingPage() {
                 <Td className="tnum">{formatRate(rule.output)}</Td>
                 <Td className="tnum">{formatRate(rule.cached)}</Td>
                 <Td>
-                  <div className="flex justify-end gap-1.5">
-                    <Button size="sm" onClick={() => openEditor(rule)}>
+                  <div className="flex justify-end gap-2">
+                    <Button size="md" onClick={() => openEditor(rule)}>
                       Edit
                     </Button>
-                    <Button size="sm" variant="ghost" className="text-danger hover:bg-danger-subtle hover:text-danger" onClick={() => handleDelete(rule)}>
-                      <Trash2 size={12} />
+                    <Button size="md" variant="ghost" className="text-danger hover:bg-danger-subtle hover:text-danger" aria-label={`Delete pricing rule for ${rule.model}`} onClick={() => handleDelete(rule)}>
+                      <Trash2 size={15} />
                     </Button>
                   </div>
                 </Td>

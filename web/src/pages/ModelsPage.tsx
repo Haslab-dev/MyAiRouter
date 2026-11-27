@@ -133,7 +133,7 @@ export default function ModelsPage() {
         <Table headers={['Model ID', 'Primary provider', 'Fallback model', 'Compression', '']}>
           {filteredModels.length === 0 ? (
             <tr>
-              <Td colSpan={4} className="py-10 text-center text-subtle">
+              <Td colSpan={5} className="py-10 text-center text-sm text-subtle">
                 No models found matching your search.
               </Td>
             </tr>
@@ -146,7 +146,7 @@ export default function ModelsPage() {
               const comp = policy?.compression?.enabled
 
               return (
-                <tr key={model.id} className="text-[13px]">
+                <tr key={model.id} className="text-sm">
                   <Td>
                     <code className="font-mono text-xs font-medium">{model.id}</code>
                   </Td>
@@ -164,12 +164,12 @@ export default function ModelsPage() {
                     )}
                   </Td>
                   <Td>
-                    <div className="flex justify-end gap-1.5">
-                      <Button size="sm" onClick={() => openEditor(model)}>
+                    <div className="flex justify-end gap-2">
+                      <Button size="md" onClick={() => openEditor(model)}>
                         Configure
                       </Button>
                       {policy && (
-                        <Button size="sm" variant="ghost" onClick={() => handleDeletePolicy(model.id)}>
+                        <Button size="md" variant="ghost" onClick={() => handleDeletePolicy(model.id)}>
                           Reset
                         </Button>
                       )}

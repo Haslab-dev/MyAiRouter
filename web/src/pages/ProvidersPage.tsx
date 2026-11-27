@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { ArrowLeft, Brain, KeyRound, Pencil, Plus, RefreshCw, Trash2, Zap } from 'lucide-react'
+import { ArrowLeft, Brain, ChevronDown, ChevronRight, Eye, EyeOff, KeyRound, Pencil, Plus, RefreshCw, Trash2, Zap } from 'lucide-react'
 import { api } from '@/lib/api'
 import { useSnackbar } from '@/stores/snackbar'
 import ProviderIcon from '@/components/ProviderIcon'
@@ -58,16 +58,16 @@ const CORE_PROVIDERS = [
 ] as const
 
 const OAUTH_PROVIDERS = [
-  { id: 'xai', name: 'xAI (Grok)', desc: 'Device code via auth.x.ai' },
-  { id: 'grok-cli', name: 'Grok CLI (Grok Build)', desc: 'Device code, subscription credits' },
-  { id: 'kimi', name: 'Kimi', desc: 'Device code via kimi.com' },
-  { id: 'copilot', name: 'GitHub Copilot', desc: 'Device code via github.com' },
-  { id: 'qoder', name: 'Qoder', desc: 'Device token via qoder.com' },
-  { id: 'codebuddy', name: 'CodeBuddy', desc: 'QR state flow, international' },
-  { id: 'codebuddy-cn', name: 'CodeBuddy CN', desc: 'QR state flow, China' },
-  { id: 'cline', name: 'Cline', desc: 'Browser callback flow (batch 2)' },
-  { id: 'clinepass', name: 'ClinePass', desc: 'Browser callback flow (batch 2)' },
-  { id: 'kilocode', name: 'Kilo Code', desc: 'Secure authorization code login' },
+  { id: 'xai', name: 'xAI (Grok)', desc: 'Sign in via auth.x.ai' },
+  { id: 'grok-cli', name: 'Grok CLI (Grok Build)', desc: 'Subscription login' },
+  { id: 'kimi', name: 'Kimi', desc: 'Sign in via kimi.com' },
+  { id: 'copilot', name: 'GitHub Copilot', desc: 'Sign in via github.com' },
+  { id: 'qoder', name: 'Qoder', desc: 'Sign in via qoder.com' },
+  { id: 'codebuddy', name: 'CodeBuddy', desc: 'QR login (international)' },
+  { id: 'codebuddy-cn', name: 'CodeBuddy CN', desc: 'QR login (China)' },
+  { id: 'cline', name: 'Cline', desc: 'Browser sign in' },
+  { id: 'clinepass', name: 'ClinePass', desc: 'Browser sign in' },
+  { id: 'kilocode', name: 'Kilo Code', desc: 'Authorization code sign in' },
 ] as const
 
 const PROVIDER_URLS: Record<string, string> = {
@@ -116,12 +116,17 @@ interface CredentialEditorProps {
   onCancel: () => void
 }
 
+function shortProviderId(id: string): string {
+  return id.replace(/^(openai|anthropic)-compatible-/, '')
+}
+
 function CredentialEditor({ title, providerId, existing, defaultBaseUrl, onDone, onCancel }: CredentialEditorProps) {
   const notify = useSnackbar((s) => s.notify)
   const [credName, setCredName] = useState(existing?.name ?? '')
   // Never prefill with the masked placeholder from GET /api/providers; leave
   // blank on edit so updating other fields preserves the stored key.
   const [credKey, setCredKey] = useState('')
+  const [showKey, setShowKey] = useState(false)
   const [credPriority, setCredPriority] = useState(existing?.priority ?? 1)
   const [proxyRouteId, setProxyRouteId] = useState<string>(existing?.data?.proxyRouteId ?? '')
   const [proxyRoutes, setProxyRoutes] = useState<ProxyRoute[]>([])
@@ -130,6 +135,7 @@ function CredentialEditor({ title, providerId, existing, defaultBaseUrl, onDone,
     const list = Object.keys(hdrs).map((k) => ({ key: k, value: String(hdrs[k]) }))
     return list.length > 0 ? list : [{ key: '', value: '' }]
   })
+  const [showAdvanced, setShowAdvanced] = useState(false)
   const [saving, setSaving] = useState(false)
 
   useEffect(() => {
@@ -160,7 +166,7 @@ function CredentialEditor({ title, providerId, existing, defaultBaseUrl, onDone,
     }
     const payload = existing
       ? {
-          name: credName || 'ProdKey',
+          name: credName || 'Default Key',
           priority: credPriority || 1,
           data: dataPayload,
         }
@@ -168,7 +174,7 @@ function CredentialEditor({ title, providerId, existing, defaultBaseUrl, onDone,
           id: `${providerId}-conn-${Date.now()}`,
           provider: providerId,
           authType: 'apikey',
-          name: credName || 'ProdKey',
+          name: credName || 'Default Key',
           email: '',
           priority: credPriority || 1,
           isActive: true,
@@ -181,7 +187,7 @@ function CredentialEditor({ title, providerId, existing, defaultBaseUrl, onDone,
       } else {
         await api.post('/api/providers', payload)
       }
-      notify(existing ? 'Credentials updated' : 'Credentials saved', 'success')
+      notify(existing ? 'Credentials updated' : 'Provider connected', 'success')
       onDone()
     } catch (err) {
       notify(err instanceof Error ? err.message : 'Error saving credentials', 'error')
@@ -195,65 +201,96 @@ function CredentialEditor({ title, providerId, existing, defaultBaseUrl, onDone,
       open
       onClose={onCancel}
       title={title}
-      subtitle={providerId}
+      subtitle={`Provider: ${shortProviderId(providerId)}`}
       footer={
         <>
-          <Button onClick={onCancel}>Cancel</Button>
-          <Button variant="primary" loading={saving} onClick={save}>
-            {existing ? 'Update credentials' : 'Save credentials'}
+          <Button size="md" onClick={onCancel}>
+            Cancel
+          </Button>
+          <Button size="md" variant="primary" loading={saving} onClick={save}>
+            {existing ? 'Save changes' : 'Connect provider'}
           </Button>
         </>
       }
     >
-      <div className="flex flex-col gap-3">
-        <Field label="Label">
-          <Input value={credName} onChange={(e) => setCredName(e.target.value)} placeholder="e.g. ProdKey" />
-        </Field>
-        <Field label="API key" hint={existing?.data?.apiKey ? `Current: ${existing.data.apiKey} — leave blank to keep existing key.` : undefined}>
-          <Input
-            type="password"
-            value={credKey}
-            onChange={(e) => setCredKey(e.target.value)}
-            placeholder={existing?.data?.apiKey ? 'Leave blank to keep current key' : 'sk-…'}
-          />
-        </Field>
-        <Field label="Priority" hint="Lower number = tried first within the provider.">
-          <Input type="number" min={1} value={credPriority} onChange={(e) => setCredPriority(parseInt(e.target.value, 10) || 1)} />
-        </Field>
-        <Field label="Proxy route" hint="Outbound requests go through this proxy — masks your IP from the provider.">
-          <Select value={proxyRouteId} onChange={(e) => setProxyRouteId(e.target.value)}>
-            <option value="">Direct (no proxy)</option>
-            {proxyRoutes.map((r) => (
-              <option key={r.id} value={r.id}>
-                {r.name} — {r.scheme}://{r.host}:{r.port}
-              </option>
-            ))}
-          </Select>
-        </Field>
-
-        <div>
-          <div className="mb-1.5 flex items-center justify-between">
-            <span className="text-xs font-medium text-muted">Custom headers</span>
-            <Button size="sm" variant="ghost" onClick={() => setCustomHeaders([...customHeaders, { key: '', value: '' }])}>
-              <Plus size={12} /> Add
+      <div className="flex flex-col gap-4">
+        <Field label="API key" hint={existing?.data?.apiKey ? `Current key: ${existing.data.apiKey} — leave blank to keep it.` : 'Paste the API key from your provider dashboard.'}>
+          <div className="flex gap-2">
+            <Input
+              type={showKey ? 'text' : 'password'}
+              value={credKey}
+              onChange={(e) => setCredKey(e.target.value)}
+              placeholder={existing?.data?.apiKey ? 'Leave blank to keep current key' : 'sk-…'}
+              className="font-mono text-xs"
+            />
+            <Button
+              size="md"
+              variant="secondary"
+              aria-label={showKey ? 'Hide API key' : 'Show API key'}
+              onClick={() => setShowKey(!showKey)}
+            >
+              {showKey ? <EyeOff size={15} /> : <Eye size={15} />}
             </Button>
           </div>
-          <div className="flex flex-col gap-1.5">
-            {customHeaders.map((h, i) => (
-              <div key={i} className="flex gap-1.5">
-                <Input placeholder="Header" value={h.key} onChange={(e) => setCustomHeaders(customHeaders.map((x, j) => (j === i ? { ...x, key: e.target.value } : x)))} />
-                <Input placeholder="Value" value={h.value} onChange={(e) => setCustomHeaders(customHeaders.map((x, j) => (j === i ? { ...x, value: e.target.value } : x)))} />
-                <Button size="sm" variant="ghost" onClick={() => setCustomHeaders(customHeaders.filter((_, j) => j !== i))}>
-                  <Trash2 size={12} />
-                </Button>
+        </Field>
+
+        <Field label="Name (optional)" hint="A friendly label to help you recognize this key.">
+          <Input value={credName} onChange={(e) => setCredName(e.target.value)} placeholder="e.g. Personal Key" />
+        </Field>
+
+        <div className="border-t border-border pt-3">
+          <button
+            type="button"
+            onClick={() => setShowAdvanced(!showAdvanced)}
+            className="inline-flex items-center gap-1.5 text-xs font-medium text-muted transition-colors hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+          >
+            {showAdvanced ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+            Advanced options (priority, proxy, headers)
+          </button>
+
+          {showAdvanced && (
+            <div className="mt-3 flex flex-col gap-3">
+              <Field label="Priority" hint="Lower number = tried first if you have multiple keys.">
+                <Input type="number" min={1} value={credPriority} onChange={(e) => setCredPriority(parseInt(e.target.value, 10) || 1)} />
+              </Field>
+              <Field label="Proxy route" hint="Optional outbound proxy to mask your IP.">
+                <Select value={proxyRouteId} onChange={(e) => setProxyRouteId(e.target.value)}>
+                  <option value="">Direct (no proxy)</option>
+                  {proxyRoutes.map((r) => (
+                    <option key={r.id} value={r.id}>
+                      {r.name} — {r.scheme}://{r.host}:{r.port}
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+              <div>
+                <div className="mb-1.5 flex items-center justify-between">
+                  <span className="text-xs font-medium text-muted">Custom headers</span>
+                  <Button size="sm" variant="ghost" onClick={() => setCustomHeaders([...customHeaders, { key: '', value: '' }])}>
+                    <Plus size={12} /> Add header
+                  </Button>
+                </div>
+                <div className="flex flex-col gap-2">
+                  {customHeaders.map((h, i) => (
+                    <div key={i} className="flex gap-2">
+                      <Input placeholder="Header" value={h.key} onChange={(e) => setCustomHeaders(customHeaders.map((x, j) => (j === i ? { ...x, key: e.target.value } : x)))} />
+                      <Input placeholder="Value" value={h.value} onChange={(e) => setCustomHeaders(customHeaders.map((x, j) => (j === i ? { ...x, value: e.target.value } : x)))} />
+                      <Button size="md" variant="ghost" aria-label="Remove header" onClick={() => setCustomHeaders(customHeaders.filter((_, j) => j !== i))}>
+                        <Trash2 size={14} />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
               </div>
-            ))}
-          </div>
+            </div>
+          )}
         </div>
       </div>
     </Modal>
   )
 }
+
+type ProviderFilter = 'all' | 'connected' | 'unconnected'
 
 export default function ProvidersPage() {
   const notify = useSnackbar((s) => s.notify)
@@ -263,9 +300,11 @@ export default function ProvidersPage() {
   const [providerModels, setProviderModels] = useState<Record<string, ModelEntry[]>>({})
   const [detailedLogs, setDetailedLogs] = useState<UsageLog[]>([])
   const [providerSearchQuery, setProviderSearchQuery] = useState('')
-
+  const [filterMode, setFilterMode] = useState<ProviderFilter>('all')
+  const [togglingId, setTogglingId] = useState<string | null>(null)
   const [viewingDetailProvider, setViewingDetailProvider] = useState<{ id: string; name: string; type: string; baseUrl: string; isNode: boolean } | null>(null)
   const [modelPrefix, setModelPrefix] = useState('')
+  const [showDetailAdvanced, setShowDetailAdvanced] = useState(false)
 
   const [credEditor, setCredEditor] = useState<{ providerId: string; title: string; existing?: ProviderConnection; defaultBaseUrl: string } | null>(null)
 
@@ -374,7 +413,6 @@ export default function ProvidersPage() {
     [providerMetricsMap],
   )
 
-  // Detail loading
   useEffect(() => {
     if (!viewingDetailProvider) return
     const providerId = viewingDetailProvider.id
@@ -387,6 +425,7 @@ export default function ProvidersPage() {
       .then((data) => setThinkingMap(data.thinkingMap ?? {}))
       .catch(() => {})
     setTestResult(null)
+    setShowDetailAdvanced(false)
     const conn = connections.find((c) => c.provider === providerId)
     setModelPrefix(conn?.data?.modelPrefix ?? '')
   }, [viewingDetailProvider, connections])
@@ -417,6 +456,20 @@ export default function ProvidersPage() {
     return () => clearInterval(timer)
   }, [oauthStatus, oauthProvider, fetchData])
 
+  const handleToggleProvider = async (conn: ProviderConnection, providerName: string) => {
+    const nextActive = !conn.isActive
+    setTogglingId(conn.id)
+    try {
+      await api.patch(`/api/providers/${conn.id}`, { isActive: nextActive })
+      await fetchData()
+      notify(`${providerName} ${nextActive ? 'enabled' : 'disabled'}`, nextActive ? 'success' : 'info')
+    } catch {
+      notify(`Failed to ${nextActive ? 'enable' : 'disable'} ${providerName}`, 'error')
+    } finally {
+      setTogglingId(null)
+    }
+  }
+
   const handleStartOauth = (providerId: string) => {
     const initUrl = providerId === 'kilocode' ? '/api/oauth/kilocode/initiate' : `/api/oauth/${providerId}/initiate`
     setOauthProvider(providerId)
@@ -437,7 +490,12 @@ export default function ProvidersPage() {
 
   const handleCreateNode = async () => {
     if (!nodeName.trim() || !nodeUrl.trim()) return
-    const id = `${compatType}-${nodeName.toLowerCase().replace(/[^a-z0-9]/g, '-')}`
+    const slug = nodeName
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+    const id = slug || `${compatType}-${Date.now()}`
     try {
       await api.post('/api/provider-nodes', {
         id,
@@ -462,34 +520,34 @@ export default function ProvidersPage() {
       setNodeApiKey('')
       setShowAddNode(false)
       await fetchData()
-      notify('Provider node created', 'success')
+      notify('Custom endpoint added', 'success')
     } catch (err) {
-      notify(err instanceof Error ? err.message : 'Error creating node', 'error')
+      notify(err instanceof Error ? err.message : 'Error creating endpoint', 'error')
     }
   }
 
   const handleDeleteNode = async (id: string) => {
-    if (!confirm('Delete this provider node and all its keys?')) return
+    if (!confirm('Delete this custom provider and all its keys?')) return
     try {
       await api.del(`/api/provider-nodes/${id}`)
       setViewingDetailProvider(null)
       await fetchData()
-      notify('Provider node deleted', 'info')
+      notify('Custom provider deleted', 'info')
     } catch {
-      notify('Failed to delete node', 'error')
+      notify('Failed to delete custom provider', 'error')
     }
   }
 
   const handleRemoveConnection = async (providerId: string) => {
-    if (!confirm(`Remove the connection for ${providerId}?`)) return
+    if (!confirm(`Disconnect ${providerId} and remove its saved API key?`)) return
     try {
       const conn = connections.find((c) => c.provider === providerId)
       if (conn) await api.del(`/api/providers/${conn.id}`)
       if (viewingDetailProvider?.id === providerId) setViewingDetailProvider(null)
       await fetchData()
-      notify(`Provider ${providerId} disconnected`, 'info')
+      notify(`${providerId} disconnected`, 'info')
     } catch {
-      notify('Failed to remove provider connection', 'error')
+      notify('Failed to disconnect provider', 'error')
     }
   }
 
@@ -497,7 +555,7 @@ export default function ProvidersPage() {
     if (!viewingDetailProvider) return
     const conn = connections.find((c) => c.provider === viewingDetailProvider.id)
     if (!conn) {
-      setTestResult({ ok: false, message: 'No active credentials to test — save a key first.' })
+      setTestResult({ ok: false, message: 'No credentials saved yet — add an API key first.' })
       return
     }
     setTesting(true)
@@ -525,8 +583,6 @@ export default function ProvidersPage() {
     const conn = connections.find((c) => c.provider === viewingDetailProvider.id)
     if (!conn) return
     try {
-      // Send only modelPrefix so UpdateConnection merges it without touching
-      // masked secrets (apiKey/tokens) on the connection.
       await api.patch(`/api/providers/${conn.id}`, { data: { modelPrefix } })
       await fetchData()
       notify('Model prefix saved', 'success')
@@ -550,7 +606,7 @@ export default function ProvidersPage() {
         }
       }
       await fetchData()
-      notify('Models imported from upstream', 'success')
+      notify('Models imported', 'success')
     } catch {
       notify('Failed to import models', 'error')
     } finally {
@@ -583,20 +639,20 @@ export default function ProvidersPage() {
       })
       setCustomModelIdInput('')
       await fetchData()
-      notify('Custom model added', 'success')
+      notify('Model added', 'success')
     } catch {
-      notify('Failed to add custom model', 'error')
+      notify('Failed to add model', 'error')
     }
   }
 
   const handleDeleteCustomModel = async (modelId: string) => {
-    if (!viewingDetailProvider || !confirm(`Delete custom model ${modelId}?`)) return
+    if (!viewingDetailProvider || !confirm(`Remove model ${modelId}?`)) return
     try {
       await api.del(`/api/models/custom?providerAlias=${encodeURIComponent(viewingDetailProvider.id)}&id=${encodeURIComponent(modelId)}`)
       await fetchData()
-      notify('Custom model deleted', 'info')
+      notify('Model removed', 'info')
     } catch {
-      notify('Failed to delete custom model', 'error')
+      notify('Failed to remove model', 'error')
     }
   }
 
@@ -614,6 +670,11 @@ export default function ProvidersPage() {
 
   /* ------------------------------ Provider list ----------------------------- */
 
+  const getConnectionFor = useCallback(
+    (providerId: string) => connections.find((c) => c.provider === providerId),
+    [connections],
+  )
+
   const allProviderEntries = useMemo(() => {
     const entries = [
       ...OAUTH_PROVIDERS.map((p) => ({ id: p.id, name: p.name, type: 'oauth', desc: p.desc, isNode: false })),
@@ -621,46 +682,79 @@ export default function ProvidersPage() {
       ...nodes.map((n) => ({ id: n.id, name: n.name, type: n.type, desc: n.data?.baseUrl ?? '', isNode: true })),
     ]
     const q = providerSearchQuery.toLowerCase()
-    return q ? entries.filter((e) => e.name.toLowerCase().includes(q) || e.id.toLowerCase().includes(q)) : entries
-  }, [nodes, providerSearchQuery])
+    return entries.filter((e) => {
+      if (q && !e.name.toLowerCase().includes(q) && !e.id.toLowerCase().includes(q)) return false
+      const hasConn = Boolean(getConnectionFor(e.id))
+      if (filterMode === 'connected') return hasConn
+      if (filterMode === 'unconnected') return !hasConn
+      return true
+    })
+  }, [nodes, providerSearchQuery, filterMode, getConnectionFor])
 
-  // Grid is grouped: OAuth logins / Connect (API key) / Custom (nodes).
   const providerGroups = useMemo(() => {
-    const oauth = allProviderEntries.filter((e) => e.type === 'oauth')
     const custom = allProviderEntries.filter((e) => e.isNode)
     const connect = allProviderEntries.filter((e) => e.type !== 'oauth' && !e.isNode)
+    const oauth = allProviderEntries.filter((e) => e.type === 'oauth')
     return [
-      { key: 'oauth', title: 'OAuth', hint: 'Sign in with a subscription account — no API key needed.', entries: oauth },
-      { key: 'connect', title: 'Connect', hint: 'Paste an API key for these upstream providers.', entries: connect },
-      { key: 'custom', title: 'Custom', hint: 'Your own OpenAI- or Anthropic-compatible endpoints.', entries: custom },
+      { key: 'custom', title: 'Your Custom Endpoints', hint: 'OpenAI- or Anthropic-compatible servers you added.', entries: custom },
+      { key: 'connect', title: 'API Key Providers', hint: 'Paste an API key to start using models from these providers.', entries: connect },
+      { key: 'oauth', title: 'Subscription Logins (OAuth)', hint: 'Sign in with an existing account — no API key needed.', entries: oauth },
     ].filter((g) => g.entries.length > 0)
   }, [allProviderEntries])
 
-  const getConnectionFor = (providerId: string) => connections.find((c) => c.provider === providerId)
-
   if (viewingDetailProvider) {
     const provider = viewingDetailProvider
+    const conn = getConnectionFor(provider.id)
     const models = providerModels[provider.id] ?? []
     const customs = customModels.filter((m) => m.providerAlias === provider.id)
+    const allModels = [...customs.map((c) => ({ id: c.id, custom: true as const })), ...models.map((m) => ({ id: m.id, custom: false as const }))]
+      .filter((entry, i, arr) => arr.findIndex((x) => x.id === entry.id) === i)
+
     return (
       <PageContainer>
         <button
+          type="button"
           onClick={() => setViewingDetailProvider(null)}
-          className="mb-4 inline-flex items-center gap-1.5 text-[13px] text-muted transition-colors hover:text-text"
+          className="mb-4 inline-flex items-center gap-2 rounded-md px-1 py-1 text-sm font-medium text-muted transition-colors hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
         >
-          <ArrowLeft size={14} /> All providers
+          <ArrowLeft size={16} /> Back to all providers
         </button>
 
         <PageHeader
-          title={provider.name}
-          description={provider.id}
+          title={
+            <span className="inline-flex items-center gap-3">
+              <ProviderIcon id={provider.id} name={provider.name} size={32} />
+              <span>{provider.name}</span>
+              {conn ? (
+                conn.isActive ? <Badge tone="success">Enabled</Badge> : <Badge tone="warning">Disabled</Badge>
+              ) : (
+                <Badge>Not connected</Badge>
+              )}
+            </span>
+          }
+          description={shortProviderId(provider.id)}
           actions={
-            <div className="flex gap-2">
-              <Button size="sm" loading={testing} onClick={handleTestConnection}>
-                <Zap size={13} /> Test connection
+            <div className="flex flex-wrap items-center gap-3">
+              {conn && (
+                <div className="flex items-center gap-2 rounded-lg border border-border bg-surface px-3 py-1.5">
+                  <span className="text-xs font-medium text-muted">{conn.isActive ? 'Enabled' : 'Disabled'}</span>
+                  <Toggle
+                    checked={conn.isActive}
+                    disabled={togglingId === conn.id}
+                    label={`Enable or disable ${provider.name}`}
+                    onChange={() => handleToggleProvider(conn, provider.name)}
+                  />
+                </div>
+              )}
+              <Button size="md" loading={testing} onClick={handleTestConnection}>
+                <Zap size={15} /> Test connection
               </Button>
-              <Button size="sm" onClick={() => setCredEditor({ providerId: provider.id, title: 'Edit credentials', existing: getConnectionFor(provider.id), defaultBaseUrl: provider.baseUrl })}>
-                <Pencil size={13} /> Edit credentials
+              <Button
+                size="md"
+                variant="primary"
+                onClick={() => setCredEditor({ providerId: provider.id, title: conn ? 'Edit API key & settings' : 'Connect provider', existing: conn, defaultBaseUrl: provider.baseUrl })}
+              >
+                <Pencil size={15} /> {conn ? 'Edit API key' : 'Add API key'}
               </Button>
             </div>
           }
@@ -668,92 +762,153 @@ export default function ProvidersPage() {
 
         {testResult && (
           <div
+            role="status"
             className={cn(
-              'mb-4 rounded-md border px-3 py-2.5 text-[13px]',
-              testResult.ok ? 'border-transparent bg-success-subtle text-success' : 'bg-danger-subtle text-danger border-transparent',
+              'mb-5 rounded-lg border px-4 py-3 text-sm font-medium',
+              testResult.ok ? 'border-transparent bg-success-subtle text-success' : 'border-transparent bg-danger-subtle text-danger',
             )}
           >
             {testResult.message}
           </div>
         )}
 
-        <div className="grid gap-4 lg:grid-cols-2">
-          <Card>
-            <div className="mb-3 flex items-center justify-between">
-              <h3 className="text-sm font-semibold">Connection</h3>
-              {(() => {
-                const conn = getConnectionFor(provider.id)
-                return conn ? <Badge tone="success">Active</Badge> : <Badge>Not configured</Badge>
-              })()}
-            </div>
-            <div className="flex flex-col gap-3">
-              <Field label="Model prefix override" hint="Rewrites the model IDs exposed on /v1/models for this provider.">
-                <div className="flex gap-2">
-                  <Input value={modelPrefix} onChange={(e) => setModelPrefix(e.target.value)} placeholder="provider/model" className="font-mono text-xs" />
-                  <Button size="md" onClick={handleSavePrefix}>
-                    Save
-                  </Button>
+        <div className="grid gap-5 lg:grid-cols-2">
+          <Card className="flex flex-col gap-4">
+            <h3 className="text-base font-semibold text-text">Connection Details</h3>
+            <div className="flex flex-col gap-2.5 rounded-lg border border-border bg-bg p-4 text-sm">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-muted">Status</span>
+                <span className="font-medium text-text">
+                  {conn ? (conn.isActive ? 'Active & ready' : 'Paused (disabled)') : 'Not connected'}
+                </span>
+              </div>
+              {conn?.name && (
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-muted">Key label</span>
+                  <span className="font-medium text-text">{conn.name}</span>
                 </div>
-              </Field>
-              <Button variant="ghost" className="justify-start text-danger hover:bg-danger-subtle hover:text-danger" onClick={() => handleRemoveConnection(provider.id)}>
-                <Trash2 size={13} /> Remove connection
-              </Button>
-              {provider.isNode && (
-                <Button variant="ghost" className="justify-start text-danger hover:bg-danger-subtle hover:text-danger" onClick={() => handleDeleteNode(provider.id)}>
-                  <Trash2 size={13} /> Delete provider node
-                </Button>
+              )}
+              {provider.baseUrl && (
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-muted">Endpoint</span>
+                  <code className="max-w-[65%] truncate font-mono text-xs text-text">{provider.baseUrl}</code>
+                </div>
+              )}
+            </div>
+
+            <div className="border-t border-border pt-3">
+              <button
+                type="button"
+                onClick={() => setShowDetailAdvanced(!showDetailAdvanced)}
+                className="inline-flex items-center gap-1.5 text-xs font-medium text-muted transition-colors hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+              >
+                {showDetailAdvanced ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                Advanced & danger zone
+              </button>
+
+              {showDetailAdvanced && (
+                <div className="mt-4 flex flex-col gap-4">
+                  <Field label="Model prefix override" hint="Optional: rewrites the prefix shown in /v1/models.">
+                    <div className="flex gap-2">
+                      <Input value={modelPrefix} onChange={(e) => setModelPrefix(e.target.value)} placeholder="provider/" className="font-mono text-xs" />
+                      <Button size="md" onClick={handleSavePrefix}>
+                        Save
+                      </Button>
+                    </div>
+                  </Field>
+                  <div className="flex flex-wrap gap-2 pt-1">
+                    {conn && (
+                      <Button size="md" variant="danger" onClick={() => handleRemoveConnection(provider.id)}>
+                        <Trash2 size={14} /> Disconnect provider
+                      </Button>
+                    )}
+                    {provider.isNode && (
+                      <Button size="md" variant="danger" onClick={() => handleDeleteNode(provider.id)}>
+                        <Trash2 size={14} /> Delete custom endpoint
+                      </Button>
+                    )}
+                  </div>
+                </div>
               )}
             </div>
           </Card>
 
-          <Card>
-            <h3 className="mb-3 text-sm font-semibold">Models</h3>
-            <div className="mb-3 flex gap-2">
+          <Card className="flex flex-col gap-4">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h3 className="text-base font-semibold text-text">Available Models</h3>
+              <div className="flex items-center gap-2">
+                <Button size="sm" loading={importing} onClick={handleImportModels}>
+                  <RefreshCw size={13} /> Import from upstream
+                </Button>
+              </div>
+            </div>
+
+            <div className="flex gap-2">
               <Input
-                placeholder="Add model ID manually…"
+                placeholder="Add model ID (e.g. deepseek-chat)…"
                 value={customModelIdInput}
                 onChange={(e) => setCustomModelIdInput(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && handleAddCustomModel()}
                 className="font-mono text-xs"
               />
-              <Button size="md" onClick={handleAddCustomModel}>
+              <Button size="md" variant="primary" onClick={handleAddCustomModel}>
                 Add
               </Button>
             </div>
-            <div className="mb-3 flex gap-2">
-              <Button size="sm" loading={importing} onClick={handleImportModels}>
-                <RefreshCw size={12} /> Import from upstream
-              </Button>
-              <Button size="sm" variant="ghost" onClick={() => handleSetEnabledModels(models.filter((m) => isModelEnabled(m.id)).map((m) => m.id))}>
-                Save current selection
-              </Button>
-            </div>
-            <div className="max-h-72 overflow-y-auto rounded-md border border-border">
-              {[...customs.map((c) => ({ id: c.id, custom: true as const })), ...models.map((m) => ({ id: m.id, custom: false as const }))]
-                .filter((entry, i, arr) => arr.findIndex((x) => x.id === entry.id) === i)
-                .map((entry) => (
-                  <div key={entry.id} className="flex items-center gap-2 border-b border-border/60 px-3 py-1.5 last:border-b-0">
-                    <Toggle checked={isModelEnabled(entry.id)} onChange={() => handleSetEnabledModels(isModelEnabled(entry.id) ? (enabledModelIds ?? []).filter((x) => x !== entry.id) : [...(enabledModelIds ?? models.map((m) => m.id)), entry.id])} />
-                    <code className="min-w-0 flex-1 truncate font-mono text-[11px]">{entry.id}</code>
-                    <button
-                      onClick={() => handleToggleThinkingMode(entry.id)}
-                      className={cn('transition-colors', thinkingMap[entry.id] ? 'text-accent' : 'text-subtle hover:text-text')}
-                      aria-label={`Toggle thinking mode for ${entry.id}`}
-                      title="Thinking mode"
-                    >
-                      <Brain size={12} />
-                    </button>
-                    {entry.custom && (
-                      <button onClick={() => handleDeleteCustomModel(entry.id)} className="text-subtle hover:text-danger" aria-label={`Delete ${entry.id}`}>
-                        <Trash2 size={12} />
-                      </button>
-                    )}
-                  </div>
-                ))}
-            </div>
-            <div className="mt-2 text-[11px] text-subtle">Thinking mode marks models whose reasoning stream should render as thinking.</div>
-          </Card>
 
+            <div className="max-h-80 overflow-y-auto rounded-lg border border-border bg-bg">
+              {allModels.length === 0 ? (
+                <div className="px-4 py-8 text-center text-xs text-subtle">
+                  No models listed yet. Click "Import from upstream" or add one above.
+                </div>
+              ) : (
+                allModels.map((entry) => {
+                  const enabled = isModelEnabled(entry.id)
+                  return (
+                    <div key={entry.id} className="flex items-center gap-3 border-b border-border/60 px-3.5 py-2.5 last:border-b-0">
+                      <Toggle
+                        checked={enabled}
+                        label={`Enable model ${entry.id}`}
+                        onChange={() =>
+                          handleSetEnabledModels(
+                            enabled
+                              ? (enabledModelIds ?? []).filter((x) => x !== entry.id)
+                              : [...(enabledModelIds ?? models.map((m) => m.id)), entry.id],
+                          )
+                        }
+                      />
+                      <code className="min-w-0 flex-1 truncate font-mono text-xs text-text">{entry.id}</code>
+                      <button
+                        type="button"
+                        onClick={() => handleToggleThinkingMode(entry.id)}
+                        className={cn(
+                          'inline-flex h-8 w-8 items-center justify-center rounded-md transition-colors hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent',
+                          thinkingMap[entry.id] ? 'bg-accent-subtle text-accent' : 'text-subtle hover:text-text',
+                        )}
+                        aria-label={`Toggle thinking mode for ${entry.id}`}
+                        title="Thinking mode"
+                      >
+                        <Brain size={15} />
+                      </button>
+                      {entry.custom && (
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteCustomModel(entry.id)}
+                          className="inline-flex h-8 w-8 items-center justify-center rounded-md text-subtle transition-colors hover:bg-danger-subtle hover:text-danger focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                          aria-label={`Delete model ${entry.id}`}
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      )}
+                    </div>
+                  )
+                })
+              )}
+            </div>
+            <div className="text-xs text-subtle">
+              Turn models on/off to choose which ones appear in Chat and Routes. Click the brain icon for thinking/reasoning models.
+            </div>
+          </Card>
         </div>
 
         {credEditor && (
@@ -777,141 +932,194 @@ export default function ProvidersPage() {
     <PageContainer>
       <PageHeader
         title="Providers"
-        description="Upstream connections, credentials, and model registries. Requests are forwarded to the active provider accounts."
+        description="Connect your AI accounts and turn providers on or off anytime without losing your saved keys."
         actions={
-          <Button size="md" onClick={() => setShowAddNode(true)}>
-            <Plus size={14} /> Add node
+          <Button variant="primary" size="lg" onClick={() => setShowAddNode(true)}>
+            <Plus size={16} /> Add custom endpoint
           </Button>
         }
       />
 
-      <div className="mb-4">
-        <Input placeholder="Search providers…" value={providerSearchQuery} onChange={(e) => setProviderSearchQuery(e.target.value)} className="max-w-sm" />
+      <div className="mb-6 flex flex-wrap items-center gap-3">
+        <Input
+          placeholder="Search providers (e.g. DeepSeek, Qwen, GLM)…"
+          value={providerSearchQuery}
+          onChange={(e) => setProviderSearchQuery(e.target.value)}
+          className="max-w-sm"
+        />
+        <div className="flex items-center gap-1.5 rounded-lg border border-border bg-surface p-1" role="group" aria-label="Filter providers">
+          {([
+            ['all', 'All'],
+            ['connected', 'Connected'],
+            ['unconnected', 'Not connected'],
+          ] as const).map(([key, label]) => (
+            <button
+              key={key}
+              type="button"
+              onClick={() => setFilterMode(key)}
+              className={cn(
+                'rounded-md px-3 py-1.5 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent',
+                filterMode === key ? 'bg-accent text-on-accent' : 'text-muted hover:text-text',
+              )}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
       </div>
 
       {providerGroups.map((group) => (
-        <section key={group.key} className="mb-6">
-          <div className="mb-2 flex items-baseline gap-2">
-            <h2 className="text-sm font-semibold text-text">{group.title}</h2>
-            <span className="text-[11px] text-muted">{group.hint}</span>
+        <section key={group.key} className="mb-8">
+          <div className="mb-3 flex flex-wrap items-baseline gap-2">
+            <h2 className="text-base font-semibold text-text">{group.title}</h2>
+            <span className="text-xs text-muted">{group.hint}</span>
           </div>
-          <div className="grid gap-3 grid-cols-1 sm:[grid-template-columns:repeat(auto-fill,minmax(300px,1fr))]">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
             {group.entries.map((p) => {
-          const conn = getConnectionFor(p.id)
-          const metrics = getProviderMetrics(p.id)
-          const connected = Boolean(conn)
-          return (
-            <Card
-              key={p.id}
-              interactive
-              onClick={() => setViewingDetailProvider({ id: p.id, name: p.name, type: p.type, baseUrl: p.isNode ? nodes.find((n) => n.id === p.id)?.data?.baseUrl ?? '' : PROVIDER_URLS[p.id] ?? '', isNode: p.isNode })}
-            >
-              <div className="flex items-start gap-3">
-                <ProviderIcon id={p.id} name={p.name} size={34} />
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
-                    <span className="truncate text-[13px] font-semibold text-text">{p.name}</span>
-                    {p.type === 'oauth' && <Badge tone="accent">OAuth</Badge>}
-                    {p.isNode && <Badge>Node</Badge>}
+              const conn = getConnectionFor(p.id)
+              const metrics = getProviderMetrics(p.id)
+              const connected = Boolean(conn)
+              const isActive = Boolean(conn?.isActive)
+              const baseUrl = p.isNode ? nodes.find((n) => n.id === p.id)?.data?.baseUrl ?? '' : PROVIDER_URLS[p.id] ?? ''
+
+              return (
+                <Card
+                  key={p.id}
+                  interactive
+                  onClick={() => setViewingDetailProvider({ id: p.id, name: p.name, type: p.type, baseUrl, isNode: p.isNode })}
+                  className={cn('flex flex-col justify-between gap-4', connected && !isActive && 'opacity-75')}
+                >
+                  <div className="flex items-start gap-3.5">
+                    <ProviderIcon id={p.id} name={p.name} size={40} />
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2">
+                        <span className="truncate text-sm font-semibold text-text">{p.name}</span>
+                        {p.type === 'oauth' && <Badge tone="accent">OAuth</Badge>}
+                        {p.isNode && <Badge>Custom</Badge>}
+                      </div>
+                      <p className="mt-0.5 line-clamp-1 text-xs text-muted">{p.desc}</p>
+                    </div>
+                    {connected && conn && (
+                      <div className="shrink-0" onClick={(e) => e.stopPropagation()}>
+                        <Toggle
+                          checked={isActive}
+                          disabled={togglingId === conn.id}
+                          label={`Enable or disable ${p.name}`}
+                          onChange={() => handleToggleProvider(conn, p.name)}
+                        />
+                      </div>
+                    )}
                   </div>
-                  <div className="truncate text-[11px] text-muted">{p.desc}</div>
-                  <div className="tnum mt-2 flex items-center gap-3 text-[11px]">
-                    <span className={cn('inline-flex items-center gap-1', connected ? 'text-success' : 'text-subtle')}>
-                      <span className={cn('h-1.5 w-1.5 rounded-full', connected ? 'bg-success' : 'bg-subtle')} />
-                      {connected ? 'Connected' : 'Not connected'}
-                    </span>
-                    {connected && <span className="text-subtle">{metrics.successRate} ok</span>}
-                    {connected && <span className="text-subtle">{metrics.avgLatency}</span>}
+
+                  <div className="flex items-center justify-between gap-3 border-t border-border pt-3">
+                    <div className="tnum flex items-center gap-2 text-xs">
+                      {connected ? (
+                        isActive ? (
+                          <Badge tone="success">Active</Badge>
+                        ) : (
+                          <Badge tone="warning">Disabled</Badge>
+                        )
+                      ) : (
+                        <Badge>Not connected</Badge>
+                      )}
+                      {connected && metrics.requests > 0 && (
+                        <span className="text-subtle">{metrics.successRate} ok</span>
+                      )}
+                    </div>
+
+                    <div onClick={(e) => e.stopPropagation()}>
+                      {p.type === 'oauth' && !connected ? (
+                        <Button size="md" variant="primary" onClick={() => handleStartOauth(p.id)}>
+                          <KeyRound size={14} /> Sign in
+                        </Button>
+                      ) : connected ? (
+                        <Button
+                          size="md"
+                          variant="secondary"
+                          onClick={() => setViewingDetailProvider({ id: p.id, name: p.name, type: p.type, baseUrl, isNode: p.isNode })}
+                        >
+                          Configure
+                        </Button>
+                      ) : (
+                        <Button
+                          size="md"
+                          variant="primary"
+                          onClick={() =>
+                            setCredEditor({
+                              providerId: p.id,
+                              title: `Connect ${p.name}`,
+                              defaultBaseUrl: baseUrl,
+                            })
+                          }
+                        >
+                          Connect
+                        </Button>
+                      )}
+                    </div>
                   </div>
-                </div>
-                <div className="flex shrink-0 items-center gap-1" onClick={(e) => e.stopPropagation()}>
-                  {p.type === 'oauth' && !connected ? (
-                    <Button size="sm" variant="primary" onClick={() => handleStartOauth(p.id)}>
-                      <KeyRound size={12} /> Authorize
-                    </Button>
-                  ) : (
-                    <Button
-                      size="sm"
-                      onClick={() =>
-                        setCredEditor({
-                          providerId: p.id,
-                          title: connected ? 'Edit credentials' : 'Add credentials',
-                          existing: conn,
-                          defaultBaseUrl: p.isNode ? nodes.find((n) => n.id === p.id)?.data?.baseUrl ?? '' : PROVIDER_URLS[p.id] ?? '',
-                        })
-                      }
-                    >
-                      {connected ? 'Edit' : 'Connect'}
-                    </Button>
-                  )}
-                  {connected && (
-                    <Button size="sm" variant="ghost" className="text-danger hover:bg-danger-subtle hover:text-danger" onClick={() => handleRemoveConnection(p.id)}>
-                      <Trash2 size={12} />
-                    </Button>
-                  )}
-                </div>
-              </div>
-            </Card>
-          )
-        })}
+                </Card>
+              )
+            })}
           </div>
         </section>
       ))}
 
       {/* OAuth modal */}
-      <Modal open={showOauth} onClose={() => setShowOauth(false)} title={`${OAUTH_PROVIDERS.find((p) => p.id === oauthProvider)?.name ?? 'Provider'} authorization`} width="max-w-md">
+      <Modal open={showOauth} onClose={() => setShowOauth(false)} title={`${OAUTH_PROVIDERS.find((p) => p.id === oauthProvider)?.name ?? 'Provider'} sign in`} width="max-w-md">
         {oauthStatus === 'initiating' && (
-          <div className="flex flex-col items-center gap-3 py-4 text-center">
-            <Spinner size={20} />
-            <p className="text-[13px] text-muted">Requesting device code…</p>
+          <div className="flex flex-col items-center gap-3 py-6 text-center">
+            <Spinner size={24} />
+            <p className="text-sm text-muted">Requesting login code…</p>
           </div>
         )}
         {oauthStatus === 'pending' && oauthData && (
-          <div className="flex flex-col items-center gap-3 py-4 text-center">
-            <Spinner size={20} />
-            <p className="text-[13px] text-muted">
+          <div className="flex flex-col items-center gap-3 py-6 text-center">
+            <Spinner size={24} />
+            <p className="text-sm text-muted">
               Open{' '}
               <a href={oauthData.verification_uri ?? oauthData.verification_url} target="_blank" rel="noreferrer" className="text-accent underline">
                 {oauthData.verification_uri ?? oauthData.verification_url}
               </a>
-              {oauthData.user_code ? ' and enter the code:' : ' and approve access.'}
+              {oauthData.user_code ? ' and enter this code:' : ' and approve access.'}
             </p>
             {oauthData.user_code && (
-              <code className="rounded-md border border-border bg-surface-2 px-4 py-2 font-mono text-lg font-semibold tracking-widest">{oauthData.user_code}</code>
+              <code className="rounded-lg border border-border bg-surface-2 px-5 py-2.5 font-mono text-xl font-semibold tracking-widest">{oauthData.user_code}</code>
             )}
-            <p className="text-[11px] text-subtle">Waiting for authorization…</p>
+            <p className="text-xs text-subtle">Waiting for authorization…</p>
           </div>
         )}
         {oauthStatus === 'success' && (
-          <p className="py-4 text-center text-[13px] text-success">Authorized{oauthEmail ? ` as ${oauthEmail}` : ''}.</p>
+          <p className="py-6 text-center text-sm font-medium text-success">Signed in{oauthEmail ? ` as ${oauthEmail}` : ''}.</p>
         )}
-        {oauthStatus === 'error' && <p className="py-4 text-center text-[13px] text-danger">{oauthError}</p>}
+        {oauthStatus === 'error' && <p className="py-6 text-center text-sm text-danger">{oauthError}</p>}
       </Modal>
 
       {/* Add node modal */}
       <Modal
         open={showAddNode}
         onClose={() => setShowAddNode(false)}
-        title="Add provider node"
-        subtitle="Register an OpenAI- or Anthropic-compatible endpoint."
+        title="Add custom endpoint"
+        subtitle="Connect any OpenAI- or Anthropic-compatible server."
         footer={
           <>
-            <Button onClick={() => setShowAddNode(false)}>Cancel</Button>
-            <Button variant="primary" disabled={!nodeName.trim() || !nodeUrl.trim()} onClick={handleCreateNode}>
-              Create node
+            <Button size="md" onClick={() => setShowAddNode(false)}>
+              Cancel
+            </Button>
+            <Button size="md" variant="primary" disabled={!nodeName.trim() || !nodeUrl.trim()} onClick={handleCreateNode}>
+              Add endpoint
             </Button>
           </>
         }
       >
-        <div className="flex flex-col gap-3">
-          <Field label="Compatibility">
+        <div className="flex flex-col gap-4">
+          <Field label="API format">
             <Select value={compatType} onChange={(e) => setCompatType(e.target.value)}>
               <option value="openai-compatible">OpenAI-compatible</option>
               <option value="anthropic-compatible">Anthropic-compatible</option>
             </Select>
           </Field>
           <Field label="Name">
-            <Input value={nodeName} onChange={(e) => setNodeName(e.target.value)} placeholder="e.g. My Proxy" />
+            <Input value={nodeName} onChange={(e) => setNodeName(e.target.value)} placeholder="e.g. My Local Server" />
           </Field>
           <Field label="Base URL">
             <Input value={nodeUrl} onChange={(e) => setNodeUrl(e.target.value)} placeholder="https://api.example.com/v1" />

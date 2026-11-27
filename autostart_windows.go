@@ -4,6 +4,7 @@ package main
 
 import (
 	"fmt"
+	"html"
 	"os"
 	"os/exec"
 )
@@ -12,7 +13,7 @@ const taskName = "MyAiRouter Gateway"
 
 // Runs at logon and boot, restarts on crash, stays hidden.
 func taskXML(exePath string) string {
-	return fmt.Sprintf(`<?xml version="1.0" encoding="UTF-16"?>
+	return fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?>
 <Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
   <Triggers>
     <LogonTrigger>
@@ -44,7 +45,7 @@ func taskXML(exePath string) string {
       <Arguments>start -f</Arguments>
     </Exec>
   </Actions>
-</Task>`, exePath)
+</Task>`, html.EscapeString(exePath))
 }
 
 func runSchTasks(args ...string) error {
