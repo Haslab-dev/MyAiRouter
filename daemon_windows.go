@@ -13,8 +13,7 @@ import (
 	"time"
 )
 
-// ponytail: pid file lives next to the binary (works from any disk/dir);
-// upgrade path: %LOCALAPPDATA%\myairouter\ if multi-user installs matter.
+// Pid file lives next to the binary so it works from any disk/dir.
 func pidFilePath() string {
 	exe, err := os.Executable()
 	if err != nil {
@@ -102,8 +101,7 @@ func stopProcess() {
 }
 
 func resolveExePath() string {
-	// os.Args[0] can be a bare "myairouter" resolved via PATH in cwd —
-	// Go >=1.19 refuses to exec that (ERR_DOT). Resolve absolute path.
+	// os.Args[0] may be a bare name; Go >=1.19 refuses to exec that (ERR_DOT).
 	if exe, err := os.Executable(); err == nil && exe != "" {
 		if abs, err := filepath.Abs(exe); err == nil {
 			return abs
@@ -122,12 +120,18 @@ func resolveExePath() string {
 func startBackground() {
 	stopExistingDuplicates()
 
-	// Re-exec self detached (no console popup, survives terminal close).
-	// Child runs foreground server directly ("start -f") to avoid
-	// re-entering startBackground() in an infinite spawn loop.
+	// Child runs "start -f" directly to avoid re-entering startBackground().
 	cmd := exec.Command(resolveExePath(), "start", "-f")
-	cmd.Stdout = nil
-	cmd.Stderr = nil
+	// Child output goes to a log file so startup crashes stay diagnosable.
+	logPath := filepath.Join(filepath.Dir(resolveExePath()), "myairouter.log")
+	logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error opening log file: %v\n", err)
+		os.Exit(1)
+	}
+	defer logFile.Close()
+	cmd.Stdout = logFile
+	cmd.Stderr = logFile
 	cmd.Env = os.Environ()
 	cmd.SysProcAttr = detachedSysProcAttr()
 	if err := cmd.Start(); err != nil {
@@ -139,8 +143,6 @@ func startBackground() {
 	os.Exit(0)
 }
 
-// detachedSysProcAttr returns SysProcAttr that detaches the child from this
-// console: no console window, own process group, survives parent exit.
 func detachedSysProcAttr() *syscall.SysProcAttr {
 	const (
 		detachedProcess   = 0x00000008

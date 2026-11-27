@@ -10,9 +10,6 @@ import (
 	"strings"
 )
 
-// installGlobal copies the running binary to %USERPROFILE%\.local\bin and
-// ensures that directory is on the user PATH, so `myairouter` works from any
-// terminal (cmd, PowerShell, baru dibuka) tanpa path manual.
 func installGlobal() {
 	exe, err := os.Executable()
 	if err != nil {

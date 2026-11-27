@@ -63,30 +63,54 @@ go build -o MyAiRouter .
 
 ## 2. Install
 
+### Linux / macOS (binary rilis)
+
 ```bash
 curl -fsSL https://haslab-dev.github.io/MyAiRouter/website/install.sh | bash
 ```
 
 Installs to `$HOME/.local/bin/myairouter` (or `/usr/local/bin/myairouter`).
 
+### Linux / macOS (dari fresh clone)
+
+```bash
+git clone <repo> && cd MyAiRouter
+make install   # build frontend + Go binary, lalu pasang lokal
+```
+
+Requires Go and Node.js/npm (`web/dist/` is gitignored and must be built).
+
+### Windows (dari fresh clone)
+
+```powershell
+git clone <repo>; cd MyAiRouter
+cd web; npm install; npm run build; cd ..
+go build -o myairouter.exe .
+.\myairouter.exe install-global  # tutup lalu buka terminal baru sesudah ini
+```
+
 ---
 
 ## 3. Run & Process Control
 
 ```bash
-myairouter            # start server (foreground)
-myairouter start      # start server (foreground)
-myairouter start -d   # start server (background daemon)
-myairouter status     # show server status, running PIDs & listening ports
+myairouter            # start server (background, no popup)
+myairouter start      # start server (background, no popup)
+myairouter start -f   # start server (foreground, debug)
+myairouter status     # show server status & running processes
 myairouter stop       # stop all running server processes (auto-sweeps duplicates)
 myairouter restart    # restart background daemon
 myairouter bg         # background alias
+myairouter install    # auto-start on boot + crash watchdog
+myairouter install-global  # copy exe to ~/.local/bin + add to PATH (global call)
+myairouter uninstall  # remove auto-start (daemon keeps running)
 myairouter version    # print version
 ```
 
 By default, the server runs on port `20128`. Set `PORT` to change:
 ```bash
-PORT=8080 myairouter
+PORT=8080 myairouter            # Linux / macOS
+$env:PORT=8080; myairouter      # Windows PowerShell
 ```
 
 On startup, `MyAiRouter` will:

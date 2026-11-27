@@ -23,7 +23,7 @@ func pidFilePath() string {
 
 func findRunningPIDs() []int {
 	myPID := os.Getpid()
-	out, err := exec.Command("pgrep", "-f", "my[aA]i[rR]outer").Output()
+	out, err := exec.Command("pgrep", "-f", "myairouter").Output()
 	var pids []int
 	if err == nil {
 		lines := strings.Split(strings.TrimSpace(string(out)), "\n")
@@ -103,13 +103,13 @@ func stopProcessInternal(pids []int) {
 		}
 	}
 
-	os.Remove(pidFile)
+	os.Remove(pidFilePath())
 }
 
 func stopProcess() {
 	pids := findRunningPIDs()
 	if len(pids) == 0 {
-		os.Remove(pidFile)
+		os.Remove(pidFilePath())
 		fmt.Println("myairouter not running")
 		return
 	}
@@ -124,23 +124,48 @@ func stopProcess() {
 	}
 }
 
+func resolveExePath() string {
+	// os.Args[0] may be a bare name; Go >=1.19 refuses to exec that (ERR_DOT).
+	if exe, err := os.Executable(); err == nil && exe != "" {
+		return exe
+	}
+	if p, err := exec.LookPath(os.Args[0]); err == nil {
+		return p
+	}
+	return os.Args[0]
+}
+
 func startBackground() {
 	stopExistingDuplicates()
 
-	exe := os.Args[0]
-	if abs, err := filepath.Abs(exe); err == nil {
-		exe = abs
-	}
+	exe := resolveExePath()
 	cmd := exec.Command(exe, "start", "-f")
-	cmd.Stdout = nil
-	cmd.Stderr = nil
+	// Child output goes to a log file so startup crashes stay diagnosable.
+	logPath := filepath.Join(filepath.Dir(exe), "myairouter.log")
+	logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
+	if err != nil {
+		// Dir next to the binary may not be writable (e.g. /usr/local/bin);
+		// fall back to the data dir.
+		if home, herr := os.UserHomeDir(); herr == nil {
+			logPath = filepath.Join(home, ".myairouter", "myairouter.log")
+			_ = os.MkdirAll(filepath.Dir(logPath), 0755)
+			logFile, err = os.OpenFile(logPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
+		}
+	}
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error opening log file: %v\n", err)
+		os.Exit(1)
+	}
+	defer logFile.Close()
+	cmd.Stdout = logFile
+	cmd.Stderr = logFile
 	cmd.Env = os.Environ()
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 	if err := cmd.Start(); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
-	os.WriteFile(pidFile, []byte(strconv.Itoa(cmd.Process.Pid)), 0644)
+	_ = os.WriteFile(pidFilePath(), []byte(strconv.Itoa(cmd.Process.Pid)), 0644)
 	fmt.Printf("myairouter started (PID %d)\n", cmd.Process.Pid)
 	os.Exit(0)
 }
