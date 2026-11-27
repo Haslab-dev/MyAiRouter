@@ -37,11 +37,17 @@ jobs:
           cache: 'npm'
           cache-dependency-path: web/package-lock.json
 
+      - name: Build web client
+        run: |
+          cd web
+          npm ci
+          npm run build
+
       - name: Run Go tests
         run: go test ./...
 
-      - name: Build web client & all platform binaries
-        run: node scripts/build.mjs --all
+      - name: Build all platform binaries
+        run: node scripts/build.mjs --all --skip-web
 
       - name: Package release archives
         run: |
