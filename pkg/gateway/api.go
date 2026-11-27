@@ -6,8 +6,10 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"math"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -374,6 +376,15 @@ func handleProviderDetail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if len(parts) > 1 && parts[1] == "quota" {
+		if r.Method == http.MethodGet {
+			handleProviderQuota(w, r, id)
+			return
+		}
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+
 	if r.Method == http.MethodGet {
 		conn, err := db.GetConnection(id)
 		if err != nil {
@@ -473,6 +484,139 @@ func handleTestProvider(w http.ResponseWriter, r *http.Request, id string) {
 		"latencyMs":  latencyMs,
 		"error":      errMsg,
 		"testStatus": statusStr,
+	})
+}
+
+func resolveGLMQuotaURL(conn *db.ProviderConnection) (string, bool) {
+	baseUrl, _ := conn.Data["baseUrl"].(string)
+	lowBase := strings.ToLower(baseUrl)
+	isGLM := conn.Provider == "glm-coding" || conn.Provider == "glm" ||
+		strings.Contains(lowBase, "bigmodel.cn") || strings.Contains(lowBase, "z.ai")
+	if !isGLM {
+		return "", false
+	}
+	if baseUrl != "" {
+		if u, err := url.Parse(baseUrl); err == nil && u.Scheme != "" && u.Host != "" {
+			return fmt.Sprintf("%s://%s/api/monitor/usage/quota/limit", u.Scheme, u.Host), true
+		}
+	}
+	return "https://open.bigmodel.cn/api/monitor/usage/quota/limit", true
+}
+
+func handleProviderQuota(w http.ResponseWriter, r *http.Request, id string) {
+	conn, err := db.GetConnection(id)
+	if err != nil {
+		WriteErrorResponse(w, http.StatusNotFound, "Connection not found")
+		return
+	}
+
+	type localWindow struct {
+		Tokens5h   int64 `json:"tokens5h"`
+		Requests5h int64 `json:"requests5h"`
+		Tokens7d   int64 `json:"tokens7d"`
+		Requests7d int64 `json:"requests7d"`
+	}
+	var local localWindow
+	if db.DB != nil {
+		since5h := time.Now().UTC().Add(-5 * time.Hour).Format(time.RFC3339)
+		since7d := time.Now().UTC().Add(-7 * 24 * time.Hour).Format(time.RFC3339)
+		_ = db.DB.QueryRow(
+			"SELECT COALESCE(SUM(promptTokens + completionTokens), 0), COUNT(*) FROM usageHistory WHERE (connectionId = ? OR provider = ?) AND timestamp >= ?",
+			conn.ID, conn.Provider, since5h,
+		).Scan(&local.Tokens5h, &local.Requests5h)
+		_ = db.DB.QueryRow(
+			"SELECT COALESCE(SUM(promptTokens + completionTokens), 0), COUNT(*) FROM usageHistory WHERE (connectionId = ? OR provider = ?) AND timestamp >= ?",
+			conn.ID, conn.Provider, since7d,
+		).Scan(&local.Tokens7d, &local.Requests7d)
+	}
+
+	quotaURL, supported := resolveGLMQuotaURL(conn)
+	if !supported {
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"supported": false,
+			"provider":  conn.Provider,
+			"local":     local,
+		})
+		return
+	}
+
+	apiKey, _ := conn.Data["apiKey"].(string)
+	req, err := http.NewRequestWithContext(r.Context(), http.MethodGet, quotaURL, nil)
+	if err != nil {
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"supported":     true,
+			"provider":      conn.Provider,
+			"endpoint":      quotaURL,
+			"upstreamOk":    false,
+			"upstreamError": err.Error(),
+			"local":         local,
+		})
+		return
+	}
+	req.Header.Set("Authorization", "Bearer "+apiKey)
+	req.Header.Set("Accept", "application/json")
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"supported":     true,
+			"provider":      conn.Provider,
+			"endpoint":      quotaURL,
+			"upstreamOk":    false,
+			"upstreamError": err.Error(),
+			"local":         local,
+		})
+		return
+	}
+	defer resp.Body.Close()
+	bodyBytes, _ := io.ReadAll(io.LimitReader(resp.Body, 256*1024))
+
+	if resp.StatusCode >= 400 {
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"supported":     true,
+			"provider":      conn.Provider,
+			"endpoint":      quotaURL,
+			"upstreamOk":    false,
+			"upstreamError": fmt.Sprintf("HTTP %d", resp.StatusCode),
+			"local":         local,
+		})
+		return
+	}
+
+	var parsed map[string]interface{}
+	if err := json.Unmarshal(bodyBytes, &parsed); err != nil {
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"supported":     true,
+			"provider":      conn.Provider,
+			"endpoint":      quotaURL,
+			"upstreamOk":    false,
+			"upstreamError": "Invalid upstream JSON",
+			"local":         local,
+		})
+		return
+	}
+
+	var limits interface{}
+	if dataObj, ok := parsed["data"].(map[string]interface{}); ok {
+		if l, ok := dataObj["limits"]; ok {
+			limits = l
+		}
+	}
+	if limits == nil {
+		if l, ok := parsed["limits"]; ok {
+			limits = l
+		}
+	}
+
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"supported":  true,
+		"provider":   conn.Provider,
+		"endpoint":   quotaURL,
+		"upstreamOk": true,
+		"limits":     limits,
+		"raw":        parsed,
+		"local":      local,
 	})
 }
 

@@ -3,6 +3,7 @@ import { ArrowLeft, Brain, ChevronDown, ChevronRight, Eye, EyeOff, KeyRound, Pen
 import { api } from '@/lib/api'
 import { useSnackbar } from '@/stores/snackbar'
 import ProviderIcon from '@/components/ProviderIcon'
+import GlmQuotaCard from '@/components/GlmQuotaCard'
 import { Badge, Button, Card, Field, Input, Modal, PageContainer, PageHeader, Select, Spinner, Toggle } from '@/components/ui'
 import { cn } from '@/lib/cn'
 import type { ModelEntry, ProviderConnection, ProxyRoute } from '@/lib/types'
@@ -769,6 +770,12 @@ export default function ProvidersPage() {
             )}
           >
             {testResult.message}
+          </div>
+        )}
+
+        {conn && (provider.id === 'glm-coding' || provider.id === 'glm' || provider.baseUrl.toLowerCase().includes('bigmodel.cn') || provider.baseUrl.toLowerCase().includes('z.ai')) && (
+          <div className="mb-5">
+            <GlmQuotaCard connectionId={conn.id} />
           </div>
         )}
 

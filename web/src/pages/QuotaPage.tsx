@@ -4,6 +4,7 @@ import { api } from '@/lib/api'
 import { useSnackbar } from '@/stores/snackbar'
 import { Badge, Button, Card, PageContainer, PageHeader, Spinner, Toggle, EmptyState } from '@/components/ui'
 import ProviderIcon from '@/components/ProviderIcon'
+import GlmQuotaCard from '@/components/GlmQuotaCard'
 import type { ConnectionHealth, ProviderConnection } from '@/lib/types'
 
 export default function QuotaPage() {
@@ -147,6 +148,17 @@ export default function QuotaPage() {
           })}
         </div>
       )}
+
+      {connections
+        .filter((c) => {
+          const base = String(c.data?.baseUrl ?? '').toLowerCase()
+          return c.provider === 'glm-coding' || c.provider === 'glm' || base.includes('bigmodel.cn') || base.includes('z.ai')
+        })
+        .map((c) => (
+          <div key={`quota-${c.id}`} className="mt-5">
+            <GlmQuotaCard connectionId={c.id} title={`${c.provider === 'glm-coding' ? 'GLM Coding Plan' : 'GLM'} Quota — ${c.name || 'Default'}`} />
+          </div>
+        ))}
     </PageContainer>
   )
 }

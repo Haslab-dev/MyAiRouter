@@ -3,6 +3,7 @@ package gateway
 import (
 	"encoding/json"
 	"net/http"
+	"net/http/httptest"
 	"testing"
 )
 
@@ -154,5 +155,55 @@ func TestProviderCredentialPatchAndComboValidation(t *testing.T) {
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusConflict {
 		t.Fatalf("duplicate combo: got %d, want 409", resp.StatusCode)
+	}
+}
+
+func TestGLMQuotaEndpoint(t *testing.T) {
+	mockMonitor := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/monitor/usage/quota/limit" {
+			http.NotFound(w, r)
+			return
+		}
+		if r.Header.Get("Authorization") != "Bearer sk-glm-coding-test" {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"code": 200,
+			"data": map[string]any{
+				"limits": []map[string]any{
+					{"type": "TOKENS_LIMIT", "unit": 3, "number": 5, "usage": 1000000, "currentValue": 250000, "remaining": 750000, "percentage": 25.0},
+				},
+			},
+		})
+	}))
+	defer mockMonitor.Close()
+
+	server := newAuthTestServer(t)
+	defer server.Close()
+
+	resp := doJSON(t, server, http.MethodPost, "/api/providers", map[string]any{
+		"provider": "glm-coding",
+		"name":     "GLM Coding",
+		"authType": "apikey",
+		"isActive": true,
+		"data":     map[string]any{"apiKey": "sk-glm-coding-test", "baseUrl": mockMonitor.URL + "/api/coding/paas/v4"},
+	}, nil)
+	var created map[string]any
+	_ = json.NewDecoder(resp.Body).Decode(&created)
+	resp.Body.Close()
+	id, _ := created["id"].(string)
+
+	qResp := doJSON(t, server, http.MethodGet, "/api/providers/"+id+"/quota", nil, nil)
+	var qBody struct {
+		Supported  bool             `json:"supported"`
+		UpstreamOk bool             `json:"upstreamOk"`
+		Limits     []map[string]any `json:"limits"`
+	}
+	_ = json.NewDecoder(qResp.Body).Decode(&qBody)
+	qResp.Body.Close()
+	if qResp.StatusCode != http.StatusOK || !qBody.Supported || !qBody.UpstreamOk || len(qBody.Limits) != 1 {
+		t.Fatalf("unexpected quota response: status=%d body=%+v", qResp.StatusCode, qBody)
 	}
 }
