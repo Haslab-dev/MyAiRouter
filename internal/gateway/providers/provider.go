@@ -12,12 +12,13 @@ import (
 )
 
 var SharedTransport = &http.Transport{
-	MaxIdleConns:        200,
-	MaxIdleConnsPerHost: 100,
-	IdleConnTimeout:     90 * time.Second,
-	ForceAttemptHTTP2:   true,
+	MaxIdleConns:          200,
+	MaxIdleConnsPerHost:   100,
+	IdleConnTimeout:       90 * time.Second,
+	ResponseHeaderTimeout: 120 * time.Second,
+	ForceAttemptHTTP2:     true,
 	DialContext: (&net.Dialer{
-		Timeout:   5 * time.Second,
+		Timeout:   15 * time.Second,
 		KeepAlive: 30 * time.Second,
 	}).DialContext,
 }
@@ -35,9 +36,11 @@ func ClientFor(conn *db.ProviderConnection) *http.Client {
 	return proxyManager.clientFor(route)
 }
 
+// SharedHTTPClient has no overall Timeout so long-running streaming responses
+// can run for minutes; connect/header stalls are bounded by SharedTransport
+// and per-attempt deadlines are enforced via req.Context().
 var SharedHTTPClient = &http.Client{
 	Transport: SharedTransport,
-	Timeout:   120 * time.Second,
 }
 
 type ExecutionResult struct {

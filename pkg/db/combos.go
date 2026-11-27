@@ -34,7 +34,7 @@ const (
 	FallbackPolicyConservative = "conservative"
 
 	DefaultAttemptTimeoutMs = 3500
-	DefaultFinalTimeoutMs   = 60000
+	DefaultFinalTimeoutMs   = 300000
 )
 
 // AttemptTimeout is the per-attempt timeout applied while more targets remain.

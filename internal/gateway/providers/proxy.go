@@ -57,7 +57,6 @@ func (pm *proxyManagerType) clientFor(route *db.ProxyRoute) *http.Client {
 
 	client := &http.Client{
 		Transport: transport,
-		Timeout:   120 * time.Second,
 	}
 	pm.clients[route.ID] = client
 	return client
@@ -72,9 +71,10 @@ func ForgetProxy(routeID string) {
 
 func baseTransport() *http.Transport {
 	return &http.Transport{
-		MaxIdleConns:        100,
-		MaxIdleConnsPerHost: 20,
-		IdleConnTimeout:     90 * time.Second,
-		ForceAttemptHTTP2:   true,
+		MaxIdleConns:          100,
+		MaxIdleConnsPerHost:   20,
+		IdleConnTimeout:       90 * time.Second,
+		ResponseHeaderTimeout: 120 * time.Second,
+		ForceAttemptHTTP2:     true,
 	}
 }

@@ -138,8 +138,8 @@ func Retry(ctx *gwContext.GatewayContext, next HandlerFunc) error {
 				delete(ctx.Metadata, "ttfbTimeout")
 			}
 			streamTimeout := policy.FinalTimeout()
-			if streamTimeout < 5*time.Minute {
-				streamTimeout = 5 * time.Minute
+			if streamTimeout < 30*time.Minute {
+				streamTimeout = 30 * time.Minute
 			}
 			attemptCtx, cancelAttempt = context.WithTimeout(ctx.Context, streamTimeout)
 		} else {
