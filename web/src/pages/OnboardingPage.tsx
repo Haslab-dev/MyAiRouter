@@ -148,7 +148,8 @@ function StepProvider({ onNext }: { onNext: () => void }) {
   const selected = PROVIDERS.find((p) => p.id === nodeType)
 
   const handleConnect = async () => {
-    if (!nodeType || !apiKey) {
+    const trimmedKey = apiKey.trim()
+    if (!nodeType || !trimmedKey) {
       setError('Select a provider and enter an API key')
       return
     }
@@ -158,7 +159,7 @@ function StepProvider({ onNext }: { onNext: () => void }) {
       await api.post('/api/providers', {
         provider: nodeType,
         name: `${selected?.label ?? 'Provider'} Key`,
-        data: { apiKey, baseUrl: url || undefined },
+        data: { apiKey: trimmedKey, baseUrl: url.trim() || undefined },
         isActive: true,
         priority: 1,
       })

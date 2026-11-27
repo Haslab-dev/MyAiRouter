@@ -138,14 +138,28 @@ func Retry(ctx *gwContext.GatewayContext, next HandlerFunc) error {
 		oldCtx := ctx.Context
 		ctx.Context = attemptCtx
 
+		// For progressive routing on non-stream intermediate targets, buffer the
+		// response so escalating on low confidence never writes two JSON bodies
+		// to the client socket.
+		var progRec *responseRecorder
+		origWriter := ctx.ResponseWriter
+		if comboKind == "progressive" && !ctx.IsStream && i < len(targets)-1 {
+			progRec = newResponseRecorder()
+			ctx.ResponseWriter = progRec
+		}
+
 		err := next(ctx)
 		pkgGateway.AttemptFinished(ctx.LiveID)
 		durMs := time.Since(attemptStart).Milliseconds()
 		cancelAttempt()
 		ctx.Context = oldCtx
+		if progRec != nil {
+			ctx.ResponseWriter = origWriter
+		}
 
 		if err == nil && ctx.ResponseCode < 400 {
 			if comboKind == "progressive" && i < len(targets)-1 && isLowConfidence(ctx.ResponseBody) {
+				ctx.ResponseWritten = false
 				health.Get().RecordFailure(target.Connection.ID)
 				ctx.TargetAttempts = append(ctx.TargetAttempts, gwContext.TargetAttempt{
 					Index:        i + 1,
@@ -160,6 +174,10 @@ func Retry(ctx *gwContext.GatewayContext, next HandlerFunc) error {
 				ctx.AddStep("Progressive Routing", "info", fmt.Sprintf("Low confidence output on %s, escalating to %s", target.ModelName, targets[i+1].ModelName))
 				ctx.FallbackCount++
 				continue
+			}
+			if progRec != nil && progRec.wrote {
+				ctx.ResponseWritten = true
+				replayResponse(origWriter, progRec)
 			}
 
 			health.Get().RecordSuccess(target.Connection.ID, durMs, ctx.TTFB.Milliseconds())
@@ -448,12 +466,20 @@ func executeRaceStrategy(ctx *gwContext.GatewayContext, targets []ConnectionMode
 
 	var wg sync.WaitGroup
 	var attemptsMu sync.Mutex
+	var failedCount int
+	var once sync.Once
+	allFailed := make(chan struct{})
+	total := len(targets)
 
 	runTarget := func(t ConnectionModel) {
 		defer wg.Done()
 		res, ok := runChildWithRecorder(ctx, doneCtx, t, cloneMap(originalBody), next)
 		attemptsMu.Lock()
 		ctx.TargetAttempts = append(ctx.TargetAttempts, res.attempts...)
+		if !ok {
+			failedCount++
+		}
+		allBad := failedCount >= total
 		attemptsMu.Unlock()
 		if ok {
 			select {
@@ -466,6 +492,9 @@ func executeRaceStrategy(ctx *gwContext.GatewayContext, targets []ConnectionMode
 			case failChan <- res:
 			default:
 			}
+		}
+		if allBad {
+			once.Do(func() { close(allFailed) })
 		}
 	}
 
@@ -483,6 +512,9 @@ func executeRaceStrategy(ctx *gwContext.GatewayContext, targets []ConnectionMode
 	case res := <-resultChan:
 		applyWin(res, fmt.Sprintf("Primary model %s won race", res.target.ModelName))
 		return nil
+	case <-allFailed:
+		applyLastFailure(ctx, failChan, "Race (Hedged)")
+		return nil
 	case <-timer.C:
 		ctx.AddStep("Race (Hedged)", "info", "Primary slow (>400ms), hedging 2nd model")
 		for i := 1; i < len(targets); i++ {
@@ -491,11 +523,18 @@ func executeRaceStrategy(ctx *gwContext.GatewayContext, targets []ConnectionMode
 		}
 	}
 
+	policy := resolveAttemptPolicy(ctx)
+	deadline := time.NewTimer(policy.FinalTimeout())
+	defer deadline.Stop()
+
 	select {
 	case res := <-resultChan:
 		applyWin(res, fmt.Sprintf("Hedged model %s won race", res.target.ModelName))
 		return nil
-	case <-time.After(30 * time.Second):
+	case <-allFailed:
+		applyLastFailure(ctx, failChan, "Race (Hedged)")
+		return nil
+	case <-deadline.C:
 		select {
 		case res := <-resultChan:
 			applyWin(res, fmt.Sprintf("Hedged model %s won race (late)", res.target.ModelName))
@@ -505,21 +544,8 @@ func executeRaceStrategy(ctx *gwContext.GatewayContext, targets []ConnectionMode
 		// All hedged attempts failed (e.g. every model returned 4xx/5xx):
 		// surface the last upstream error instead of a generic timeout so
 		// the client sees the real failure and the trace shows each model.
-		select {
-		case fail := <-failChan:
-			for {
-				select {
-				case f := <-failChan:
-					fail = f
-				default:
-					applyFailure(ctx, fail, "Race (Hedged)")
-					return nil
-				}
-			}
-		default:
-			ctx.WriteError(http.StatusGatewayTimeout, "Race hedged requests timed out")
-			return nil
-		}
+		applyLastFailure(ctx, failChan, "Race (Hedged)")
+		return nil
 	}
 }
 
@@ -627,29 +653,40 @@ func executeParallelStrategy(ctx *gwContext.GatewayContext, targets []Connection
 func executeEnsembleStrategy(ctx *gwContext.GatewayContext, targets []ConnectionModel, next HandlerFunc) error {
 	ctx.AddStep("Ensemble Synthesis", "info", fmt.Sprintf("Querying %d models for consensus ensemble", len(targets)))
 	originalBody := cloneMap(ctx.RequestBody)
+	policy := resolveAttemptPolicy(ctx)
+	doneCtx, cancel := context.WithTimeout(ctx.Context, policy.FinalTimeout())
+	defer cancel()
+
 	var wg sync.WaitGroup
 	var mu sync.Mutex
 	var results []targetResult
+	failChan := make(chan targetResult, len(targets))
 
 	for _, t := range targets {
 		wg.Add(1)
 		target := t
 		go func() {
 			defer wg.Done()
-			res, ok := runChildWithRecorder(ctx, ctx.Context, target, cloneMap(originalBody), next)
+			res, ok := runChildWithRecorder(ctx, doneCtx, target, cloneMap(originalBody), next)
 			mu.Lock()
 			ctx.TargetAttempts = append(ctx.TargetAttempts, res.attempts...)
 			if ok && len(res.responseBody) > 0 {
 				results = append(results, res)
 			}
 			mu.Unlock()
+			if !ok {
+				select {
+				case failChan <- res:
+				default:
+				}
+			}
 		}()
 	}
 
 	wg.Wait()
 
 	if len(results) == 0 {
-		ctx.WriteError(http.StatusServiceUnavailable, "All ensemble target models failed")
+		applyLastFailure(ctx, failChan, "Ensemble Synthesis")
 		return nil
 	}
 

@@ -79,3 +79,80 @@ func TestConfigExportImport(t *testing.T) {
 		t.Fatalf("providers after import = %d, want 1 (import must not duplicate)", len(conns))
 	}
 }
+
+func TestProviderCredentialPatchAndComboValidation(t *testing.T) {
+	server := newAuthTestServer(t)
+	defer server.Close()
+
+	// Create provider connection with a real API key.
+	resp := doJSON(t, server, http.MethodPost, "/api/providers", map[string]any{
+		"provider": "openai",
+		"name":     "Initial",
+		"authType": "apikey",
+		"isActive": true,
+		"data":     map[string]any{"apiKey": "sk-real-key-abcdef123456"},
+	}, nil)
+	var created map[string]any
+	_ = json.NewDecoder(resp.Body).Decode(&created)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("create provider: got %d", resp.StatusCode)
+	}
+	id, _ := created["id"].(string)
+	if data, _ := created["data"].(map[string]any); data["apiKey"] == "sk-real-key-abcdef123456" {
+		t.Fatalf("POST /api/providers leaked unmasked apiKey")
+	}
+
+	// Patch with a masked apiKey (simulating an edit without changing key).
+	resp = doJSON(t, server, http.MethodPatch, "/api/providers/"+id, map[string]any{
+		"name": "Updated",
+		"data": map[string]any{"apiKey": "sk***56", "modelPrefix": "oa/"},
+	}, nil)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("patch provider: got %d", resp.StatusCode)
+	}
+
+	// Verify real key in DB is still intact via GET /api/config/export (unmasked export).
+	resp = doJSON(t, server, http.MethodGet, "/api/config/export", nil, nil)
+	var bundle map[string]any
+	_ = json.NewDecoder(resp.Body).Decode(&bundle)
+	resp.Body.Close()
+	providers, _ := bundle["providers"].([]any)
+	p0, _ := providers[0].(map[string]any)
+	pData, _ := p0["data"].(map[string]any)
+	if pData["apiKey"] != "sk-real-key-abcdef123456" {
+		t.Fatalf("apiKey was overwritten by masked value: got %v", pData["apiKey"])
+	}
+
+	// Combo validation: empty models rejected, duplicate name rejected.
+	resp = doJSON(t, server, http.MethodPost, "/api/combos", map[string]any{
+		"name":   "empty-combo",
+		"kind":   "fallback",
+		"models": []string{},
+	}, nil)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("empty combo models: got %d, want 400", resp.StatusCode)
+	}
+
+	resp = doJSON(t, server, http.MethodPost, "/api/combos", map[string]any{
+		"name":   "valid-combo",
+		"kind":   "fallback",
+		"models": []string{"openai/gpt-4o"},
+	}, nil)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("valid combo: got %d", resp.StatusCode)
+	}
+
+	resp = doJSON(t, server, http.MethodPost, "/api/combos", map[string]any{
+		"name":   "Valid-Combo",
+		"kind":   "fallback",
+		"models": []string{"openai/gpt-4o-mini"},
+	}, nil)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusConflict {
+		t.Fatalf("duplicate combo: got %d, want 409", resp.StatusCode)
+	}
+}

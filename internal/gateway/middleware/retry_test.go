@@ -218,4 +218,69 @@ func TestRetry_Matrix(t *testing.T) {
 			t.Fatalf("statuses = %s/%s, want success/skipped", ctx.TargetAttempts[0].Status, ctx.TargetAttempts[1].Status)
 		}
 	})
+
+	t.Run("progressive buffers intermediate low-confidence response without double write", func(t *testing.T) {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest("POST", "/v1/chat/completions", nil)
+		ctx := gwContext.NewGatewayContext(rec, req)
+		ctx.RequestID = "prog-test"
+		ctx.RequestBody = map[string]interface{}{
+			"model":    "prog-combo",
+			"messages": []interface{}{map[string]interface{}{"role": "user", "content": "hi"}},
+		}
+		ctx.Metadata["comboKind"] = "progressive"
+		ctx.Metadata["routingTargets"] = makeTargets("p1-conn", "p2-conn")
+
+		next := func(c *gwContext.GatewayContext) error {
+			c.ResponseCode = 200
+			if c.Connection.ID == "p1-conn" {
+				c.ResponseBody = []byte(`{"choices":[{"message":{"content":"ok"}}]}`) // < 10 chars -> low confidence
+			} else {
+				c.ResponseBody = []byte(`{"choices":[{"message":{"content":"a thorough final answer"}}]}`)
+			}
+			c.ResponseWriter.Header().Set("Content-Type", "application/json")
+			c.ResponseWriter.WriteHeader(200)
+			_, _ = c.ResponseWriter.Write(c.ResponseBody)
+			c.ResponseWritten = true
+			return nil
+		}
+
+		if err := Retry(ctx, next); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		got := rec.Body.String()
+		want := `{"choices":[{"message":{"content":"a thorough final answer"}}]}`
+		if got != want {
+			t.Fatalf("response body = %q, want single body %q", got, want)
+		}
+		if len(ctx.TargetAttempts) != 2 || ctx.TargetAttempts[0].Status != "failed" || ctx.TargetAttempts[1].Status != "success" {
+			t.Fatalf("unexpected attempts: %+v", ctx.TargetAttempts)
+		}
+	})
+
+	t.Run("race returns upstream error immediately when all targets fail", func(t *testing.T) {
+		ctx := newRetryTestContext("race")
+		ctx.Metadata["routingTargets"] = makeTargets("r1-conn", "r2-conn")
+		up := &fakeUpstream{codes: map[string]int{"r1-conn": 502, "r2-conn": 503}}
+
+		if err := Retry(ctx, up.next); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if ctx.ResponseCode < 500 {
+			t.Fatalf("ResponseCode = %d, want 5xx", ctx.ResponseCode)
+		}
+	})
+
+	t.Run("ensemble returns upstream error when all targets fail", func(t *testing.T) {
+		ctx := newRetryTestContext("ensemble")
+		ctx.Metadata["routingTargets"] = makeTargets("e1-conn", "e2-conn")
+		up := &fakeUpstream{codes: map[string]int{"e1-conn": 502, "e2-conn": 503}}
+
+		if err := Retry(ctx, up.next); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if ctx.ResponseCode < 500 {
+			t.Fatalf("ResponseCode = %d, want 5xx", ctx.ResponseCode)
+		}
+	})
 }

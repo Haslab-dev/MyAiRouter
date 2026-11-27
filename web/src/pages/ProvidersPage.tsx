@@ -119,7 +119,9 @@ interface CredentialEditorProps {
 function CredentialEditor({ title, providerId, existing, defaultBaseUrl, onDone, onCancel }: CredentialEditorProps) {
   const notify = useSnackbar((s) => s.notify)
   const [credName, setCredName] = useState(existing?.name ?? '')
-  const [credKey, setCredKey] = useState(existing?.data?.apiKey ?? '')
+  // Never prefill with the masked placeholder from GET /api/providers; leave
+  // blank on edit so updating other fields preserves the stored key.
+  const [credKey, setCredKey] = useState('')
   const [credPriority, setCredPriority] = useState(existing?.priority ?? 1)
   const [proxyRouteId, setProxyRouteId] = useState<string>(existing?.data?.proxyRouteId ?? '')
   const [proxyRoutes, setProxyRoutes] = useState<ProxyRoute[]>([])
@@ -138,7 +140,9 @@ function CredentialEditor({ title, providerId, existing, defaultBaseUrl, onDone,
   }, [])
 
   const save = async () => {
-    if (!credKey.trim()) {
+    const trimmedKey = credKey.trim()
+    const hasExistingKey = Boolean(existing?.data?.apiKey)
+    if (!trimmedKey && !hasExistingKey) {
       notify('API key is required', 'error')
       return
     }
@@ -146,12 +150,19 @@ function CredentialEditor({ title, providerId, existing, defaultBaseUrl, onDone,
     for (const h of customHeaders) {
       if (h.key.trim() && h.value.trim()) headersMap[h.key.trim()] = h.value.trim()
     }
-    const proxyData = proxyRouteId ? { proxyRouteId } : {}
+    const dataPayload: Record<string, unknown> = {
+      baseUrl: existing?.data?.baseUrl || defaultBaseUrl,
+      headers: headersMap,
+      proxyRouteId: proxyRouteId || '',
+    }
+    if (trimmedKey) {
+      dataPayload.apiKey = trimmedKey
+    }
     const payload = existing
       ? {
           name: credName || 'ProdKey',
           priority: credPriority || 1,
-          data: { apiKey: credKey, baseUrl: existing.data?.baseUrl || defaultBaseUrl, headers: headersMap, ...proxyData },
+          data: dataPayload,
         }
       : {
           id: `${providerId}-conn-${Date.now()}`,
@@ -161,7 +172,7 @@ function CredentialEditor({ title, providerId, existing, defaultBaseUrl, onDone,
           email: '',
           priority: credPriority || 1,
           isActive: true,
-          data: { apiKey: credKey, baseUrl: defaultBaseUrl, headers: headersMap, ...proxyData },
+          data: dataPayload,
         }
     setSaving(true)
     try {
@@ -198,8 +209,13 @@ function CredentialEditor({ title, providerId, existing, defaultBaseUrl, onDone,
         <Field label="Label">
           <Input value={credName} onChange={(e) => setCredName(e.target.value)} placeholder="e.g. ProdKey" />
         </Field>
-        <Field label="API key">
-          <Input type="password" value={credKey} onChange={(e) => setCredKey(e.target.value)} placeholder="sk-…" />
+        <Field label="API key" hint={existing?.data?.apiKey ? `Current: ${existing.data.apiKey} — leave blank to keep existing key.` : undefined}>
+          <Input
+            type="password"
+            value={credKey}
+            onChange={(e) => setCredKey(e.target.value)}
+            placeholder={existing?.data?.apiKey ? 'Leave blank to keep current key' : 'sk-…'}
+          />
         </Field>
         <Field label="Priority" hint="Lower number = tried first within the provider.">
           <Input type="number" min={1} value={credPriority} onChange={(e) => setCredPriority(parseInt(e.target.value, 10) || 1)} />
@@ -509,7 +525,9 @@ export default function ProvidersPage() {
     const conn = connections.find((c) => c.provider === viewingDetailProvider.id)
     if (!conn) return
     try {
-      await api.patch(`/api/providers/${conn.id}`, { data: { ...(conn.data ?? {}), modelPrefix } })
+      // Send only modelPrefix so UpdateConnection merges it without touching
+      // masked secrets (apiKey/tokens) on the connection.
+      await api.patch(`/api/providers/${conn.id}`, { data: { modelPrefix } })
       await fetchData()
       notify('Model prefix saved', 'success')
     } catch {

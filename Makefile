@@ -3,13 +3,26 @@ ifneq (,$(wildcard .env))
     export
 endif
 
-.PHONY: build-client build install run dev dev-server dev-client clean patch-version minor-version major-version set-version
+.PHONY: build-client build build-all install run dev dev-server dev-client clean patch-version minor-version major-version set-version
 
 build-client:
 	cd web && npm run build
 
 build: build-client
 	go build -o myairouter .
+
+PLATFORMS := darwin/amd64 darwin/arm64 linux/amd64 linux/arm64 windows/amd64 windows/arm64
+
+build-all: build-client
+	@mkdir -p dist
+	@for p in $(PLATFORMS); do \
+		os=$${p%/*}; arch=$${p#*/}; \
+		ext=""; [ "$$os" = "windows" ] && ext=".exe"; \
+		out="dist/myairouter-$$os-$$arch$$ext"; \
+		echo "Building $$out..."; \
+		CGO_ENABLED=0 GOOS=$$os GOARCH=$$arch go build -trimpath -ldflags="-s -w" -o "$$out" . || exit 1; \
+	done
+	@ls -lh dist/
 
 install: build
 	@./website/install.sh --local
@@ -40,8 +53,8 @@ prod:
 	@echo "Open http://$(HOST):$(PORT)"
 
 clean:
-	rm -f MyAiRouter
-	rm -rf web/dist
+	rm -f myairouter myairouter.exe MyAiRouter
+	rm -rf web/dist dist
 
 # version helpers
 CURRENT_VERSION := $(shell grep 'myairouter v[0-9]' main.go | sed 's/.*myairouter v//' | sed 's/[^0-9.]*//g')

@@ -3,6 +3,7 @@ package db
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -26,13 +27,17 @@ func CreateConnection(conn *ProviderConnection) (*ProviderConnection, error) {
 		conn.ID = uuid.New().String()
 	}
 	// Prevent duplicate: same provider + same apiKey
-	if apiKey, ok := conn.Data["apiKey"].(string); ok && apiKey != "" {
-		exists, err := connectionExists(conn.Provider, apiKey)
-		if err != nil {
-			return nil, fmt.Errorf("checking duplicate connection: %w", err)
-		}
-		if exists {
-			return nil, fmt.Errorf("connection already exists for provider %q with this API key", conn.Provider)
+	if apiKey, ok := conn.Data["apiKey"].(string); ok {
+		apiKey = strings.TrimSpace(apiKey)
+		conn.Data["apiKey"] = apiKey
+		if apiKey != "" {
+			exists, err := connectionExists(conn.Provider, apiKey)
+			if err != nil {
+				return nil, fmt.Errorf("checking duplicate connection: %w", err)
+			}
+			if exists {
+				return nil, fmt.Errorf("connection already exists for provider %q with this API key", conn.Provider)
+			}
 		}
 	}
 
@@ -129,14 +134,14 @@ func UpdateConnection(id string, updates map[string]interface{}) (*ProviderConne
 	// Update custom data field
 	if customData, ok := updates["data"].(map[string]interface{}); ok {
 		for k, v := range customData {
-			current.Data[k] = v
+			applyConnectionDataUpdate(current.Data, k, v)
 		}
 	} else {
 		// Merge any other fields that are in updates but not Connection top-level fields
 		topLevel := map[string]bool{"id": true, "provider": true, "authType": true, "name": true, "email": true, "priority": true, "isActive": true, "data": true, "createdAt": true, "updatedAt": true}
 		for k, v := range updates {
 			if !topLevel[k] {
-				current.Data[k] = v
+				applyConnectionDataUpdate(current.Data, k, v)
 			}
 		}
 	}
@@ -194,4 +199,43 @@ func getActiveConnectionsForProviderFromDB(provider string) ([]ProviderConnectio
 		conns = append(conns, c)
 	}
 	return conns, nil
+}
+
+var secretDataKeys = map[string]bool{
+	"apiKey":       true,
+	"token":        true,
+	"accessToken":  true,
+	"refreshToken": true,
+	"clientSecret": true,
+}
+
+// IsMaskedSecret reports whether s looks like a placeholder produced by
+// maskSecret ("***" or "<2chars>***<2chars>").
+func IsMaskedSecret(s string) bool {
+	if s == "***" {
+		return true
+	}
+	return len(s) == 7 && s[2:5] == "***"
+}
+
+func applyConnectionDataUpdate(data map[string]interface{}, k string, v interface{}) {
+	if v == nil || (k == "proxyRouteId" && v == "") {
+		delete(data, k)
+		return
+	}
+	if secretDataKeys[k] {
+		s, ok := v.(string)
+		if !ok {
+			return
+		}
+		s = strings.TrimSpace(s)
+		// Never overwrite an existing secret with a masked placeholder or an
+		// accidental empty string.
+		if IsMaskedSecret(s) || s == "" {
+			return
+		}
+		data[k] = s
+		return
+	}
+	data[k] = v
 }

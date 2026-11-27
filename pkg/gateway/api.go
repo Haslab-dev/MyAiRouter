@@ -283,6 +283,7 @@ func handleProviders(w http.ResponseWriter, r *http.Request) {
 			WriteErrorResponse(w, http.StatusInternalServerError, err.Error())
 			return
 		}
+		maskNodeData(created.Data)
 		_ = json.NewEncoder(w).Encode(created)
 		return
 	}
@@ -379,6 +380,7 @@ func handleProviderDetail(w http.ResponseWriter, r *http.Request) {
 			WriteErrorResponse(w, http.StatusNotFound, "Connection not found")
 			return
 		}
+		maskNodeData(conn.Data)
 		_ = json.NewEncoder(w).Encode(conn)
 		return
 	}
@@ -395,6 +397,7 @@ func handleProviderDetail(w http.ResponseWriter, r *http.Request) {
 			WriteErrorResponse(w, http.StatusInternalServerError, err.Error())
 			return
 		}
+		maskNodeData(updated.Data)
 		_ = json.NewEncoder(w).Encode(updated)
 		return
 	}
@@ -418,13 +421,8 @@ func handleTestProvider(w http.ResponseWriter, r *http.Request, id string) {
 		return
 	}
 
-	// Prepare simple model test payload
-	testModel := "gpt-4o-mini"
-	if conn.Provider == "anthropic" {
-		testModel = "claude-3-haiku-20240307"
-	} else if conn.Provider == "gemini" {
-		testModel = "gemini-2.5-flash"
-	}
+	// Prepare simple model test payload tailored to the provider
+	testModel := defaultTestModelForProvider(conn.Provider)
 
 	testPayload := map[string]interface{}{
 		"model":      testModel,
@@ -471,11 +469,66 @@ func handleTestProvider(w http.ResponseWriter, r *http.Request, id string) {
 	_, _ = db.UpdateConnection(id, updates)
 
 	_ = json.NewEncoder(w).Encode(map[string]interface{}{
-		"valid": valid,
+		"valid":      valid,
 		"latencyMs":  latencyMs,
-		"error": errMsg,
+		"error":      errMsg,
 		"testStatus": statusStr,
 	})
+}
+
+func isNonChatModelID(id string) bool {
+	low := strings.ToLower(id)
+	return strings.Contains(low, "embed") ||
+		strings.Contains(low, "whisper") ||
+		strings.Contains(low, "tts") ||
+		strings.Contains(low, "dall-e") ||
+		strings.Contains(low, "rerank")
+}
+
+func defaultTestModelForProvider(provider string) string {
+	// Prefer an explicitly enabled chat model for this provider so test
+	// connection uses a model the user's key is actually authorized for.
+	if enabled, err := db.GetEnabledModels(provider); err == nil && len(enabled) > 0 {
+		for _, id := range enabled {
+			if !isNonChatModelID(id) {
+				return id
+			}
+		}
+	}
+	if customs, err := db.GetCustomModelsByProvider(provider); err == nil && len(customs) > 0 {
+		for _, cm := range customs {
+			if !isNonChatModelID(cm.ID) {
+				return cm.ID
+			}
+		}
+		return customs[0].ID
+	}
+	switch provider {
+	case "anthropic":
+		return "claude-3-haiku-20240307"
+	case "gemini":
+		return "gemini-2.5-flash"
+	case "deepseek":
+		return "deepseek-chat"
+	case "groq":
+		return "llama-3.1-8b-instant"
+	case "mistral":
+		return "mistral-small-latest"
+	case "glm", "glm-coding":
+		return "glm-4.5-flash"
+	case "cerebras":
+		return "llama-3.1-8b"
+	case "openrouter":
+		return "openai/gpt-4o-mini"
+	case "qwen":
+		return "qwen-turbo"
+	case "ollama":
+		return "llama3.3"
+	case "xai", "grok-cli":
+		return "grok-3-mini"
+	default:
+		return "gpt-4o-mini"
+	}
 }
 
 func handleKeys(w http.ResponseWriter, r *http.Request) {
@@ -566,6 +619,18 @@ func handleCombos(w http.ResponseWriter, r *http.Request) {
 			WriteErrorResponse(w, http.StatusBadRequest, "Invalid JSON")
 			return
 		}
+		combo.Name = strings.TrimSpace(combo.Name)
+		if combo.Name == "" || len(combo.Models) == 0 {
+			WriteErrorResponse(w, http.StatusBadRequest, "name and at least one model are required")
+			return
+		}
+		if combo.Kind == "" {
+			combo.Kind = "fallback"
+		}
+		if existing, err := db.ResolveCombo(combo.Name); err == nil && existing != nil {
+			WriteErrorResponse(w, http.StatusConflict, fmt.Sprintf("combo route %q already exists", combo.Name))
+			return
+		}
 
 		created, err := db.CreateCombo(&combo)
 		if err != nil {
@@ -589,6 +654,14 @@ func handleCombos(w http.ResponseWriter, r *http.Request) {
 		if id == "" {
 			WriteErrorResponse(w, http.StatusBadRequest, "Missing id parameter")
 			return
+		}
+		combo.Name = strings.TrimSpace(combo.Name)
+		if combo.Name == "" || len(combo.Models) == 0 {
+			WriteErrorResponse(w, http.StatusBadRequest, "name and at least one model are required")
+			return
+		}
+		if combo.Kind == "" {
+			combo.Kind = "fallback"
 		}
 
 		if err := db.UpdateCombo(id, combo.Name, combo.Kind, combo.Models, combo.Policy); err != nil {
