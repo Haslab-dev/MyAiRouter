@@ -384,10 +384,10 @@ export function Td({ className = '', children, colSpan }: { className?: string; 
 /* -------------------------------- Page shell ------------------------------- */
 
 export function PageContainer({ children, className = '' }: { children: ReactNode; className?: string }) {
-  return <div className={`mx-auto max-w-6xl px-3 sm:px-6 py-4 sm:py-6 ${className}`}>{children}</div>
+  return <div className={`mx-auto w-full max-w-screen-2xl px-4 sm:px-6 lg:px-8 py-5 sm:py-6 ${className}`}>{children}</div>
 }
 
-export function PageHeader({ title, description, actions }: { title: string; description?: string; actions?: ReactNode }) {
+export function PageHeader({ title, description, actions }: { title: ReactNode; description?: string; actions?: ReactNode }) {
   return (
     <div className="mb-4 sm:mb-6 flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 sm:gap-4">
       <div className="min-w-0">

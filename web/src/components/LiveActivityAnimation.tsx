@@ -296,9 +296,9 @@ export default function LiveActivityAnimation({ snapshot, stale }: { snapshot: L
         : 'No active requests'
 
   return (
-    <div className="bg-surface border border-border rounded-lg overflow-hidden">
+    <div className="bg-surface border border-border rounded-xl overflow-hidden">
       {/* Header */}
-      <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-2.5">
+      <div className="flex flex-wrap items-center justify-between gap-2 px-5 py-3">
         <div className="flex min-w-0 items-center gap-2.5">
           <span className="relative inline-flex h-2 w-2 shrink-0">
             <span className={cn('h-2 w-2 rounded-full', TONE_DOT[tone])} />
@@ -352,7 +352,24 @@ export default function LiveActivityAnimation({ snapshot, stale }: { snapshot: L
             ))}
         </div>
       ) : (
-        <div className="px-4 py-3 text-[11px] text-subtle">{headline}</div>
+        <div className="flex items-center justify-between gap-3 px-5 py-3.5 text-xs text-muted">
+          <div className="flex items-center gap-2.5">
+            <span className="inline-flex items-end gap-[2px]" aria-hidden="true">
+              {[6, 10, 8, 12, 7].map((h, i) => (
+                <span
+                  key={i}
+                  className="w-[2px] rounded-full bg-success/50"
+                  style={{
+                    height: `${h}px`,
+                    animation: `live-bar 1.4s ease-in-out ${i * 180}ms infinite alternate`,
+                  }}
+                />
+              ))}
+            </span>
+            <span>{stale ? headline : 'Gateway ready — listening on /v1/chat/completions'}</span>
+          </div>
+          <span className="font-mono text-[11px] text-subtle">standby</span>
+        </div>
       )}
 
       {active > 6 && (

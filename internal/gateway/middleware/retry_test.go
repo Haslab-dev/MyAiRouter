@@ -308,4 +308,36 @@ func TestRetry_Matrix(t *testing.T) {
 			t.Fatalf("ResponseCode = %d, want 200", ctx.ResponseCode)
 		}
 	})
+
+	t.Run("smart classifier ranks multimodal coding and reasoning models", func(t *testing.T) {
+		models := []string{"openai/gpt-3.5", "qwen/qwen-turbo", "deepseek/deepseek-reasoner", "glm/glm-5"}
+		ranked := classifyAndRankModels(map[string]interface{}{
+			"messages": []interface{}{
+				map[string]interface{}{
+					"role": "user",
+					"content": []interface{}{
+						map[string]interface{}{"type": "text", "text": "Solve this integral proof equation"},
+					},
+				},
+			},
+		}, models)
+		if ranked[0] != "deepseek/deepseek-reasoner" {
+			t.Fatalf("expected deepseek-reasoner first for math_reasoning, got %v", ranked)
+		}
+	})
+
+	t.Run("ensemble prefers complete stop response over truncated length response", func(t *testing.T) {
+		complete := []byte(`{"choices":[{"finish_reason":"stop","message":{"content":"Complete concise answer."}}]}`)
+		truncated := []byte(`{"choices":[{"finish_reason":"length","message":{"content":"Very long truncated answer that cuts off mid sentence without finishing properly..."}}]}`)
+		if scoreEnsembleBody(complete) <= scoreEnsembleBody(truncated) {
+			t.Fatalf("expected complete stop response to outscore truncated length response")
+		}
+	})
+
+	t.Run("isLowConfidence treats valid tool_calls as confident", func(t *testing.T) {
+		toolResp := []byte(`{"choices":[{"finish_reason":"tool_calls","message":{"content":"","tool_calls":[{"id":"call_1"}]}}]}`)
+		if isLowConfidence(toolResp) {
+			t.Fatalf("valid tool_calls response must not be treated as low confidence")
+		}
+	})
 }

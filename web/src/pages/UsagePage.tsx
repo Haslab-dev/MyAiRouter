@@ -403,86 +403,90 @@ export default function UsagePage() {
         <RouteTopologyCard connections={connections} combos={combos} live={live} gatewayUp={gatewayUp} />
       </div>
 
-      {/* In-flight animation (live) */}
-      <div className="mb-5">
-        <LiveActivityAnimation snapshot={live} stale={liveStale} />
-      </div>
+      {/* Responsive 2-col desktop layout: Live Stream + Recent Requests | Usage Chart */}
+      <div className="mb-5 grid grid-cols-1 gap-5 xl:grid-cols-12">
+        <div className="flex flex-col gap-5 xl:col-span-6">
+          <LiveActivityAnimation snapshot={live} stale={liveStale} />
 
-      {/* Live activity */}
-      <Card className="mb-5" padded={false}>
-        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-4 py-3">
-          <div className="flex items-center gap-2">
-            <StatusDot tone={isLive ? 'success' : gatewayUp ? 'warning' : 'danger'} pulse={isLive} />
-            <h3 className="text-sm font-semibold">Recent requests</h3>
-            <Badge tone={isLive ? 'success' : gatewayUp ? 'warning' : 'danger'}>
-              {isLive ? 'Active' : gatewayUp ? 'Quiet' : 'Down'}
-            </Badge>
-          </div>
-          <span className="tnum text-[11px] text-subtle">
-            {secondsSinceActivity !== null
-              ? `last request ${secondsSinceActivity < 60 ? `${secondsSinceActivity}s` : timeAgo(recentLogs[0]?.timestamp ?? '')} ago`
-              : 'no requests recorded yet'}
-          </span>
+          {/* Recent requests */}
+          <Card className="flex-1" padded={false}>
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-5 py-3.5">
+              <div className="flex items-center gap-2">
+                <StatusDot tone={isLive ? 'success' : gatewayUp ? 'warning' : 'danger'} pulse={isLive} />
+                <h3 className="text-sm font-semibold">Recent requests</h3>
+                <Badge tone={isLive ? 'success' : gatewayUp ? 'warning' : 'danger'}>
+                  {isLive ? 'Active' : gatewayUp ? 'Quiet' : 'Down'}
+                </Badge>
+              </div>
+              <span className="tnum text-[11px] text-subtle">
+                {secondsSinceActivity !== null
+                  ? `last request ${secondsSinceActivity < 60 ? `${secondsSinceActivity}s` : timeAgo(recentLogs[0]?.timestamp ?? '')} ago`
+                  : 'no requests recorded yet'}
+              </span>
+            </div>
+            <div className="max-h-72 overflow-y-auto">
+              {recentLogs.length === 0 ? (
+                <div className="px-5 py-8 text-center text-xs text-subtle">No requests recorded for this view yet.</div>
+              ) : (
+                <table className="w-full text-[12px]">
+                  <tbody>
+                    {recentLogs.slice(0, 10).map((log, i) => {
+                      const ok = log.status === 'ok' || log.status === ''
+                      const ttfb = parseMetaNum(log.meta, 'ttfb_ms')
+                      const dur = parseMetaNum(log.meta, 'duration_ms')
+                      return (
+                        <tr key={log.id} className={cn('border-b border-border/60 last:border-b-0', i % 2 === 1 && 'bg-surface-2/40')}>
+                          <td className="w-20 px-4 py-2">
+                            <span className={cn('inline-flex items-center gap-1 rounded px-1.5 py-px font-mono text-[10px] font-semibold', ok ? 'bg-success-subtle text-success' : 'bg-danger-subtle text-danger')}>
+                              <StatusDot tone={ok ? 'success' : 'danger'} />
+                              {ok ? '200' : 'ERR'}
+                            </span>
+                          </td>
+                          <td className="max-w-44 px-2 py-2">
+                            <code className="block truncate font-mono text-[11px]">{log.model}</code>
+                            <span className="text-[10px] text-subtle">{log.provider}</span>
+                          </td>
+                          <td className="tnum px-2 py-2 text-right text-muted">{formatNumber(log.promptTokens + log.completionTokens)} tok</td>
+                          <td className="tnum px-2 py-2 text-right text-muted">{formatCost(log.cost)}</td>
+                          <td className="tnum px-4 py-2 text-right text-subtle">
+                            {ttfb !== null && <span title={`duration ${dur ?? '?'} ms`}>{ttfb >= 1000 ? `${(ttfb / 1000).toFixed(1)}s ttfb` : `${ttfb}ms ttfb`}</span>}
+                            <span className="ml-2">{timeAgo(log.timestamp)}</span>
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          </Card>
         </div>
-        <div className="max-h-64 overflow-y-auto">
-          {recentLogs.length === 0 ? (
-            <div className="px-4 py-6 text-center text-xs text-subtle">No requests recorded for this view yet.</div>
-          ) : (
-            <table className="w-full text-[12px]">
-              <tbody>
-                {recentLogs.slice(0, 10).map((log, i) => {
-                  const ok = log.status === 'ok' || log.status === ''
-                  const ttfb = parseMetaNum(log.meta, 'ttfb_ms')
-                  const dur = parseMetaNum(log.meta, 'duration_ms')
-                  return (
-                    <tr key={log.id} className={cn('border-b border-border/60 last:border-b-0', i % 2 === 1 && 'bg-surface-2/40')}>
-                      <td className="w-20 px-4 py-1.5">
-                        <span className={cn('inline-flex items-center gap-1 rounded px-1.5 py-px font-mono text-[10px] font-semibold', ok ? 'bg-success-subtle text-success' : 'bg-danger-subtle text-danger')}>
-                          <StatusDot tone={ok ? 'success' : 'danger'} />
-                          {ok ? '200' : 'ERR'}
-                        </span>
-                      </td>
-                      <td className="max-w-44 px-2 py-1.5">
-                        <code className="block truncate font-mono text-[11px]">{log.model}</code>
-                        <span className="text-[10px] text-subtle">{log.provider}</span>
-                      </td>
-                      <td className="tnum px-2 py-1.5 text-right text-muted">{formatNumber(log.promptTokens + log.completionTokens)} tok</td>
-                      <td className="tnum px-2 py-1.5 text-right text-muted">{formatCost(log.cost)}</td>
-                      <td className="tnum px-4 py-1.5 text-right text-subtle">
-                        {ttfb !== null && <span title={`duration ${dur ?? '?'} ms`}>{ttfb >= 1000 ? `${(ttfb / 1000).toFixed(1)}s ttfb` : `${ttfb}ms ttfb`}</span>}
-                        <span className="ml-2">{timeAgo(log.timestamp)}</span>
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          )}
-        </div>
-      </Card>
 
-      {/* Chart */}
-      <Card className="mb-5">
-        <CardHeader
-          title="Usage over time"
-          subtitle={`${formatNumber(totalTokens)} tokens total`}
-          actions={
-            <Tabs
-              tabs={[
-                { id: 'tokens', label: 'Tokens' },
-                { id: 'cost', label: 'Cost' },
-              ]}
-              active={chartMode}
-              onChange={(id) => setChartMode(id as 'tokens' | 'cost')}
+        {/* Chart */}
+        <Card className="flex flex-col justify-between xl:col-span-6">
+          <div>
+            <CardHeader
+              title="Usage over time"
+              subtitle={`${formatNumber(totalTokens)} tokens total`}
+              actions={
+                <Tabs
+                  tabs={[
+                    { id: 'tokens', label: 'Tokens' },
+                    { id: 'cost', label: 'Cost' },
+                  ]}
+                  active={chartMode}
+                  onChange={(id) => setChartMode(id as 'tokens' | 'cost')}
+                />
+              }
             />
-          }
-        />
-        <LineChart data={chartData} mode={chartMode} />
-        <div className="tnum mt-2 flex justify-between text-[10px] text-subtle">
-          <span>{chartData[0]?.label}</span>
-          <span>{chartData[chartData.length - 1]?.label}</span>
-        </div>
-      </Card>
+            <LineChart data={chartData} mode={chartMode} />
+          </div>
+          <div className="tnum mt-3 flex justify-between text-[11px] text-subtle">
+            <span>{chartData[0]?.label}</span>
+            <span>{chartData[chartData.length - 1]?.label}</span>
+          </div>
+        </Card>
+      </div>
 
       {/* Breakdown table */}
       <Card padded={false}>

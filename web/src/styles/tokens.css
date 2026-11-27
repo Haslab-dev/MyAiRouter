@@ -170,6 +170,13 @@ body {
   0%, 49% { opacity: 1; }
   50%, 100% { opacity: 0.15; }
 }
+@keyframes flow-dash {
+  to { stroke-dashoffset: -24; }
+}
+@keyframes pulse-glow {
+  0%, 100% { opacity: 0.35; }
+  50% { opacity: 0.9; }
+}
 
 /* Motion is decoration here, never information: the numbers stay readable
    when animation is disabled at the OS level. */
@@ -177,7 +184,9 @@ body {
   [style*='live-sweep'],
   [style*='live-ping'],
   [style*='live-bar'],
-  [style*='live-cursor'] {
+  [style*='live-cursor'],
+  [style*='flow-dash'],
+  [style*='pulse-glow'] {
     animation: none !important;
   }
 }

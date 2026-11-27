@@ -167,14 +167,34 @@ func orderTargetsByHealth(targets []ConnectionModel) []ConnectionModel {
 	return targets
 }
 
+func extractMessageText(content interface{}) string {
+	switch v := content.(type) {
+	case string:
+		return v
+	case []interface{}:
+		var b strings.Builder
+		for _, part := range v {
+			if pm, ok := part.(map[string]interface{}); ok {
+				if t, ok := pm["text"].(string); ok && t != "" {
+					b.WriteString(t)
+					b.WriteByte(' ')
+				}
+			}
+		}
+		return b.String()
+	default:
+		return ""
+	}
+}
+
 func classifyAndRankModels(body map[string]interface{}, models []string) []string {
 	var promptBuilder strings.Builder
 	if msgs, ok := body["messages"].([]interface{}); ok {
 		for _, item := range msgs {
 			if m, ok := item.(map[string]interface{}); ok {
-				if content, ok := m["content"].(string); ok {
-					promptBuilder.WriteString(content)
-					promptBuilder.WriteString(" ")
+				if txt := extractMessageText(m["content"]); txt != "" {
+					promptBuilder.WriteString(txt)
+					promptBuilder.WriteByte(' ')
 				}
 			}
 		}
@@ -182,49 +202,61 @@ func classifyAndRankModels(body map[string]interface{}, models []string) []strin
 	prompt := strings.ToLower(promptBuilder.String())
 	charCount := len(prompt)
 
+	hasTools := false
+	if tools, ok := body["tools"].([]interface{}); ok && len(tools) > 0 {
+		hasTools = true
+	} else if fns, ok := body["functions"].([]interface{}); ok && len(fns) > 0 {
+		hasTools = true
+	}
+
 	category := "general"
 	if charCount > 8000 {
 		category = "long_context"
-	} else if containsAny(prompt, []string{"code", "function", "def ", "class ", "import ", "err !=", "html", "css", "script", "json", "sql", "bug", "fix", "refactor", "component", "struct", "interface", "panic"}) {
+	} else if hasTools || containsAny(prompt, []string{"code", "function", "def ", "class ", "import ", "err !=", "html", "css", "script", "json", "sql", "bug", "fix", "refactor", "component", "struct", "interface", "panic"}) {
 		category = "coding"
-	} else if containsAny(prompt, []string{"translate", "translation", "dịch", "idiom", "grammar", "summarize", "hello", "hi ", "how are you"}) {
-		category = "chat_translation"
 	} else if containsAny(prompt, []string{"math", "integral", "proof", "solve", "equation", "logic", "calculate", "derivative", "theorem", "matrix"}) {
 		category = "math_reasoning"
+	} else if containsAny(prompt, []string{"translate", "translation", "dịch", "idiom", "grammar", "summarize", "hello", "hi ", "how are you"}) {
+		category = "chat_translation"
 	}
 
-	bestModelIdx := -1
-	for i, m := range models {
+	scoreModel := func(m string) int {
 		mLower := strings.ToLower(m)
+		score := 0
 		switch category {
 		case "coding":
-			if strings.Contains(mLower, "claude") || strings.Contains(mLower, "glm") || strings.Contains(mLower, "deepseek") || strings.Contains(mLower, "gpt-4o") {
-				bestModelIdx = i
+			if containsAny(mLower, []string{"claude", "sonnet", "opus", "coder", "codestral", "deepseek", "glm", "qwen", "qwopus", "gpt-4o"}) {
+				score += 10
+			}
+			if containsAny(mLower, []string{"coder", "deepseek", "claude", "glm-5", "glm-4.7"}) {
+				score += 3
 			}
 		case "long_context":
-			if strings.Contains(mLower, "gemini") {
-				bestModelIdx = i
+			if containsAny(mLower, []string{"gemini", "claude", "qwen", "deepseek", "glm"}) {
+				score += 10
+			}
+			if containsAny(mLower, []string{"gemini", "1m", "128k"}) {
+				score += 3
 			}
 		case "math_reasoning":
-			if strings.Contains(mLower, "deepseek") || strings.Contains(mLower, "o1") || strings.Contains(mLower, "pro") {
-				bestModelIdx = i
+			if containsAny(mLower, []string{"reasoner", "r1", "thinking", "qwopus", "qwq", "o1", "o3", "o4", "deepseek", "glm-5", "pro"}) {
+				score += 10
 			}
 		case "chat_translation":
-			if strings.Contains(mLower, "mini") || strings.Contains(mLower, "flash") || strings.Contains(mLower, "qwen") || strings.Contains(mLower, "haiku") {
-				bestModelIdx = i
+			if containsAny(mLower, []string{"flash", "mini", "nano", "lite", "haiku", "turbo", "qwen", "glm-4.5"}) {
+				score += 10
 			}
 		}
-		if bestModelIdx != -1 {
-			break
+		if hasTools && containsAny(mLower, []string{"claude", "gpt-4", "deepseek", "glm", "qwen", "gemini"}) {
+			score += 2
 		}
+		return score
 	}
 
-	if bestModelIdx <= 0 {
-		return models
-	}
-
-	ranked := append([]string{models[bestModelIdx]}, models[:bestModelIdx]...)
-	ranked = append(ranked, models[bestModelIdx+1:]...)
+	ranked := append([]string{}, models...)
+	sort.SliceStable(ranked, func(i, j int) bool {
+		return scoreModel(ranked[i]) > scoreModel(ranked[j])
+	})
 	return ranked
 }
 

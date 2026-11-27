@@ -12,17 +12,11 @@ interface StrategyInfo {
   needsNonStream: boolean
 }
 
-const STRATEGY_DETAILS: Record<ComboKind, StrategyInfo> = {
+const STRATEGY_DETAILS: Partial<Record<ComboKind, StrategyInfo>> = {
   fallback: {
     label: 'Backup Chain',
     cost: 'Normal usage',
     desc: 'Uses your #1 model first. Automatically switches to #2 only if #1 fails or is busy.',
-    needsNonStream: false,
-  },
-  smart: {
-    label: 'Smart Pick',
-    cost: 'Normal usage',
-    desc: 'Automatically picks the best model in your list for coding, math, long text, or chat.',
     needsNonStream: false,
   },
   load_balance: {
@@ -31,29 +25,11 @@ const STRATEGY_DETAILS: Record<ComboKind, StrategyInfo> = {
     desc: 'Rotates requests evenly across your models to avoid rate limits.',
     needsNonStream: false,
   },
-  progressive: {
-    label: 'Fast First, Upgrade if Needed',
-    cost: '1x–2x usage',
-    desc: 'Starts with your fastest model and escalates to the next if the reply looks incomplete.',
+  smart: {
+    label: 'Smart Pick',
+    cost: 'Normal usage',
+    desc: 'Automatically picks the best model in your list for coding, math, long text, or chat.',
     needsNonStream: false,
-  },
-  race: {
-    label: 'Fastest Wins (Hedged)',
-    cost: 'May use 2x',
-    desc: 'Starts with #1; if it takes over 400ms, asks #2 too and keeps whichever finishes first.',
-    needsNonStream: true,
-  },
-  parallel: {
-    label: 'All at Once',
-    cost: 'Multi-model',
-    desc: 'Sends to every model at the same time and returns the fastest successful reply.',
-    needsNonStream: true,
-  },
-  ensemble: {
-    label: 'Best of All',
-    cost: 'Multi-model',
-    desc: 'Queries all models and picks the most complete answer.',
-    needsNonStream: true,
   },
 }
 
@@ -212,7 +188,8 @@ export default function CombosPage() {
     if (combo) {
       setEditCombo(combo)
       setName(combo.name)
-      setKind(combo.kind || 'fallback')
+      const validKind = combo.kind && STRATEGY_DETAILS[combo.kind] ? combo.kind : 'fallback'
+      setKind(validKind)
       setSelectedModels(combo.models || [])
       setPolicy({ ...DEFAULT_POLICY, ...(combo.policy ?? {}) })
     } else {
@@ -261,7 +238,7 @@ export default function CombosPage() {
     setSelectedModels(updated)
   }
 
-  const strat = STRATEGY_DETAILS[kind]
+  const strat = STRATEGY_DETAILS[kind] ?? STRATEGY_DETAILS.fallback!
 
   return (
     <PageContainer>
@@ -291,7 +268,7 @@ export default function CombosPage() {
       ) : (
         <div className="grid gap-4 lg:grid-cols-2">
           {combos.map((combo) => {
-            const info = STRATEGY_DETAILS[combo.kind] ?? STRATEGY_DETAILS.fallback
+            const info = STRATEGY_DETAILS[combo.kind] ?? STRATEGY_DETAILS.fallback!
             return (
               <Card key={combo.id} className="flex flex-col justify-between gap-4">
                 <div>
@@ -366,11 +343,13 @@ export default function CombosPage() {
             </Field>
             <Field label="How should it choose?">
               <Select value={kind} onChange={(e) => setKind(e.target.value as ComboKind)}>
-                {Object.entries(STRATEGY_DETAILS).map(([key, info]) => (
-                  <option key={key} value={key}>
-                    {info.label}
-                  </option>
-                ))}
+                {Object.entries(STRATEGY_DETAILS).map(([key, info]) =>
+                  info ? (
+                    <option key={key} value={key}>
+                      {info.label}
+                    </option>
+                  ) : null,
+                )}
               </Select>
             </Field>
           </div>

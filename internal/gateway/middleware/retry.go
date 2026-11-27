@@ -174,7 +174,7 @@ func Retry(ctx *gwContext.GatewayContext, next HandlerFunc) error {
 		}
 
 		if err == nil && ctx.ResponseCode < 400 {
-			if comboKind == "progressive" && i < len(targets)-1 && isLowConfidence(ctx.ResponseBody) {
+			if comboKind == "progressive" && !ctx.IsStream && i < len(targets)-1 && isLowConfidence(ctx.ResponseBody) {
 				ctx.ResponseWritten = false
 				health.Get().RecordFailure(target.Connection.ID)
 				ctx.TargetAttempts = append(ctx.TargetAttempts, gwContext.TargetAttempt{
@@ -346,9 +346,17 @@ func isLowConfidence(body []byte) bool {
 				return true
 			}
 			if msg, ok := choice["message"].(map[string]interface{}); ok {
+				// Valid tool-call turns legitimately have empty content.
+				if tc, ok := msg["tool_calls"].([]interface{}); ok && len(tc) > 0 {
+					return false
+				}
+				if refusal, ok := msg["refusal"].(string); ok && strings.TrimSpace(refusal) != "" {
+					return true
+				}
 				if content, ok := msg["content"].(string); ok {
 					trimmed := strings.TrimSpace(content)
-					if len(trimmed) < 10 || strings.Contains(strings.ToLower(trimmed), "i cannot fulfill") {
+					low := strings.ToLower(trimmed)
+					if len(trimmed) < 10 || strings.Contains(low, "i cannot fulfill") || strings.Contains(low, "i'm sorry, i cannot") {
 						return true
 					}
 				}
@@ -485,9 +493,10 @@ func executeRaceStrategy(ctx *gwContext.GatewayContext, targets []ConnectionMode
 	var failedCount int
 	var once sync.Once
 	allFailed := make(chan struct{})
+	primaryFailed := make(chan struct{}, 1)
 	total := len(targets)
 
-	runTarget := func(t ConnectionModel) {
+	runTarget := func(t ConnectionModel, isPrimary bool) {
 		defer wg.Done()
 		res, ok := runChildWithRecorder(ctx, doneCtx, t, cloneMap(originalBody), next)
 		attemptsMu.Lock()
@@ -508,6 +517,12 @@ func executeRaceStrategy(ctx *gwContext.GatewayContext, targets []ConnectionMode
 			case failChan <- res:
 			default:
 			}
+			if isPrimary {
+				select {
+				case primaryFailed <- struct{}{}:
+				default:
+				}
+			}
 		}
 		if allBad {
 			once.Do(func() { close(allFailed) })
@@ -515,7 +530,7 @@ func executeRaceStrategy(ctx *gwContext.GatewayContext, targets []ConnectionMode
 	}
 
 	wg.Add(1)
-	go runTarget(targets[0])
+	go runTarget(targets[0], true)
 
 	timer := time.NewTimer(400 * time.Millisecond)
 	defer timer.Stop()
@@ -531,11 +546,17 @@ func executeRaceStrategy(ctx *gwContext.GatewayContext, targets []ConnectionMode
 	case <-allFailed:
 		applyLastFailure(ctx, failChan, "Race (Hedged)")
 		return nil
+	case <-primaryFailed:
+		ctx.AddStep("Race (Hedged)", "info", "Primary failed fast, hedging remaining models immediately")
+		for i := 1; i < len(targets); i++ {
+			wg.Add(1)
+			go runTarget(targets[i], false)
+		}
 	case <-timer.C:
 		ctx.AddStep("Race (Hedged)", "info", "Primary slow (>400ms), hedging 2nd model")
 		for i := 1; i < len(targets); i++ {
 			wg.Add(1)
-			go runTarget(targets[i])
+			go runTarget(targets[i], false)
 		}
 	}
 
@@ -706,16 +727,57 @@ func executeEnsembleStrategy(ctx *gwContext.GatewayContext, targets []Connection
 		return nil
 	}
 
-	// Select best response (longest / non-truncated)
+	// Select best response: prefer complete non-truncated answers over raw byte length.
 	bestRes := results[0]
-	for _, r := range results {
-		if len(r.responseBody) > len(bestRes.responseBody) {
+	bestScore := scoreEnsembleBody(bestRes.responseBody)
+	for _, r := range results[1:] {
+		if s := scoreEnsembleBody(r.responseBody); s > bestScore {
+			bestScore = s
 			bestRes = r
 		}
 	}
 
 	applyWinner(ctx, bestRes, fmt.Sprintf("Selected top ensemble response from %s (%d models consensus)", bestRes.target.ModelName, len(results)), "Ensemble Synthesis")
 	return nil
+}
+
+func scoreEnsembleBody(body []byte) int {
+	if len(body) == 0 {
+		return -1
+	}
+	var resp map[string]interface{}
+	if err := json.Unmarshal(body, &resp); err != nil {
+		return len(body)
+	}
+	score := 0
+	if choices, ok := resp["choices"].([]interface{}); ok && len(choices) > 0 {
+		if choice, ok := choices[0].(map[string]interface{}); ok {
+			if fr, ok := choice["finish_reason"].(string); ok {
+				if fr == "stop" || fr == "tool_calls" {
+					score += 10000
+				} else if fr == "length" {
+					score -= 2000
+				}
+			}
+			if msg, ok := choice["message"].(map[string]interface{}); ok {
+				if tc, ok := msg["tool_calls"].([]interface{}); ok && len(tc) > 0 {
+					score += 5000
+				}
+				if content, ok := msg["content"].(string); ok {
+					trimmed := strings.TrimSpace(content)
+					if len(trimmed) < 10 {
+						score -= 1000
+					} else {
+						score += len(trimmed)
+					}
+				}
+			}
+		}
+	}
+	if score == 0 {
+		score = len(body)
+	}
+	return score
 }
 
 // applyLastFailure drains the failure channel and replays the most recent
