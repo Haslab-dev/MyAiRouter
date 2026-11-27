@@ -45,10 +45,19 @@ function formatResetCountdown(tsMs?: number): string {
 }
 
 function limitLabel(item: QuotaLimitItem, index: number): string {
-  if (item.type === 'TOKENS_LIMIT') {
-    if (item.number && item.unit === 3) return `${item.number}-Hour Token Window`
-    if (item.number && item.unit === 6) return `${item.number}-Day Token Window`
-    return 'Token Quota Window'
+  const isCredit = item.type === 'CREDIT_LIMIT'
+  const noun = isCredit ? 'Credit' : 'Token'
+  if (item.type === 'TOKENS_LIMIT' || isCredit) {
+    if (item.unit === 3) {
+      return `${item.number ?? 5}-Hour ${noun} Quota`
+    }
+    if (item.unit === 6) {
+      return !item.number || item.number === 1 ? `Weekly ${noun} Quota` : `${item.number}-Week ${noun} Quota`
+    }
+    if (item.unit === 4 || item.unit === 5) {
+      return `${item.number ?? 1}-Day ${noun} Quota`
+    }
+    return `${noun} Quota Window`
   }
   if (item.type === 'TIME_LIMIT') {
     return 'MCP / Web Tool Quota'
@@ -96,7 +105,7 @@ export default function GlmQuotaCard({ connectionId, title = 'GLM Coding Plan Qu
                 <Badge tone="warning">Local estimate</Badge>
               ) : null}
             </div>
-            <p className="text-xs text-muted">5-hour rolling token window &amp; plan usage.</p>
+            <p className="text-xs text-muted">5-hour, weekly, &amp; tool quota windows.</p>
           </div>
         </div>
 
@@ -106,7 +115,7 @@ export default function GlmQuotaCard({ connectionId, title = 'GLM Coding Plan Qu
       </div>
 
       {limits.length > 0 ? (
-        <div className="grid gap-3 sm:grid-cols-2">
+        <div className={cn('grid gap-3', limits.length >= 3 ? 'sm:grid-cols-3' : 'sm:grid-cols-2')}>
           {limits.map((item, idx) => {
             const pct = Math.min(100, Math.max(0, Number(item.percentage ?? 0)))
             const tone = pct >= 90 ? 'bg-danger' : pct >= 70 ? 'bg-warning' : 'bg-accent'

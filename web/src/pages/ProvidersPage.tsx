@@ -693,15 +693,25 @@ export default function ProvidersPage() {
   }, [nodes, providerSearchQuery, filterMode, getConnectionFor])
 
   const providerGroups = useMemo(() => {
-    const custom = allProviderEntries.filter((e) => e.isNode)
-    const connect = allProviderEntries.filter((e) => e.type !== 'oauth' && !e.isNode)
-    const oauth = allProviderEntries.filter((e) => e.type === 'oauth')
+    const used = allProviderEntries
+      .filter((e) => Boolean(getConnectionFor(e.id)))
+      .sort((a, b) => {
+        const aActive = getConnectionFor(a.id)?.isActive ? 1 : 0
+        const bActive = getConnectionFor(b.id)?.isActive ? 1 : 0
+        if (aActive !== bActive) return bActive - aActive
+        return a.name.localeCompare(b.name)
+      })
+    const unused = allProviderEntries.filter((e) => !getConnectionFor(e.id))
+    const custom = unused.filter((e) => e.isNode)
+    const connect = unused.filter((e) => e.type !== 'oauth' && !e.isNode)
+    const oauth = unused.filter((e) => e.type === 'oauth')
     return [
-      { key: 'custom', title: 'Your Custom Endpoints', hint: 'OpenAI- or Anthropic-compatible servers you added.', entries: custom },
-      { key: 'connect', title: 'API Key Providers', hint: 'Paste an API key to start using models from these providers.', entries: connect },
+      { key: 'used', title: `In Use (${used.length})`, hint: 'Providers you have connected — toggle on or off anytime.', entries: used },
+      { key: 'custom', title: 'Custom Endpoints', hint: 'OpenAI- or Anthropic-compatible servers you added.', entries: custom },
+      { key: 'connect', title: 'Available API Key Providers', hint: 'Paste an API key to connect.', entries: connect },
       { key: 'oauth', title: 'Subscription Logins (OAuth)', hint: 'Sign in with an existing account — no API key needed.', entries: oauth },
     ].filter((g) => g.entries.length > 0)
-  }, [allProviderEntries])
+  }, [allProviderEntries, getConnectionFor])
 
   if (viewingDetailProvider) {
     const provider = viewingDetailProvider
